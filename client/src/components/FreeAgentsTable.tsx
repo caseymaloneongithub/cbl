@@ -476,7 +476,8 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
                               onClick={() => handleAutoBidClick(agent)}
                               data-testid={`button-auto-bid-${agent.id}`}
                             >
-                              <Zap className="h-4 w-4" />
+                              <Zap className="h-4 w-4 mr-1" />
+                              Auto
                             </Button>
                           </div>
                         </TableCell>

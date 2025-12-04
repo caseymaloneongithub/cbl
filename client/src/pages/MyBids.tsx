@@ -1,21 +1,25 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CountdownTimer } from "@/components/CountdownTimer";
+import { AutoBidDialog } from "@/components/AutoBidDialog";
 import { formatCurrency, isAuctionClosed } from "@/lib/utils";
 import type { FreeAgentWithBids, AutoBid, FreeAgent } from "@shared/schema";
-import { Gavel, Zap, Trophy, AlertCircle } from "lucide-react";
+import { Gavel, Zap, Trophy, AlertCircle, Pencil } from "lucide-react";
 
 type AutoBidWithAgent = AutoBid & { freeAgent: FreeAgent };
 
 export default function MyBids() {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const { toast } = useToast();
+  const [editingAutoBid, setEditingAutoBid] = useState<FreeAgentWithBids | null>(null);
+  const [autoBidDialogOpen, setAutoBidDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -29,6 +33,17 @@ export default function MyBids() {
       }, 500);
     }
   }, [isAuthenticated, authLoading, toast]);
+
+  const handleEditAutoBid = (autoBid: AutoBidWithAgent) => {
+    const freeAgentWithBids: FreeAgentWithBids = {
+      ...autoBid.freeAgent,
+      currentBid: null,
+      highBidder: null,
+      bidCount: 0,
+    };
+    setEditingAutoBid(freeAgentWithBids);
+    setAutoBidDialogOpen(true);
+  };
 
   const { data: myBids, isLoading: loadingBids } = useQuery<FreeAgentWithBids[]>({
     queryKey: ["/api/my-bids"],
@@ -153,35 +168,49 @@ export default function MyBids() {
             </Card>
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {activeAutoBids.map((autoBid) => (
-                <Card key={autoBid.id} data-testid={`card-auto-bid-${autoBid.id}`}>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <CardTitle className="text-lg">{autoBid.freeAgent.name}</CardTitle>
-                      <Badge variant="secondary">
-                        <Zap className="h-3 w-3 mr-1" />
-                        Auto
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">Max bid</span>
-                      <span className="font-mono font-medium">
-                        {formatCurrency(autoBid.maxAmount)}/yr
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">Years</span>
-                      <span className="font-mono">{autoBid.years}yr</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">Ends</span>
-                      <CountdownTimer endTime={autoBid.freeAgent.auctionEndTime} />
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+              {activeAutoBids.map((autoBid) => {
+                const isClosed = isAuctionClosed(autoBid.freeAgent.auctionEndTime);
+                return (
+                  <Card key={autoBid.id} data-testid={`card-auto-bid-${autoBid.id}`}>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <CardTitle className="text-lg">{autoBid.freeAgent.name}</CardTitle>
+                        <Badge variant="secondary">
+                          <Zap className="h-3 w-3 mr-1" />
+                          Auto
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Max bid</span>
+                        <span className="font-mono font-medium">
+                          {formatCurrency(autoBid.maxAmount)}/yr
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Years</span>
+                        <span className="font-mono">{autoBid.years}yr</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Ends</span>
+                        <CountdownTimer endTime={autoBid.freeAgent.auctionEndTime} />
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full mt-2"
+                        disabled={isClosed}
+                        onClick={() => handleEditAutoBid(autoBid)}
+                        data-testid={`button-edit-auto-bid-${autoBid.id}`}
+                      >
+                        <Pencil className="h-4 w-4 mr-2" />
+                        Edit Auto-Bid
+                      </Button>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </TabsContent>
@@ -240,6 +269,12 @@ export default function MyBids() {
           )}
         </TabsContent>
       </Tabs>
+
+      <AutoBidDialog
+        freeAgent={editingAutoBid}
+        open={autoBidDialogOpen}
+        onOpenChange={setAutoBidDialogOpen}
+      />
     </div>
   );
 }
