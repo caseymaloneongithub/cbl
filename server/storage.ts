@@ -64,6 +64,34 @@ export interface IStorage {
     myWins: number;
     endingSoon: number;
   }>;
+  
+  // Budget management
+  getUserBudgetInfo(userId: string): Promise<{
+    budget: number;
+    spent: number;
+    committed: number;
+    available: number;
+  }>;
+  updateUserBudget(userId: string, budget: number): Promise<User>;
+  resetAllBudgets(amount: number): Promise<void>;
+  
+  // Team limits management
+  updateUserLimits(userId: string, limits: { rosterLimit?: number | null; ipLimit?: number | null; paLimit?: number | null }): Promise<User>;
+  getUserLimitsInfo(userId: string): Promise<{
+    rosterLimit: number | null;
+    rosterUsed: number;
+    rosterAvailable: number | null;
+    ipLimit: number | null;
+    ipUsed: number;
+    ipAvailable: number | null;
+    paLimit: number | null;
+    paUsed: number;
+    paAvailable: number | null;
+  }>;
+  canUserBidOnPlayer(userId: string, playerId: number): Promise<{
+    canBid: boolean;
+    reason?: string;
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -484,6 +512,162 @@ export class DatabaseStorage implements IStorage {
     await db
       .update(users)
       .set({ budget: amount, updatedAt: new Date() });
+  }
+
+  // Team limits management
+  async updateUserLimits(userId: string, limits: { rosterLimit?: number | null; ipLimit?: number | null; paLimit?: number | null }): Promise<User> {
+    const [updated] = await db
+      .update(users)
+      .set({ 
+        rosterLimit: limits.rosterLimit,
+        ipLimit: limits.ipLimit,
+        paLimit: limits.paLimit,
+        updatedAt: new Date() 
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    return updated;
+  }
+
+  async getUserLimitsInfo(userId: string): Promise<{
+    rosterLimit: number | null;
+    rosterUsed: number;
+    rosterAvailable: number | null;
+    ipLimit: number | null;
+    ipUsed: number;
+    ipAvailable: number | null;
+    paLimit: number | null;
+    paUsed: number;
+    paAvailable: number | null;
+  }> {
+    const user = await this.getUser(userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    const now = new Date();
+    
+    // Get all closed auctions won by this user
+    const wonAgents = await db
+      .select()
+      .from(freeAgents)
+      .where(and(
+        eq(freeAgents.winnerId, userId),
+        sql`${freeAgents.auctionEndTime} <= ${now}`
+      ));
+    
+    // Calculate roster used (number of players won)
+    const rosterUsed = wonAgents.length;
+    
+    // Calculate IP used (sum of IP for pitchers won)
+    let ipUsed = 0;
+    for (const agent of wonAgents) {
+      if (agent.playerType === 'pitcher' && agent.ip) {
+        ipUsed += agent.ip;
+      }
+    }
+    
+    // Calculate PA used (sum of PA for hitters won)
+    let paUsed = 0;
+    for (const agent of wonAgents) {
+      if (agent.playerType === 'hitter' && agent.pa) {
+        paUsed += agent.pa;
+      }
+    }
+    
+    return {
+      rosterLimit: user.rosterLimit,
+      rosterUsed,
+      rosterAvailable: user.rosterLimit !== null ? user.rosterLimit - rosterUsed : null,
+      ipLimit: user.ipLimit,
+      ipUsed,
+      ipAvailable: user.ipLimit !== null ? user.ipLimit - ipUsed : null,
+      paLimit: user.paLimit,
+      paUsed,
+      paAvailable: user.paLimit !== null ? user.paLimit - paUsed : null,
+    };
+  }
+
+  // Check if user can bid on a player based on limits (includes pending high bids)
+  async canUserBidOnPlayer(userId: string, playerId: number): Promise<{
+    canBid: boolean;
+    reason?: string;
+  }> {
+    const user = await this.getUser(userId);
+    if (!user) {
+      return { canBid: false, reason: "User not found" };
+    }
+
+    const player = await this.getFreeAgent(playerId);
+    if (!player) {
+      return { canBid: false, reason: "Player not found" };
+    }
+
+    const now = new Date();
+    
+    // Get won players + pending high bids (excluding this player if already high bidder)
+    const wonAgents = await db
+      .select()
+      .from(freeAgents)
+      .where(and(
+        eq(freeAgents.winnerId, userId),
+        sql`${freeAgents.auctionEndTime} <= ${now}`
+      ));
+    
+    // Get active auctions where user is high bidder
+    const allAgents = await this.getActiveFreeAgents();
+    const pendingHighBids = allAgents.filter(a => 
+      a.highBidder?.id === userId && a.id !== playerId
+    );
+    
+    // Calculate current usage including pending
+    const rosterUsed = wonAgents.length + pendingHighBids.length;
+    
+    let ipUsed = 0;
+    let paUsed = 0;
+    
+    // Add won players
+    for (const agent of wonAgents) {
+      if (agent.playerType === 'pitcher' && agent.ip) {
+        ipUsed += agent.ip;
+      }
+      if (agent.playerType === 'hitter' && agent.pa) {
+        paUsed += agent.pa;
+      }
+    }
+    
+    // Add pending high bids
+    for (const agent of pendingHighBids) {
+      if (agent.playerType === 'pitcher' && agent.ip) {
+        ipUsed += agent.ip;
+      }
+      if (agent.playerType === 'hitter' && agent.pa) {
+        paUsed += agent.pa;
+      }
+    }
+    
+    // Check roster limit
+    if (user.rosterLimit !== null) {
+      if (rosterUsed >= user.rosterLimit) {
+        return { canBid: false, reason: `Roster limit reached (${user.rosterLimit} players)` };
+      }
+    }
+    
+    // Check IP limit for pitchers
+    if (player.playerType === 'pitcher' && user.ipLimit !== null && player.ip) {
+      if (ipUsed + player.ip > user.ipLimit) {
+        return { canBid: false, reason: `Would exceed IP limit (${ipUsed + player.ip} / ${user.ipLimit})` };
+      }
+    }
+    
+    // Check PA limit for hitters
+    if (player.playerType === 'hitter' && user.paLimit !== null && player.pa) {
+      if (paUsed + player.pa > user.paLimit) {
+        return { canBid: false, reason: `Would exceed PA limit (${paUsed + player.pa} / ${user.paLimit})` };
+      }
+    }
+    
+    return { canBid: true };
   }
 }
 

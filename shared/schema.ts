@@ -35,6 +35,9 @@ export const users = pgTable("users", {
   isCommissioner: boolean("is_commissioner").default(false).notNull(),
   teamName: varchar("team_name"),
   budget: real("budget").default(260).notNull(),
+  rosterLimit: integer("roster_limit"),  // Max players team can have (null = unlimited)
+  ipLimit: real("ip_limit"),              // Max pitcher innings pitched limit (null = unlimited)
+  paLimit: integer("pa_limit"),           // Max hitter plate appearances limit (null = unlimited)
   mustResetPassword: boolean("must_reset_password").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -79,6 +82,7 @@ export const freeAgents = pgTable("free_agents", {
   runs: integer("runs"),      // Runs scored
   sb: integer("sb"),          // Stolen bases
   ops: real("ops"),           // On-base plus slugging
+  pa: integer("pa"),          // Plate appearances (used for team limit tracking)
   // Pitcher stats
   wins: integer("wins"),      // Wins
   losses: integer("losses"),  // Losses
