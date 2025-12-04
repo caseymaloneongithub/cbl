@@ -174,6 +174,7 @@ export async function registerRoutes(
           runs: parseNum(p.runs) !== null ? Math.floor(parseNum(p.runs)!) : null,
           sb: parseNum(p.sb) !== null ? Math.floor(parseNum(p.sb)!) : null,
           ops: parseNum(p.ops),
+          pa: parseNum(p.pa) !== null ? Math.floor(parseNum(p.pa)!) : null, // Plate appearances for limit tracking
           // Pitcher stats
           wins: parseNum(p.wins) !== null ? Math.floor(parseNum(p.wins)!) : null,
           losses: parseNum(p.losses) !== null ? Math.floor(parseNum(p.losses)!) : null,
@@ -350,6 +351,12 @@ export async function registerRoutes(
             message: `Bid exceeds your available budget. Available: $${Math.floor(availableForThisBid)}, Bid amount: $${amount}` 
           });
         }
+      }
+
+      // Check team limits (roster, IP, PA)
+      const limitsCheck = await storage.canUserBidOnPlayer(userId, agentId);
+      if (!limitsCheck.canBid) {
+        return res.status(400).json({ message: limitsCheck.reason });
       }
 
       const bid = await storage.createBid({
@@ -576,6 +583,67 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error resetting budgets:", error);
       res.status(500).json({ message: "Failed to reset budgets" });
+    }
+  });
+
+  // Team limits
+  app.get("/api/limits", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const limitsInfo = await storage.getUserLimitsInfo(userId);
+      res.json(limitsInfo);
+    } catch (error) {
+      console.error("Error fetching limits:", error);
+      res.status(500).json({ message: "Failed to fetch limits" });
+    }
+  });
+
+  // Check if user can bid on a player (limit validation)
+  app.get("/api/free-agents/:id/can-bid", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const playerId = parseInt(req.params.id);
+      const result = await storage.canUserBidOnPlayer(userId, playerId);
+      res.json(result);
+    } catch (error) {
+      console.error("Error checking bid eligibility:", error);
+      res.status(500).json({ message: "Failed to check bid eligibility" });
+    }
+  });
+
+  // Commissioner: Update user limits
+  app.patch("/api/users/:userId/limits", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminId = req.session.userId!;
+      const admin = await storage.getUser(adminId);
+      
+      if (!admin?.isCommissioner) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const { userId } = req.params;
+      const { rosterLimit, ipLimit, paLimit } = req.body;
+
+      // Validate limits (null = unlimited, otherwise must be non-negative)
+      if (rosterLimit !== null && rosterLimit !== undefined && (typeof rosterLimit !== "number" || rosterLimit < 0)) {
+        return res.status(400).json({ message: "Invalid roster limit value" });
+      }
+      if (ipLimit !== null && ipLimit !== undefined && (typeof ipLimit !== "number" || ipLimit < 0)) {
+        return res.status(400).json({ message: "Invalid IP limit value" });
+      }
+      if (paLimit !== null && paLimit !== undefined && (typeof paLimit !== "number" || paLimit < 0)) {
+        return res.status(400).json({ message: "Invalid PA limit value" });
+      }
+
+      const updated = await storage.updateUserLimits(userId, { 
+        rosterLimit: rosterLimit ?? undefined, 
+        ipLimit: ipLimit ?? undefined, 
+        paLimit: paLimit ?? undefined 
+      });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating user limits:", error);
+      res.status(500).json({ message: "Failed to update limits" });
     }
   });
 
