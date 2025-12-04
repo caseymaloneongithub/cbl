@@ -78,9 +78,10 @@ Preferred communication style: Simple, everyday language.
 
 **Authentication Provider**: Email/password authentication with bcrypt password hashing (cost factor 12).
 
-**Authorization Model**: Simple role-based system with two roles:
+**Authorization Model**: Role-based system with three roles:
 - Regular users (team owners) - can view auctions and place bids
 - Commissioners - can modify league settings, upload free agents, manage users, and create new user accounts
+- Super Admin - has all commissioner powers plus can impersonate any user to see the platform from their perspective
 
 **Session Flow**:
 1. User submits email/password to `POST /api/auth/login`
@@ -196,6 +197,24 @@ Limit Tracking:
 - IP usage: Sum of IP stat for all pitchers won
 - PA usage: Sum of PA stat for all hitters won
 - Usage is tracked via `storage.getUserLimitsInfo(userId)` which returns current usage vs limits
+
+### Super Admin & Impersonation
+- Super admin is designated by `isSuperAdmin` flag in the users table
+- Current super admin: caseyemalone@protonmail.com (Casey Malone)
+- Impersonation allows super admin to view the platform as any other user
+- Session stores `originalUserId` when impersonating to allow returning to super admin view
+- API endpoints:
+  - `POST /api/auth/impersonate/:userId` - Start impersonating a user (super admin only)
+  - `POST /api/auth/stop-impersonate` - Return to super admin view
+  - `GET /api/auth/me` - Returns `isImpersonating` and `originalUser` when impersonating
+- UI shows amber banner at top when impersonating with "Viewing as:" and "Exit View" button
+- User dropdown shows "Super Admin" badge and "View as user:" section with user selection
+
+### Password Reset Flow
+- Users with `mustResetPassword=true` are shown a blocking dialog on login
+- Dialog requires setting a new password (minimum 6 characters)
+- After successful password change, `mustResetPassword` is set to false
+- Newly created users via CSV upload have `mustResetPassword=true` by default
 
 ### Page Structure
 - `/` - Landing page (unauthenticated) or Home dashboard (authenticated)
