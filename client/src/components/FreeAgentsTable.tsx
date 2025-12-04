@@ -31,7 +31,7 @@ interface FreeAgentsTableProps {
 }
 
 type SortField = "name" | "position" | "currentBid" | "totalValue" | "endTime" | 
-  "avg" | "hr" | "rbi" | "runs" | "sb" | "ops" | 
+  "avg" | "hr" | "rbi" | "runs" | "sb" | "ops" | "pa" |
   "wins" | "losses" | "era" | "whip" | "strikeouts" | "ip";
 type SortDirection = "asc" | "desc";
 type PlayerTypeFilter = "all" | "hitter" | "pitcher";
@@ -123,6 +123,9 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
           break;
         case "ops":
           comparison = (a.ops ?? 0) - (b.ops ?? 0);
+          break;
+        case "pa":
+          comparison = (a.pa ?? 0) - (b.pa ?? 0);
           break;
         // Pitcher stats
         case "wins":
@@ -322,6 +325,9 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
                       <TableHead className="font-semibold text-right cursor-pointer select-none" onClick={() => handleSort("ops")}>
                         <div className="flex items-center justify-end">OPS{getSortIcon("ops")}</div>
                       </TableHead>
+                      <TableHead className="font-semibold text-right cursor-pointer select-none" onClick={() => handleSort("pa")}>
+                        <div className="flex items-center justify-end">PA{getSortIcon("pa")}</div>
+                      </TableHead>
                     </>
                   )}
                   {playerTypeFilter === "pitcher" && (
@@ -352,7 +358,7 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
               <TableBody>
                 {filteredAndSortedAgents.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={playerTypeFilter !== "all" ? 14 : 8} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={playerTypeFilter === "hitter" ? 16 : playerTypeFilter === "pitcher" ? 15 : 9} className="text-center py-8 text-muted-foreground">
                       {hasActiveFilters 
                         ? "No players match your filters" 
                         : "No active auctions"}
@@ -438,6 +444,7 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
                             <TableCell className="text-right font-mono text-sm">{formatStat(agent.runs)}</TableCell>
                             <TableCell className="text-right font-mono text-sm">{formatStat(agent.sb)}</TableCell>
                             <TableCell className="text-right font-mono text-sm">{formatStat(agent.ops, 3)}</TableCell>
+                            <TableCell className="text-right font-mono text-sm">{formatStat(agent.pa)}</TableCell>
                           </>
                         )}
                         {playerTypeFilter === "pitcher" && (
