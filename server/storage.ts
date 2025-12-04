@@ -29,6 +29,7 @@ export interface IStorage {
   upsertUser(user: UpsertUser): Promise<User>;
   getAllUsers(): Promise<User[]>;
   updateUserCommissioner(id: string, isCommissioner: boolean): Promise<User | undefined>;
+  setSoleCommissioner(userId: string | null): Promise<User | null>;
   updateUserPassword(id: string, passwordHash: string, mustResetPassword: boolean): Promise<User | undefined>;
   createUserWithPassword(userData: { email: string; passwordHash: string; firstName?: string; lastName?: string; teamName?: string; budget?: number; isCommissioner?: boolean; mustResetPassword?: boolean }): Promise<User>;
   
@@ -143,6 +144,24 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, id))
       .returning();
     return user;
+  }
+
+  async setSoleCommissioner(userId: string | null): Promise<User | null> {
+    await db
+      .update(users)
+      .set({ isCommissioner: false, updatedAt: new Date() })
+      .where(eq(users.isCommissioner, true));
+    
+    if (userId === null) {
+      return null;
+    }
+    
+    const [user] = await db
+      .update(users)
+      .set({ isCommissioner: true, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+    return user || null;
   }
 
   async updateUserPassword(id: string, passwordHash: string, mustResetPassword: boolean): Promise<User | undefined> {
