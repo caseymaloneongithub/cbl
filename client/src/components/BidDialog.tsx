@@ -143,7 +143,7 @@ export function BidDialog({ freeAgent, open, onOpenChange }: BidDialogProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             <span className="text-xl">{freeAgent.name}</span>
-            <Badge variant="secondary">{freeAgent.position}</Badge>
+            <Badge variant="secondary">{freeAgent.playerType === "pitcher" ? "Pitcher" : "Hitter"}</Badge>
           </DialogTitle>
         </DialogHeader>
 

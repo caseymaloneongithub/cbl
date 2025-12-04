@@ -66,7 +66,6 @@ export const leagueSettings = pgTable("league_settings", {
 export const freeAgents = pgTable("free_agents", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   name: varchar("name", { length: 255 }).notNull(),
-  position: varchar("position", { length: 50 }).notNull(),
   team: varchar("team", { length: 100 }),
   playerType: varchar("player_type", { length: 20 }).default("hitter").notNull(), // 'pitcher' or 'hitter'
   minimumBid: real("minimum_bid").default(1).notNull(),

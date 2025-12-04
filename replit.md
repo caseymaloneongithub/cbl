@@ -131,7 +131,7 @@ Preferred communication style: Simple, everyday language.
 - **Real-time countdown timers** - Shows time remaining for each auction
 - **Dark/Light theme support** - System-based theme with manual toggle
 - **Responsive Material Design** - Professional sports aesthetic with Roboto fonts
-- **Search/filtering/sorting** - Filter free agents by name, position, team, player type with column sorting
+- **Search/filtering/sorting** - Filter free agents by name, team, player type (pitcher/hitter) with column sorting
 - **CSV export** - Commissioner can export auction results and final rosters as CSV files
 - **Budget system** - Per-team variable budgets tracking dollar amounts (not total values)
 - **Minimum bid support** - Each player has a minimum starting bid, configurable in CSV uploads
@@ -172,8 +172,10 @@ Each new bid must have a total value at least 10% higher than the current highes
   - Set new minimum bid, minimum years, and auction end date
   - Player returns to active auctions
 
-### Player Stats Display
-- Players are categorized as "hitter" or "pitcher" based on position (P, SP, RP, CL = pitcher)
+### Player Type System
+- Players are simply classified as "Hitter" or "Pitcher" - no granular position tracking
+- Player type is set when adding players (individually or via CSV upload)
+- CSV accepts `type` or `playerType` column with values: "hitter", "pitcher", "h", "p"
 - Stats are displayed when filtering by player type in the FreeAgentsTable
 - Hitter stats: AVG, HR, RBI, R (runs), SB, OPS, PA (plate appearances)
 - Pitcher stats: W (wins), L (losses), ERA, WHIP, K (strikeouts), IP

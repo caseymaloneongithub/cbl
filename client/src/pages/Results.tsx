@@ -179,7 +179,7 @@ export default function Results() {
                 <TableHeader>
                   <TableRow className="bg-muted/50">
                     <TableHead className="font-semibold">Player</TableHead>
-                    <TableHead className="font-semibold">Position</TableHead>
+                    <TableHead className="font-semibold">Type</TableHead>
                     <TableHead className="font-semibold">Winner</TableHead>
                     <TableHead className="font-semibold text-right">Winning Bid</TableHead>
                     <TableHead className="font-semibold text-center">Years</TableHead>
@@ -201,7 +201,7 @@ export default function Results() {
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="font-mono text-xs">
-                          {agent.position}
+                          {agent.playerType === "pitcher" ? "Pitcher" : "Hitter"}
                         </Badge>
                       </TableCell>
                       <TableCell>

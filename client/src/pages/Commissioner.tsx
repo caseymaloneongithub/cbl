@@ -44,6 +44,13 @@ import { isUnauthorizedError } from "@/lib/authUtils";
 import type { LeagueSettings, User } from "@shared/schema";
 import { Upload, Settings, Users, Loader2, FileSpreadsheet, Trash2, Crown, Download, DollarSign, Plus, UserPlus } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const settingsSchema = z.object({
   yearFactor1: z.number().min(0.1).max(10),
@@ -65,7 +72,7 @@ const oldSettingsSchema = z.object({
 
 const addPlayerSchema = z.object({
   name: z.string().min(1, "Player name is required"),
-  position: z.string().min(1, "Position is required"),
+  playerType: z.enum(["hitter", "pitcher"]),
   team: z.string().optional(),
   minimumBid: z.number().min(1, "Minimum bid must be at least $1"),
   minimumYears: z.number().min(1).max(5, "Minimum years must be 1-5"),
@@ -77,7 +84,7 @@ type AddPlayerFormData = z.infer<typeof addPlayerSchema>;
 
 interface ParsedPlayer {
   name: string;
-  position: string;
+  playerType: "hitter" | "pitcher";
   team: string;
   minimumBid: number;
   minimumYears: number;
@@ -225,7 +232,7 @@ export default function Commissioner() {
     resolver: zodResolver(addPlayerSchema),
     defaultValues: {
       name: "",
-      position: "UTIL",
+      playerType: "hitter",
       team: "",
       minimumBid: 1,
       minimumYears: 1,
@@ -237,7 +244,7 @@ export default function Commissioner() {
     mutationFn: async (data: AddPlayerFormData) => {
       await apiRequest("POST", "/api/free-agents", {
         name: data.name,
-        position: data.position,
+        playerType: data.playerType,
         team: data.team || null,
         minimumBid: data.minimumBid,
         minimumYears: data.minimumYears,
@@ -357,7 +364,7 @@ export default function Commissioner() {
     const nameIdx = headers.findIndex(h => h === "name" || h === "player");
     const firstNameIdx = headers.findIndex(h => h === "firstname");
     const lastNameIdx = headers.findIndex(h => h === "lastname");
-    const posIdx = headers.findIndex(h => h === "position" || h === "pos" || h === "h/p");
+    const typeIdx = headers.findIndex(h => h === "type" || h === "playertype" || h === "player_type" || h === "h/p");
     const teamIdx = headers.findIndex(h => h === "team" || h === "mlbteam");
     const minBidIdx = headers.findIndex(h => h === "minimum_bid" || h === "min_bid" || h === "minbid" || h === "min" || h === "bidmindollars");
     const minYearsIdx = headers.findIndex(h => h === "minimum_years" || h === "min_years" || h === "minyears" || h === "bidminyears");
@@ -381,7 +388,7 @@ export default function Commissioner() {
 
     const hasNameColumn = nameIdx !== -1;
     const hasFirstLastName = firstNameIdx !== -1 && lastNameIdx !== -1;
-    const hasPosColumn = posIdx !== -1;
+    const hasTypeColumn = typeIdx !== -1;
 
     if (!hasNameColumn && !hasFirstLastName) {
       toast({
@@ -392,10 +399,10 @@ export default function Commissioner() {
       return;
     }
 
-    if (!hasPosColumn) {
+    if (!hasTypeColumn) {
       toast({
         title: "Invalid CSV",
-        description: "CSV must have 'position' or 'h/p' column",
+        description: "CSV must have 'type' or 'playerType' column (values: hitter or pitcher)",
         variant: "destructive",
       });
       return;
@@ -408,11 +415,10 @@ export default function Commissioner() {
       return isNaN(num) ? undefined : num;
     };
 
-    const mapPosition = (pos: string): string => {
-      const lower = pos.toLowerCase().trim();
-      if (lower === "hitter") return "UTIL";
-      if (lower === "pitcher") return "P";
-      return pos.toUpperCase();
+    const mapPlayerType = (type: string): "hitter" | "pitcher" => {
+      const lower = type.toLowerCase().trim();
+      if (lower === "pitcher" || lower === "p") return "pitcher";
+      return "hitter";
     };
 
     const players: ParsedPlayer[] = [];
@@ -430,8 +436,8 @@ export default function Commissioner() {
       
       if (playerName) {
         const minYearsVal = minYearsIdx !== -1 ? parseInt(values[minYearsIdx]) : 1;
-        const rawPos = values[posIdx] || "UTIL";
-        const position = mapPosition(rawPos);
+        const rawType = values[typeIdx] || "hitter";
+        const playerType = mapPlayerType(rawType);
         
         const minBidRaw = minBidIdx !== -1 ? values[minBidIdx] : "";
         const minBidCleaned = minBidRaw.replace(/,/g, "").replace(/"/g, "");
@@ -442,7 +448,7 @@ export default function Commissioner() {
         
         players.push({
           name: playerName,
-          position: position,
+          playerType: playerType,
           team: teamIdx !== -1 ? values[teamIdx] || "" : "",
           minimumBid: minBidVal,
           minimumYears: isNaN(minYearsVal) || minYearsVal < 1 || minYearsVal > 5 ? 1 : minYearsVal,
@@ -1188,13 +1194,21 @@ export default function Commissioner() {
                 />
                 <FormField
                   control={addPlayerForm.control}
-                  name="position"
+                  name="playerType"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Position</FormLabel>
-                      <FormControl>
-                        <Input placeholder="CF, SP, 1B, etc." {...field} data-testid="input-add-player-position" />
-                      </FormControl>
+                      <FormLabel>Player Type</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-add-player-type">
+                            <SelectValue placeholder="Select type" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="hitter">Hitter</SelectItem>
+                          <SelectItem value="pitcher">Pitcher</SelectItem>
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -1351,7 +1365,7 @@ export default function Commissioner() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Name</TableHead>
-                      <TableHead>Position</TableHead>
+                      <TableHead>Type</TableHead>
                       <TableHead>Team</TableHead>
                       <TableHead>Min Bid</TableHead>
                       <TableHead>Min Yrs</TableHead>
@@ -1363,7 +1377,7 @@ export default function Commissioner() {
                       <TableRow key={idx}>
                         <TableCell className="font-medium">{player.name}</TableCell>
                         <TableCell>
-                          <Badge variant="outline">{player.position}</Badge>
+                          <Badge variant="outline">{player.playerType === "pitcher" ? "Pitcher" : "Hitter"}</Badge>
                         </TableCell>
                         <TableCell>{player.team || "-"}</TableCell>
                         <TableCell>${player.minimumBid}</TableCell>

@@ -44,7 +44,7 @@ interface FreeAgentsTableProps {
   freeAgents: FreeAgentWithBids[];
 }
 
-type SortField = "name" | "position" | "currentBid" | "totalValue" | "endTime" | 
+type SortField = "name" | "playerType" | "currentBid" | "totalValue" | "endTime" | 
   "avg" | "hr" | "rbi" | "runs" | "sb" | "ops" | "pa" |
   "wins" | "losses" | "era" | "whip" | "strikeouts" | "ip";
 type SortDirection = "asc" | "desc";
@@ -110,8 +110,8 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
         case "name":
           comparison = a.name.localeCompare(b.name);
           break;
-        case "position":
-          comparison = a.position.localeCompare(b.position);
+        case "playerType":
+          comparison = a.playerType.localeCompare(b.playerType);
           break;
         case "currentBid":
           const aBid = a.currentBid?.amount || 0;
@@ -277,11 +277,11 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
                   </TableHead>
                   <TableHead 
                     className="font-semibold cursor-pointer select-none"
-                    onClick={() => handleSort("position")}
+                    onClick={() => handleSort("playerType")}
                   >
                     <div className="flex items-center">
-                      Position
-                      {getSortIcon("position")}
+                      Type
+                      {getSortIcon("playerType")}
                     </div>
                   </TableHead>
                   <TableHead 
@@ -395,7 +395,7 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className="font-mono text-xs">
-                            {agent.position}
+                            {agent.playerType === "pitcher" ? "Pitcher" : "Hitter"}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right font-mono">

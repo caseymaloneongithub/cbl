@@ -153,10 +153,9 @@ export async function registerRoutes(
           }
         }
         
-        // Determine player type from position
-        const position = (p.position || "UTIL").toUpperCase();
-        const pitcherPositions = ["P", "SP", "RP", "CL", "PITCHER"];
-        const playerType = pitcherPositions.includes(position) ? "pitcher" : "hitter";
+        // Determine player type - accepts "pitcher" or "hitter" (default to hitter)
+        const rawType = (p.playerType || p.type || "hitter").toLowerCase().trim();
+        const playerType = rawType === "pitcher" || rawType === "p" ? "pitcher" : "hitter";
 
         // Parse stats (all optional)
         const parseNum = (val: any): number | null => {
@@ -167,7 +166,6 @@ export async function registerRoutes(
 
         return {
           name: name || `Unknown Player ${index}`,
-          position: p.position || "UTIL",
           team: p.team || null,
           playerType,
           minimumBid,
@@ -281,12 +279,15 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Commissioner or super admin access required" });
       }
 
-      const { name, position, team, minimumBid, minimumYears, auctionEndTime, 
+      const { name, playerType, team, minimumBid, minimumYears, auctionEndTime, 
               avg, hr, rbi, runs, sb, ops, pa, wins, losses, era, whip, strikeouts, ip } = req.body;
       
       if (!name?.trim()) {
         return res.status(400).json({ message: "Player name is required" });
       }
+
+      // Validate playerType
+      const validPlayerType = playerType === "pitcher" ? "pitcher" : "hitter";
 
       // Validate minimumBid
       const parsedMinBid = Number(minimumBid) || 1;
@@ -310,11 +311,6 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Auction end time must be in the future" });
       }
 
-      // Determine player type from position
-      const normalizedPosition = (position || "UTIL").toUpperCase();
-      const pitcherPositions = ["P", "SP", "RP", "CL", "PITCHER"];
-      const playerType = pitcherPositions.includes(normalizedPosition) ? "pitcher" : "hitter";
-
       const parseNum = (val: any): number | null => {
         if (val === undefined || val === null || val === "") return null;
         const num = Number(val);
@@ -323,9 +319,8 @@ export async function registerRoutes(
 
       const agent = await storage.createFreeAgent({
         name: name.trim(),
-        position: normalizedPosition,
         team: team?.trim() || null,
-        playerType,
+        playerType: validPlayerType,
         minimumBid: parsedMinBid,
         minimumYears: Math.floor(parsedMinYears),
         auctionEndTime: endTime,
@@ -774,7 +769,7 @@ export async function registerRoutes(
       const headers = [
         "Player ID",
         "Player Name", 
-        "Position",
+        "Type",
         "Team",
         "Auction End Time",
         "Winning Bid ($/yr)",
@@ -788,7 +783,7 @@ export async function registerRoutes(
       const rows = results.map(agent => [
         agent.id,
         `"${agent.name.replace(/"/g, '""')}"`,
-        agent.position,
+        agent.playerType === "pitcher" ? "Pitcher" : "Hitter",
         agent.team ? `"${agent.team.replace(/"/g, '""')}"` : "",
         new Date(agent.auctionEndTime).toISOString(),
         agent.currentBid?.amount || 0,
@@ -829,7 +824,7 @@ export async function registerRoutes(
         "Team Name",
         "Player ID",
         "Player Name",
-        "Position",
+        "Type",
         "Team",
         "Contract Years",
         "Salary Per Year",
@@ -848,7 +843,7 @@ export async function registerRoutes(
             owner?.teamName ? `"${owner.teamName.replace(/"/g, '""')}"` : "",
             String(agent.id),
             `"${agent.name.replace(/"/g, '""')}"`,
-            agent.position,
+            agent.playerType === "pitcher" ? "Pitcher" : "Hitter",
             agent.team ? `"${agent.team.replace(/"/g, '""')}"` : "",
             String(agent.currentBid.years),
             String(agent.currentBid.amount),

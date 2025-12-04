@@ -121,7 +121,7 @@ export default function MyBids() {
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between gap-2">
                         <CardTitle className="text-lg">{agent.name}</CardTitle>
-                        <Badge variant="outline">{agent.position}</Badge>
+                        <Badge variant="outline">{agent.playerType === "pitcher" ? "Pitcher" : "Hitter"}</Badge>
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
