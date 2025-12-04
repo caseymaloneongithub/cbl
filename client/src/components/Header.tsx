@@ -11,9 +11,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Diamond, Users, Gavel, Trophy, Settings, LogOut, Menu } from "lucide-react";
+import { Diamond, Users, Gavel, Trophy, Settings, LogOut, Menu, UserCog, X } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { User } from "@shared/schema";
 
 const navLinks = [
   { href: "/", label: "Free Agents", icon: Users },
@@ -22,15 +24,72 @@ const navLinks = [
 ];
 
 export function Header() {
-  const { user, isAuthenticated, logout, isLoggingOut } = useAuth();
+  const { 
+    user, 
+    isAuthenticated, 
+    logout, 
+    isLoggingOut,
+    isImpersonating,
+    originalUser,
+    isSuperAdmin,
+    impersonate,
+    stopImpersonate,
+    isStartingImpersonation,
+    isStoppingImpersonation,
+  } = useAuth();
   const [location] = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const { data: allUsers } = useQuery<User[]>({
+    queryKey: ["/api/owners"],
+    enabled: isSuperAdmin || isImpersonating,
+  });
 
   const initials = user?.firstName && user?.lastName
     ? `${user.firstName[0]}${user.lastName[0]}`
     : user?.email?.[0]?.toUpperCase() || "?";
 
+  const handleImpersonate = async (userId: string) => {
+    try {
+      await impersonate(userId);
+    } catch (error) {
+      console.error("Impersonation failed:", error);
+    }
+  };
+
+  const handleStopImpersonate = async () => {
+    try {
+      await stopImpersonate();
+    } catch (error) {
+      console.error("Stop impersonation failed:", error);
+    }
+  };
+
   return (
+    <>
+      {isImpersonating && (
+        <div className="bg-amber-500 dark:bg-amber-600 text-white px-4 py-2">
+          <div className="mx-auto max-w-7xl flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <UserCog className="h-4 w-4" />
+              <span>
+                Viewing as: <strong>{user?.firstName} {user?.lastName}</strong> ({user?.teamName || user?.email})
+              </span>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="bg-white/20 border-white/40 text-white hover:bg-white/30"
+              onClick={handleStopImpersonate}
+              disabled={isStoppingImpersonation}
+              data-testid="button-stop-impersonate"
+            >
+              <X className="h-4 w-4 mr-1" />
+              {isStoppingImpersonation ? "Returning..." : "Exit View"}
+            </Button>
+          </div>
+        </div>
+      )}
     <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-14 items-center justify-between gap-4">
@@ -142,13 +201,47 @@ export function Header() {
                         <span className="text-xs text-muted-foreground">{user?.email}</span>
                       </div>
                     </div>
-                    {user?.isCommissioner && (
+                    {(user?.isCommissioner || user?.isSuperAdmin) && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <div className="px-2 py-1 flex flex-wrap gap-1">
+                          {user?.isCommissioner && (
+                            <Badge variant="secondary" className="text-xs">
+                              Commissioner
+                            </Badge>
+                          )}
+                          {user?.isSuperAdmin && (
+                            <Badge variant="default" className="text-xs">
+                              Super Admin
+                            </Badge>
+                          )}
+                        </div>
+                      </>
+                    )}
+                    {(isSuperAdmin || isImpersonating) && allUsers && allUsers.length > 0 && (
                       <>
                         <DropdownMenuSeparator />
                         <div className="px-2 py-1">
-                          <Badge variant="secondary" className="text-xs">
-                            Commissioner
-                          </Badge>
+                          <span className="text-xs text-muted-foreground font-medium">View as user:</span>
+                        </div>
+                        <div className="max-h-48 overflow-y-auto">
+                          {allUsers
+                            .filter(u => u.id !== (originalUser?.id || user?.id))
+                            .map((targetUser) => (
+                              <DropdownMenuItem
+                                key={targetUser.id}
+                                className="cursor-pointer text-sm"
+                                onClick={() => handleImpersonate(targetUser.id)}
+                                disabled={isStartingImpersonation}
+                                data-testid={`button-impersonate-${targetUser.id}`}
+                              >
+                                <UserCog className="mr-2 h-4 w-4" />
+                                {targetUser.firstName} {targetUser.lastName}
+                                <span className="ml-auto text-xs text-muted-foreground">
+                                  {targetUser.teamName || targetUser.email}
+                                </span>
+                              </DropdownMenuItem>
+                            ))}
                         </div>
                       </>
                     )}
@@ -176,5 +269,6 @@ export function Header() {
         </div>
       </div>
     </header>
+    </>
   );
 }

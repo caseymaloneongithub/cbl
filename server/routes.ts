@@ -43,11 +43,12 @@ export async function registerRoutes(
   // Owners routes
   app.get("/api/owners", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId!;
+      const userId = req.session.originalUserId || req.session.userId!;
       const user = await storage.getUser(userId);
       
-      if (!user?.isCommissioner) {
-        return res.status(403).json({ message: "Commissioner access required" });
+      // Allow commissioner or super admin access
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Commissioner or Super Admin access required" });
       }
 
       const owners = await storage.getAllUsers();

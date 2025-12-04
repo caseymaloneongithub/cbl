@@ -2,8 +2,21 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest, getQueryFn } from "@/lib/queryClient";
 import type { User } from "@shared/schema";
 
+type OriginalUser = {
+  id: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  isSuperAdmin: boolean;
+};
+
+type AuthUser = User & {
+  isImpersonating?: boolean;
+  originalUser?: OriginalUser | null;
+};
+
 export function useAuth() {
-  const { data: user, isLoading } = useQuery<User | null>({
+  const { data: user, isLoading } = useQuery<AuthUser | null>({
     queryKey: ["/api/auth/me"],
     queryFn: getQueryFn({ on401: "returnNull" }),
     retry: false,
@@ -36,10 +49,35 @@ export function useAuth() {
     },
   });
 
+  const impersonateMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const res = await apiRequest("POST", `/api/auth/impersonate/${userId}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.clear();
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+    },
+  });
+
+  const stopImpersonateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/auth/stop-impersonate");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.clear();
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+    },
+  });
+
   return {
     user,
     isLoading,
     isAuthenticated: !!user,
+    isImpersonating: user?.isImpersonating ?? false,
+    originalUser: user?.originalUser ?? null,
+    isSuperAdmin: user?.isSuperAdmin ?? false,
     login: loginMutation.mutateAsync,
     loginError: loginMutation.error,
     isLoggingIn: loginMutation.isPending,
@@ -47,5 +85,9 @@ export function useAuth() {
     isLoggingOut: logoutMutation.isPending,
     changePassword: changePasswordMutation.mutateAsync,
     isChangingPassword: changePasswordMutation.isPending,
+    impersonate: impersonateMutation.mutateAsync,
+    isStartingImpersonation: impersonateMutation.isPending,
+    stopImpersonate: stopImpersonateMutation.mutateAsync,
+    isStoppingImpersonation: stopImpersonateMutation.isPending,
   };
 }

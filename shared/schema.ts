@@ -24,7 +24,7 @@ export const sessions = pgTable(
   (table) => [index("IDX_session_expire").on(table.expire)],
 );
 
-// Users table - supports both owners and commissioners
+// Users table - supports owners, commissioners, and super admins
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   email: varchar("email").unique().notNull(),
@@ -33,6 +33,7 @@ export const users = pgTable("users", {
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
   isCommissioner: boolean("is_commissioner").default(false).notNull(),
+  isSuperAdmin: boolean("is_super_admin").default(false).notNull(),
   teamName: varchar("team_name"),
   budget: real("budget").default(260).notNull(),
   rosterLimit: integer("roster_limit"),  // Max players team can have (null = unlimited)

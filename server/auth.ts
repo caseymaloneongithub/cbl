@@ -7,6 +7,7 @@ import { storage } from "./storage";
 declare module "express-session" {
   interface SessionData {
     userId: string;
+    originalUserId?: string; // Set when super admin is impersonating another user
   }
 }
 
@@ -92,6 +93,7 @@ export async function setupAuth(app: Express) {
             lastName: user.lastName,
             teamName: user.teamName,
             isCommissioner: user.isCommissioner,
+            isSuperAdmin: user.isSuperAdmin,
             mustResetPassword: user.mustResetPassword,
           });
         });
@@ -124,6 +126,13 @@ export async function setupAuth(app: Express) {
         return res.status(401).json({ message: "User not found" });
       }
 
+      // Check if we're impersonating
+      const isImpersonating = !!req.session.originalUserId;
+      let originalUser = null;
+      if (isImpersonating) {
+        originalUser = await storage.getUser(req.session.originalUserId!);
+      }
+
       res.json({
         id: user.id,
         email: user.email,
@@ -133,10 +142,105 @@ export async function setupAuth(app: Express) {
         teamName: user.teamName,
         budget: user.budget,
         isCommissioner: user.isCommissioner,
+        isSuperAdmin: user.isSuperAdmin,
         mustResetPassword: user.mustResetPassword,
+        isImpersonating,
+        originalUser: originalUser ? {
+          id: originalUser.id,
+          email: originalUser.email,
+          firstName: originalUser.firstName,
+          lastName: originalUser.lastName,
+          isSuperAdmin: originalUser.isSuperAdmin,
+        } : null,
       });
     } catch (error) {
       console.error("Get user error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Super admin: Start impersonating another user
+  app.post("/api/auth/impersonate/:userId", isAuthenticated, async (req, res) => {
+    try {
+      const adminId = req.session.originalUserId || req.session.userId!;
+      const admin = await storage.getUser(adminId);
+      
+      if (!admin?.isSuperAdmin) {
+        return res.status(403).json({ message: "Super admin access required" });
+      }
+
+      const targetUserId = req.params.userId;
+      const targetUser = await storage.getUser(targetUserId);
+      
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Can't impersonate yourself
+      if (targetUserId === adminId) {
+        return res.status(400).json({ message: "Cannot impersonate yourself" });
+      }
+
+      // Store original admin ID and switch to target user
+      req.session.originalUserId = adminId;
+      req.session.userId = targetUserId;
+      
+      req.session.save((err) => {
+        if (err) {
+          return res.status(500).json({ message: "Session error" });
+        }
+        res.json({
+          message: "Now impersonating user",
+          user: {
+            id: targetUser.id,
+            email: targetUser.email,
+            firstName: targetUser.firstName,
+            lastName: targetUser.lastName,
+            teamName: targetUser.teamName,
+          }
+        });
+      });
+    } catch (error) {
+      console.error("Impersonate error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Super admin: Stop impersonating and return to own account
+  app.post("/api/auth/stop-impersonate", isAuthenticated, async (req, res) => {
+    try {
+      if (!req.session.originalUserId) {
+        return res.status(400).json({ message: "Not currently impersonating" });
+      }
+
+      const originalUserId = req.session.originalUserId;
+      const originalUser = await storage.getUser(originalUserId);
+      
+      if (!originalUser) {
+        return res.status(404).json({ message: "Original user not found" });
+      }
+
+      // Restore original admin session
+      req.session.userId = originalUserId;
+      delete req.session.originalUserId;
+      
+      req.session.save((err) => {
+        if (err) {
+          return res.status(500).json({ message: "Session error" });
+        }
+        res.json({
+          message: "Stopped impersonating",
+          user: {
+            id: originalUser.id,
+            email: originalUser.email,
+            firstName: originalUser.firstName,
+            lastName: originalUser.lastName,
+            isSuperAdmin: originalUser.isSuperAdmin,
+          }
+        });
+      });
+    } catch (error) {
+      console.error("Stop impersonate error:", error);
       res.status(500).json({ message: "Internal server error" });
     }
   });
