@@ -826,12 +826,13 @@ export default function Commissioner() {
                           />
                         </TableCell>
                         <TableCell className="text-center">
-                          {!owner.isCommissioner && (
+                          {user?.isSuperAdmin && !owner.isCommissioner && (
                             <Button
                               variant="ghost"
                               size="icon"
                               onClick={() => makeCommissioner.mutate(owner.id)}
                               title="Make Commissioner"
+                              data-testid={`button-make-commissioner-${owner.id}`}
                             >
                               <Crown className="h-4 w-4" />
                             </Button>
