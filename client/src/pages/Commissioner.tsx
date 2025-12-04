@@ -277,14 +277,35 @@ export default function Commissioner() {
     const lines = text.trim().split("\n");
     const headers = lines[0].toLowerCase().split(",").map(h => h.trim());
     
-    const nameIdx = headers.findIndex(h => h === "name" || h === "player");
-    const posIdx = headers.findIndex(h => h === "position" || h === "pos");
-    const teamIdx = headers.findIndex(h => h === "team");
-    const minBidIdx = headers.findIndex(h => h === "minimum_bid" || h === "min_bid" || h === "minbid" || h === "min");
-    const minYearsIdx = headers.findIndex(h => h === "minimum_years" || h === "min_years" || h === "minyears");
-    const endTimeIdx = headers.findIndex(h => h === "end" || h === "endtime" || h === "auction_end" || h === "end_time");
+    const parseCSVLine = (line: string): string[] => {
+      const result: string[] = [];
+      let current = "";
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === "," && !inQuotes) {
+          result.push(current.trim());
+          current = "";
+        } else {
+          current += char;
+        }
+      }
+      result.push(current.trim());
+      return result;
+    };
     
-    // Hitter stats columns
+    const nameIdx = headers.findIndex(h => h === "name" || h === "player");
+    const firstNameIdx = headers.findIndex(h => h === "firstname");
+    const lastNameIdx = headers.findIndex(h => h === "lastname");
+    const posIdx = headers.findIndex(h => h === "position" || h === "pos" || h === "h/p");
+    const teamIdx = headers.findIndex(h => h === "team" || h === "mlbteam");
+    const minBidIdx = headers.findIndex(h => h === "minimum_bid" || h === "min_bid" || h === "minbid" || h === "min" || h === "bidmindollars");
+    const minYearsIdx = headers.findIndex(h => h === "minimum_years" || h === "min_years" || h === "minyears" || h === "bidminyears");
+    const endTimeIdx = headers.findIndex(h => h === "end" || h === "endtime" || h === "auction_end" || h === "end_time" || h === "enddatetime");
+    
+    const abIdx = headers.findIndex(h => h === "ab" || h === "at_bats");
     const avgIdx = headers.findIndex(h => h === "avg" || h === "average" || h === "ba");
     const hrIdx = headers.findIndex(h => h === "hr" || h === "home_runs" || h === "homers");
     const rbiIdx = headers.findIndex(h => h === "rbi" || h === "rbis");
@@ -293,7 +314,6 @@ export default function Commissioner() {
     const opsIdx = headers.findIndex(h => h === "ops");
     const paIdx = headers.findIndex(h => h === "pa" || h === "plate_appearances");
     
-    // Pitcher stats columns
     const winsIdx = headers.findIndex(h => h === "wins" || h === "w");
     const lossesIdx = headers.findIndex(h => h === "losses" || h === "l");
     const eraIdx = headers.findIndex(h => h === "era");
@@ -301,10 +321,23 @@ export default function Commissioner() {
     const strikeoutsIdx = headers.findIndex(h => h === "strikeouts" || h === "k" || h === "so");
     const ipIdx = headers.findIndex(h => h === "ip" || h === "innings" || h === "innings_pitched");
 
-    if (nameIdx === -1 || posIdx === -1) {
+    const hasNameColumn = nameIdx !== -1;
+    const hasFirstLastName = firstNameIdx !== -1 && lastNameIdx !== -1;
+    const hasPosColumn = posIdx !== -1;
+
+    if (!hasNameColumn && !hasFirstLastName) {
       toast({
         title: "Invalid CSV",
-        description: "CSV must have 'name' and 'position' columns",
+        description: "CSV must have 'name' column OR 'firstName' and 'lastName' columns",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!hasPosColumn) {
+      toast({
+        title: "Invalid CSV",
+        description: "CSV must have 'position' or 'h/p' column",
         variant: "destructive",
       });
       return;
@@ -312,31 +345,57 @@ export default function Commissioner() {
 
     const parseNum = (val: string | undefined): number | undefined => {
       if (!val || val === "") return undefined;
-      const num = parseFloat(val);
+      const cleaned = val.replace(/,/g, "").replace(/"/g, "");
+      const num = parseFloat(cleaned);
       return isNaN(num) ? undefined : num;
+    };
+
+    const mapPosition = (pos: string): string => {
+      const lower = pos.toLowerCase().trim();
+      if (lower === "hitter") return "UTIL";
+      if (lower === "pitcher") return "P";
+      return pos.toUpperCase();
     };
 
     const players: ParsedPlayer[] = [];
     for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(",").map(v => v.trim());
-      if (values[nameIdx]) {
+      const values = parseCSVLine(lines[i]);
+      
+      let playerName = "";
+      if (hasNameColumn) {
+        playerName = values[nameIdx] || "";
+      } else if (hasFirstLastName) {
+        const firstName = values[firstNameIdx] || "";
+        const lastName = values[lastNameIdx] || "";
+        playerName = `${firstName} ${lastName}`.trim();
+      }
+      
+      if (playerName) {
         const minYearsVal = minYearsIdx !== -1 ? parseInt(values[minYearsIdx]) : 1;
+        const rawPos = values[posIdx] || "UTIL";
+        const position = mapPosition(rawPos);
+        
+        const minBidRaw = minBidIdx !== -1 ? values[minBidIdx] : "";
+        const minBidCleaned = minBidRaw.replace(/,/g, "").replace(/"/g, "");
+        const minBidVal = parseFloat(minBidCleaned) || 1;
+        
+        const abValue = parseNum(values[abIdx]);
+        const paValue = parseNum(values[paIdx]);
+        
         players.push({
-          name: values[nameIdx],
-          position: values[posIdx] || "UTIL",
+          name: playerName,
+          position: position,
           team: teamIdx !== -1 ? values[teamIdx] || "" : "",
-          minimumBid: minBidIdx !== -1 ? parseFloat(values[minBidIdx]) || 1 : 1,
+          minimumBid: minBidVal,
           minimumYears: isNaN(minYearsVal) || minYearsVal < 1 || minYearsVal > 5 ? 1 : minYearsVal,
           auctionEndTime: endTimeIdx !== -1 ? values[endTimeIdx] : "",
-          // Hitter stats
           avg: parseNum(values[avgIdx]),
           hr: parseNum(values[hrIdx]),
           rbi: parseNum(values[rbiIdx]),
           runs: parseNum(values[runsIdx]),
           sb: parseNum(values[sbIdx]),
           ops: parseNum(values[opsIdx]),
-          pa: parseNum(values[paIdx]),
-          // Pitcher stats
+          pa: paValue !== undefined ? paValue : abValue,
           wins: parseNum(values[winsIdx]),
           losses: parseNum(values[lossesIdx]),
           era: parseNum(values[eraIdx]),
@@ -1049,7 +1108,7 @@ export default function Commissioner() {
             Upload Free Agents
           </CardTitle>
           <CardDescription>
-            Upload a CSV file with player data. Required: name, position. Optional: team, minimum_bid, minimum_years, end_time
+            Upload a CSV file with player data. Supports formats: (name/firstName+lastName), (position/h/p), (team/mlbTeam), (minimum_bid/bidMinDollars), (minimum_years/bidMinYears), (end_time/endDateTime)
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
