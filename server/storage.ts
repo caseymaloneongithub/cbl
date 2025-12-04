@@ -4,6 +4,7 @@ import {
   freeAgents,
   bids,
   autoBids,
+  passwordResetTokens,
   type User,
   type UpsertUser,
   type LeagueSettings,
@@ -16,6 +17,7 @@ import {
   type InsertAutoBid,
   type FreeAgentWithBids,
   type BidWithUser,
+  type PasswordResetToken,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, lt, sql } from "drizzle-orm";
@@ -92,6 +94,12 @@ export interface IStorage {
     canBid: boolean;
     reason?: string;
   }>;
+  
+  // Password reset tokens
+  createPasswordResetToken(userId: string, token: string, expiresAt: Date): Promise<PasswordResetToken>;
+  getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined>;
+  markPasswordResetTokenUsed(id: number): Promise<void>;
+  deleteExpiredPasswordResetTokens(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -668,6 +676,37 @@ export class DatabaseStorage implements IStorage {
     }
     
     return { canBid: true };
+  }
+
+  // Password reset tokens
+  async createPasswordResetToken(userId: string, token: string, expiresAt: Date): Promise<PasswordResetToken> {
+    const [resetToken] = await db
+      .insert(passwordResetTokens)
+      .values({ userId, token, expiresAt })
+      .returning();
+    return resetToken;
+  }
+
+  async getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined> {
+    const [resetToken] = await db
+      .select()
+      .from(passwordResetTokens)
+      .where(eq(passwordResetTokens.token, token));
+    return resetToken;
+  }
+
+  async markPasswordResetTokenUsed(id: number): Promise<void> {
+    await db
+      .update(passwordResetTokens)
+      .set({ usedAt: new Date() })
+      .where(eq(passwordResetTokens.id, id));
+  }
+
+  async deleteExpiredPasswordResetTokens(): Promise<void> {
+    const now = new Date();
+    await db
+      .delete(passwordResetTokens)
+      .where(lt(passwordResetTokens.expiresAt, now));
   }
 }
 

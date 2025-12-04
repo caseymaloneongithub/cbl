@@ -9,6 +9,7 @@ import { PasswordResetDialog } from "@/components/PasswordResetDialog";
 import { useAuth } from "@/hooks/useAuth";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/Landing";
+import ResetPassword from "@/pages/ResetPassword";
 import Home from "@/pages/Home";
 import MyBids from "@/pages/MyBids";
 import Results from "@/pages/Results";
@@ -27,6 +28,7 @@ function Router() {
 
   return (
     <Switch>
+      <Route path="/reset-password" component={ResetPassword} />
       {!isAuthenticated ? (
         <Route path="/" component={Landing} />
       ) : (

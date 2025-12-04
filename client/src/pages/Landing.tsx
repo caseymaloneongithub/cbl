@@ -10,16 +10,53 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Diamond, Loader2, Mail } from "lucide-react";
+import { Diamond, Loader2, Mail, CheckCircle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 
 export default function Landing() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [isRequestingReset, setIsRequestingReset] = useState(false);
+  const [resetEmailSent, setResetEmailSent] = useState(false);
   const { login, isLoggingIn } = useAuth();
   const { toast } = useToast();
+
+  const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!resetEmail) {
+      toast({
+        title: "Error",
+        description: "Please enter your email address",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsRequestingReset(true);
+    try {
+      await apiRequest("POST", "/api/auth/request-password-reset", { email: resetEmail });
+      setResetEmailSent(true);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to send reset email",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRequestingReset(false);
+    }
+  };
+
+  const handleCloseForgotPassword = () => {
+    setShowForgotPassword(false);
+    setResetEmail("");
+    setResetEmailSent(false);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -112,30 +149,81 @@ export default function Landing() {
         </CardContent>
       </Card>
 
-      <Dialog open={showForgotPassword} onOpenChange={setShowForgotPassword}>
+      <Dialog open={showForgotPassword} onOpenChange={handleCloseForgotPassword}>
         <DialogContent>
           <DialogHeader>
             <div className="mx-auto rounded-full bg-primary/10 p-3 w-fit mb-2">
-              <Mail className="h-6 w-6 text-primary" />
+              {resetEmailSent ? (
+                <CheckCircle className="h-6 w-6 text-primary" />
+              ) : (
+                <Mail className="h-6 w-6 text-primary" />
+              )}
             </div>
-            <DialogTitle className="text-center">Password Reset</DialogTitle>
+            <DialogTitle className="text-center">
+              {resetEmailSent ? "Check Your Email" : "Password Reset"}
+            </DialogTitle>
             <DialogDescription className="text-center">
-              To reset your password, please contact your league commissioner.
+              {resetEmailSent 
+                ? "If an account exists with that email, we've sent you a password reset link."
+                : "Enter your email address and we'll send you a link to reset your password."
+              }
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 pt-4">
-            <p className="text-sm text-muted-foreground text-center">
-              Your commissioner can reset your password from the Commissioner dashboard. 
-              Once reset, you'll receive new login credentials.
-            </p>
-            <Button
-              className="w-full"
-              onClick={() => setShowForgotPassword(false)}
-              data-testid="button-close-forgot-password"
-            >
-              Got it
-            </Button>
-          </div>
+          
+          {resetEmailSent ? (
+            <div className="space-y-4 pt-4">
+              <p className="text-sm text-muted-foreground text-center">
+                The link will expire in 1 hour. If you don't see the email, check your spam folder.
+              </p>
+              <Button
+                className="w-full"
+                onClick={handleCloseForgotPassword}
+                data-testid="button-close-forgot-password"
+              >
+                Back to Login
+              </Button>
+            </div>
+          ) : (
+            <form onSubmit={handleForgotPasswordSubmit} className="space-y-4 pt-4">
+              <div className="space-y-2">
+                <Label htmlFor="reset-email">Email</Label>
+                <Input
+                  id="reset-email"
+                  type="email"
+                  placeholder="your@email.com"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  disabled={isRequestingReset}
+                  data-testid="input-reset-email"
+                />
+              </div>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={isRequestingReset}
+                data-testid="button-send-reset"
+              >
+                {isRequestingReset ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  "Send Reset Link"
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full"
+                onClick={handleCloseForgotPassword}
+                disabled={isRequestingReset}
+                data-testid="button-cancel-reset"
+              >
+                Cancel
+              </Button>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </div>

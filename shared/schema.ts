@@ -125,6 +125,23 @@ export const bidsRelations = relations(bids, ({ one }) => ({
   }),
 }));
 
+// Password reset tokens table
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  token: varchar("token").unique().notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const passwordResetTokensRelations = relations(passwordResetTokens, ({ one }) => ({
+  user: one(users, {
+    fields: [passwordResetTokens.userId],
+    references: [users.id],
+  }),
+}));
+
 // Auto-bids table - stores maximum bid settings per user per player
 export const autoBids = pgTable("auto_bids", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -178,6 +195,12 @@ export const insertAutoBidSchema = createInsertSchema(autoBids).omit({
   updatedAt: true,
 });
 
+export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTokens).omit({
+  id: true,
+  createdAt: true,
+  usedAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -194,6 +217,9 @@ export type InsertBid = z.infer<typeof insertBidSchema>;
 
 export type AutoBid = typeof autoBids.$inferSelect;
 export type InsertAutoBid = z.infer<typeof insertAutoBidSchema>;
+
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
+export type InsertPasswordResetToken = z.infer<typeof insertPasswordResetTokenSchema>;
 
 // Extended types for frontend use
 export type FreeAgentWithBids = FreeAgent & {
