@@ -42,7 +42,7 @@ import {
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { LeagueSettings, User } from "@shared/schema";
-import { Upload, Settings, Users, Loader2, FileSpreadsheet, Trash2, Crown, Download, DollarSign } from "lucide-react";
+import { Upload, Settings, Users, Loader2, FileSpreadsheet, Trash2, Crown, Download, DollarSign, Plus, UserPlus } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 
 const settingsSchema = z.object({
@@ -63,7 +63,17 @@ const oldSettingsSchema = z.object({
   yearFactor5: z.number().min(0.1).max(10),
 });
 
+const addPlayerSchema = z.object({
+  name: z.string().min(1, "Player name is required"),
+  position: z.string().min(1, "Position is required"),
+  team: z.string().optional(),
+  minimumBid: z.number().min(1, "Minimum bid must be at least $1"),
+  minimumYears: z.number().min(1).max(5, "Minimum years must be 1-5"),
+  auctionEndTime: z.string().min(1, "Auction end time is required"),
+});
+
 type SettingsFormData = z.infer<typeof settingsSchema>;
+type AddPlayerFormData = z.infer<typeof addPlayerSchema>;
 
 interface ParsedPlayer {
   name: string;
@@ -208,6 +218,54 @@ export default function Commissioner() {
         return;
       }
       toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const addPlayerForm = useForm<AddPlayerFormData>({
+    resolver: zodResolver(addPlayerSchema),
+    defaultValues: {
+      name: "",
+      position: "UTIL",
+      team: "",
+      minimumBid: 1,
+      minimumYears: 1,
+      auctionEndTime: "",
+    },
+  });
+
+  const addPlayer = useMutation({
+    mutationFn: async (data: AddPlayerFormData) => {
+      await apiRequest("POST", "/api/free-agents", {
+        name: data.name,
+        position: data.position,
+        team: data.team || null,
+        minimumBid: data.minimumBid,
+        minimumYears: data.minimumYears,
+        auctionEndTime: data.auctionEndTime,
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Player Added",
+        description: "Free agent has been added to the auction.",
+      });
+      addPlayerForm.reset();
+      queryClient.invalidateQueries({ queryKey: ["/api/free-agents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+    },
+    onError: (error: Error) => {
+      if (isUnauthorizedError(error)) {
+        toast({
+          title: "Unauthorized",
+          description: "You are logged out. Logging in again...",
+          variant: "destructive",
+        });
+        setTimeout(() => {
+          window.location.href = "/";
+        }, 500);
+        return;
+      }
+      toast({ title: "Add Failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -1100,12 +1158,141 @@ export default function Commissioner() {
         </CardContent>
       </Card>
 
+      {/* Add Single Free Agent */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <UserPlus className="h-5 w-5" />
+            Add Single Free Agent
+          </CardTitle>
+          <CardDescription>
+            Quickly add an individual player to the auction
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Form {...addPlayerForm}>
+            <form onSubmit={addPlayerForm.handleSubmit((data) => addPlayer.mutate(data))} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <FormField
+                  control={addPlayerForm.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Player Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Mike Trout" {...field} data-testid="input-add-player-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={addPlayerForm.control}
+                  name="position"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Position</FormLabel>
+                      <FormControl>
+                        <Input placeholder="CF, SP, 1B, etc." {...field} data-testid="input-add-player-position" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={addPlayerForm.control}
+                  name="team"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Team (optional)</FormLabel>
+                      <FormControl>
+                        <Input placeholder="LAA" {...field} data-testid="input-add-player-team" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={addPlayerForm.control}
+                  name="minimumBid"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Minimum Bid ($)</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="number" 
+                          min="1" 
+                          {...field} 
+                          onChange={(e) => field.onChange(parseFloat(e.target.value) || 1)}
+                          data-testid="input-add-player-minbid" 
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={addPlayerForm.control}
+                  name="minimumYears"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Minimum Years</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="number" 
+                          min="1" 
+                          max="5" 
+                          {...field} 
+                          onChange={(e) => field.onChange(parseInt(e.target.value) || 1)}
+                          data-testid="input-add-player-minyears" 
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={addPlayerForm.control}
+                  name="auctionEndTime"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Auction End Time</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="datetime-local" 
+                          {...field} 
+                          data-testid="input-add-player-endtime" 
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <Button type="submit" disabled={addPlayer.isPending} data-testid="button-add-player">
+                {addPlayer.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Adding...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Free Agent
+                  </>
+                )}
+              </Button>
+            </form>
+          </Form>
+        </CardContent>
+      </Card>
+
       {/* CSV Upload Section */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5" />
-            Upload Free Agents
+            Upload Free Agents (CSV)
           </CardTitle>
           <CardDescription>
             Upload a CSV file with player data. Supports formats: (name/firstName+lastName), (position/h/p), (team/mlbTeam), (minimum_bid/bidMinDollars), (minimum_years/bidMinYears), (end_time/endDateTime)
