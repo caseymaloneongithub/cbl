@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { Header } from "@/components/Header";
+import { PasswordResetDialog } from "@/components/PasswordResetDialog";
 import { useAuth } from "@/hooks/useAuth";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/Landing";
@@ -48,6 +49,7 @@ function AppContent() {
     <div className="min-h-screen bg-background">
       {(isAuthenticated || isLoading) && <Header />}
       <Router />
+      <PasswordResetDialog />
     </div>
   );
 }
