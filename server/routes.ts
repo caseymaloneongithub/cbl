@@ -61,17 +61,23 @@ export async function registerRoutes(
 
   app.patch("/api/owners/:id/commissioner", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId!;
+      const userId = req.session.originalUserId || req.session.userId!;
       const user = await storage.getUser(userId);
       
-      if (!user?.isCommissioner) {
-        return res.status(403).json({ message: "Commissioner access required" });
+      if (!user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Super Admin access required" });
       }
 
       const { id } = req.params;
       const { isCommissioner } = req.body;
-      const updatedUser = await storage.updateUserCommissioner(id, isCommissioner);
-      res.json(updatedUser);
+      
+      if (isCommissioner) {
+        const updatedUser = await storage.setSoleCommissioner(id);
+        res.json(updatedUser);
+      } else {
+        const updatedUser = await storage.setSoleCommissioner(null);
+        res.json(updatedUser);
+      }
     } catch (error) {
       console.error("Error updating commissioner:", error);
       res.status(500).json({ message: "Failed to update commissioner status" });
