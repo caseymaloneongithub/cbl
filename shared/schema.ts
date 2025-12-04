@@ -33,6 +33,7 @@ export const users = pgTable("users", {
   profileImageUrl: varchar("profile_image_url"),
   isCommissioner: boolean("is_commissioner").default(false).notNull(),
   teamName: varchar("team_name"),
+  budget: real("budget").default(260).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -50,6 +51,8 @@ export const leagueSettings = pgTable("league_settings", {
   yearFactor3: real("year_factor_3").default(2.5).notNull(),
   yearFactor4: real("year_factor_4").default(3.1).notNull(),
   yearFactor5: real("year_factor_5").default(3.6).notNull(),
+  defaultBudget: real("default_budget").default(260).notNull(),
+  enforceBudget: boolean("enforce_budget").default(true).notNull(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 

@@ -42,9 +42,20 @@ import {
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { LeagueSettings, User } from "@shared/schema";
-import { Upload, Settings, Users, Loader2, FileSpreadsheet, Trash2, Crown } from "lucide-react";
+import { Upload, Settings, Users, Loader2, FileSpreadsheet, Trash2, Crown, Download, DollarSign } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 
 const settingsSchema = z.object({
+  yearFactor1: z.number().min(0.1).max(10),
+  yearFactor2: z.number().min(0.1).max(10),
+  yearFactor3: z.number().min(0.1).max(10),
+  yearFactor4: z.number().min(0.1).max(10),
+  yearFactor5: z.number().min(0.1).max(10),
+  defaultBudget: z.number().min(1).max(10000),
+  enforceBudget: z.boolean(),
+});
+
+const oldSettingsSchema = z.object({
   yearFactor1: z.number().min(0.1).max(10),
   yearFactor2: z.number().min(0.1).max(10),
   yearFactor3: z.number().min(0.1).max(10),
@@ -66,6 +77,8 @@ export default function Commissioner() {
   const { toast } = useToast();
   const [parsedPlayers, setParsedPlayers] = useState<ParsedPlayer[]>([]);
   const [dragActive, setDragActive] = useState(false);
+  const [exportingResults, setExportingResults] = useState(false);
+  const [exportingRosters, setExportingRosters] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -98,6 +111,8 @@ export default function Commissioner() {
       yearFactor3: 2.5,
       yearFactor4: 3.1,
       yearFactor5: 3.6,
+      defaultBudget: 260,
+      enforceBudget: true,
     },
   });
 
@@ -109,6 +124,8 @@ export default function Commissioner() {
         yearFactor3: settings.yearFactor3,
         yearFactor4: settings.yearFactor4,
         yearFactor5: settings.yearFactor5,
+        defaultBudget: settings.defaultBudget,
+        enforceBudget: settings.enforceBudget,
       });
     }
   }, [settings, form]);
@@ -251,6 +268,78 @@ export default function Commissioner() {
     }
   }, [parseCSV]);
 
+  const handleExportResults = async () => {
+    setExportingResults(true);
+    try {
+      const response = await fetch("/api/exports/auction-results.csv", {
+        credentials: "include",
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to export");
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "auction-results.csv";
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      toast({
+        title: "Export Complete",
+        description: "Auction results have been downloaded.",
+      });
+    } catch (error) {
+      toast({
+        title: "Export Failed",
+        description: "Could not export auction results.",
+        variant: "destructive",
+      });
+    } finally {
+      setExportingResults(false);
+    }
+  };
+
+  const handleExportRosters = async () => {
+    setExportingRosters(true);
+    try {
+      const response = await fetch("/api/exports/final-rosters.csv", {
+        credentials: "include",
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to export");
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "final-rosters.csv";
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      toast({
+        title: "Export Complete",
+        description: "Final rosters have been downloaded.",
+      });
+    } catch (error) {
+      toast({
+        title: "Export Failed",
+        description: "Could not export final rosters.",
+        variant: "destructive",
+      });
+    } finally {
+      setExportingRosters(false);
+    }
+  };
+
   if (authLoading) {
     return (
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -339,6 +428,61 @@ export default function Commissioner() {
                   <FormDescription>
                     Total Value = Annual Salary × Year Factor
                   </FormDescription>
+                  
+                  <Separator className="my-4" />
+                  
+                  <div className="space-y-4">
+                    <h4 className="font-medium flex items-center gap-2">
+                      <DollarSign className="h-4 w-4" />
+                      Budget Settings
+                    </h4>
+                    
+                    <FormField
+                      control={form.control}
+                      name="defaultBudget"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Default Budget ($)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              step="1"
+                              {...field}
+                              onChange={(e) => field.onChange(parseFloat(e.target.value) || 260)}
+                              data-testid="input-default-budget"
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Starting budget for all team owners
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <FormField
+                      control={form.control}
+                      name="enforceBudget"
+                      render={({ field }) => (
+                        <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                          <div className="space-y-0.5">
+                            <FormLabel>Enforce Budget Limits</FormLabel>
+                            <FormDescription>
+                              Prevent bids that exceed available budget
+                            </FormDescription>
+                          </div>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                              data-testid="switch-enforce-budget"
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  
                   <Button
                     type="submit"
                     className="w-full"
@@ -422,6 +566,54 @@ export default function Commissioner() {
       </div>
 
       <Separator className="my-8" />
+
+      {/* Data Export Section */}
+      <Card className="mb-8">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Download className="h-5 w-5" />
+            Data Export
+          </CardTitle>
+          <CardDescription>
+            Export auction data as CSV files for reporting and analysis
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Button
+              variant="outline"
+              className="justify-start"
+              onClick={handleExportResults}
+              disabled={exportingResults}
+              data-testid="button-export-results"
+            >
+              {exportingResults ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+              )}
+              Export Auction Results
+            </Button>
+            <Button
+              variant="outline"
+              className="justify-start"
+              onClick={handleExportRosters}
+              disabled={exportingRosters}
+              data-testid="button-export-rosters"
+            >
+              {exportingRosters ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+              )}
+              Export Final Rosters
+            </Button>
+          </div>
+          <p className="text-sm text-muted-foreground mt-4">
+            Exports include only completed auctions with winning bids.
+          </p>
+        </CardContent>
+      </Card>
 
       {/* CSV Upload Section */}
       <Card>

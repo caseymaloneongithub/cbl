@@ -2,7 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Users, Gavel, Trophy, Clock } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { Users, Gavel, Trophy, Clock, DollarSign } from "lucide-react";
 import type { FreeAgentWithBids, UserWithStats } from "@shared/schema";
 import { FreeAgentsTable } from "@/components/FreeAgentsTable";
 
@@ -20,6 +21,15 @@ export default function Home() {
     endingSoon: number;
   }>({
     queryKey: ["/api/stats"],
+  });
+
+  const { data: budget, isLoading: loadingBudget } = useQuery<{
+    budget: number;
+    spent: number;
+    committed: number;
+    available: number;
+  }>({
+    queryKey: ["/api/budget"],
   });
 
   const activeAgents = freeAgents?.filter(a => a.isActive) || [];
@@ -110,6 +120,62 @@ export default function Home() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Budget Summary */}
+      <Card className="mb-8">
+        <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+          <CardTitle className="flex items-center gap-2">
+            <DollarSign className="h-5 w-5" />
+            Budget
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loadingBudget ? (
+            <div className="space-y-3">
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-8 w-full" />
+            </div>
+          ) : budget ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Spent</div>
+                  <div className="text-lg font-bold font-mono" data-testid="text-budget-spent">
+                    ${Math.floor(budget.spent)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Committed</div>
+                  <div className="text-lg font-bold font-mono" data-testid="text-budget-committed">
+                    ${Math.floor(budget.committed)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Available</div>
+                  <div 
+                    className={`text-lg font-bold font-mono ${budget.available < 20 ? 'text-destructive' : ''}`}
+                    data-testid="text-budget-available"
+                  >
+                    ${Math.floor(budget.available)}
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Budget Usage</span>
+                  <span>${Math.floor(budget.spent + budget.committed)} / ${budget.budget}</span>
+                </div>
+                <Progress 
+                  value={((budget.spent + budget.committed) / budget.budget) * 100} 
+                  className="h-2"
+                />
+              </div>
+            </div>
+          ) : (
+            <p className="text-muted-foreground">Budget information unavailable</p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Free Agents Table */}
       <div>

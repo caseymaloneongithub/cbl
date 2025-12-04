@@ -199,6 +199,24 @@ export async function registerRoutes(
         }
       }
 
+      // Check budget if enforcement is enabled
+      if (settings.enforceBudget) {
+        const budgetInfo = await storage.getUserBudgetInfo(userId);
+        
+        // Calculate available budget for this bid
+        // If user is already high bidder on this auction, that amount is freed up
+        let availableForThisBid = budgetInfo.available;
+        if (currentHighBid?.userId === userId) {
+          availableForThisBid += currentHighBid.totalValue;
+        }
+        
+        if (totalValue > availableForThisBid) {
+          return res.status(400).json({ 
+            message: `Bid exceeds your available budget. Available: $${Math.floor(availableForThisBid)}, Bid total: $${Math.ceil(totalValue)}` 
+          });
+        }
+      }
+
       const bid = await storage.createBid({
         freeAgentId: agentId,
         userId,
@@ -351,6 +369,175 @@ export async function registerRoutes(
     }
   });
 
+  // Budget
+  app.get("/api/budget", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const budgetInfo = await storage.getUserBudgetInfo(userId);
+      res.json(budgetInfo);
+    } catch (error) {
+      console.error("Error fetching budget:", error);
+      res.status(500).json({ message: "Failed to fetch budget" });
+    }
+  });
+
+  // Commissioner: Update user budget
+  app.patch("/api/users/:userId/budget", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminId = req.user.claims.sub;
+      const admin = await storage.getUser(adminId);
+      
+      if (!admin?.isCommissioner) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const { userId } = req.params;
+      const { budget } = req.body;
+
+      if (typeof budget !== "number" || budget < 0) {
+        return res.status(400).json({ message: "Invalid budget value" });
+      }
+
+      const updated = await storage.updateUserBudget(userId, budget);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating user budget:", error);
+      res.status(500).json({ message: "Failed to update budget" });
+    }
+  });
+
+  // Commissioner: Reset all budgets
+  app.post("/api/users/reset-budgets", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminId = req.user.claims.sub;
+      const admin = await storage.getUser(adminId);
+      
+      if (!admin?.isCommissioner) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const settings = await storage.getSettings();
+      await storage.resetAllBudgets(settings.defaultBudget);
+      res.json({ success: true, budget: settings.defaultBudget });
+    } catch (error) {
+      console.error("Error resetting budgets:", error);
+      res.status(500).json({ message: "Failed to reset budgets" });
+    }
+  });
+
+  // CSV Export - Auction Results
+  app.get("/api/exports/auction-results.csv", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isCommissioner) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const results = await storage.getClosedFreeAgents();
+      
+      const headers = [
+        "Player ID",
+        "Player Name", 
+        "Position",
+        "Team",
+        "Auction End Time",
+        "Winning Bid ($/yr)",
+        "Contract Years",
+        "Total Contract Value",
+        "Bid Count",
+        "Winner Name",
+        "Winner Email"
+      ];
+
+      const rows = results.map(agent => [
+        agent.id,
+        `"${agent.name.replace(/"/g, '""')}"`,
+        agent.position,
+        agent.team ? `"${agent.team.replace(/"/g, '""')}"` : "",
+        new Date(agent.auctionEndTime).toISOString(),
+        agent.currentBid?.amount || 0,
+        agent.currentBid?.years || 0,
+        agent.currentBid?.totalValue || 0,
+        agent.bidCount,
+        agent.highBidder ? `"${agent.highBidder.firstName || ''} ${agent.highBidder.lastName || ''}".trim()` : "",
+        agent.highBidder?.email ? `"${agent.highBidder.email}"` : ""
+      ]);
+
+      const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", "attachment; filename=auction-results.csv");
+      res.send(csv);
+    } catch (error) {
+      console.error("Error exporting auction results:", error);
+      res.status(500).json({ message: "Failed to export auction results" });
+    }
+  });
+
+  // CSV Export - Final Rosters by Owner
+  app.get("/api/exports/final-rosters.csv", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isCommissioner) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const results = await storage.getClosedFreeAgents();
+      const allUsers = await storage.getAllUsers();
+      
+      const headers = [
+        "Owner Name",
+        "Owner Email",
+        "Team Name",
+        "Player ID",
+        "Player Name",
+        "Position",
+        "Team",
+        "Contract Years",
+        "Salary Per Year",
+        "Total Contract Value",
+        "Auction End Time"
+      ];
+
+      const rows: string[][] = [];
+      
+      for (const agent of results) {
+        if (agent.highBidder && agent.currentBid) {
+          const owner = allUsers.find(u => u.id === agent.currentBid?.userId);
+          rows.push([
+            `"${(owner?.firstName || '') + ' ' + (owner?.lastName || '')}".trim()`,
+            owner?.email ? `"${owner.email}"` : "",
+            owner?.teamName ? `"${owner.teamName.replace(/"/g, '""')}"` : "",
+            String(agent.id),
+            `"${agent.name.replace(/"/g, '""')}"`,
+            agent.position,
+            agent.team ? `"${agent.team.replace(/"/g, '""')}"` : "",
+            String(agent.currentBid.years),
+            String(agent.currentBid.amount),
+            String(agent.currentBid.totalValue),
+            new Date(agent.auctionEndTime).toISOString()
+          ]);
+        }
+      }
+
+      // Sort by owner name
+      rows.sort((a, b) => a[0].localeCompare(b[0]));
+
+      const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", "attachment; filename=final-rosters.csv");
+      res.send(csv);
+    } catch (error) {
+      console.error("Error exporting final rosters:", error);
+      res.status(500).json({ message: "Failed to export final rosters" });
+    }
+  });
+
   return httpServer;
 }
 
@@ -380,6 +567,22 @@ async function processAutoBids(
     if (maxTotalValue >= requiredTotalValue) {
       const bidAmount = Math.ceil(requiredTotalValue / factor);
       const bidTotalValue = bidAmount * factor;
+
+      // Check budget if enforcement is enabled
+      if (settings.enforceBudget) {
+        try {
+          const budgetInfo = await storage.getUserBudgetInfo(autoBid.userId);
+          
+          // For auto-bids, check if user has enough available budget
+          if (bidTotalValue > budgetInfo.available) {
+            // Skip this auto-bid, user doesn't have enough budget
+            continue;
+          }
+        } catch (error) {
+          console.error("Error checking budget for auto-bid:", error);
+          continue;
+        }
+      }
 
       await storage.createBid({
         freeAgentId: agentId,

@@ -367,6 +367,64 @@ export class DatabaseStorage implements IStorage {
       endingSoon: Number(endingSoon[0]?.count || 0),
     };
   }
+
+  // Budget management
+  async getUserBudgetInfo(userId: string): Promise<{
+    budget: number;
+    spent: number;
+    committed: number;
+    available: number;
+  }> {
+    const user = await this.getUser(userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    const allAgents = await this.getAllFreeAgents();
+    const now = new Date();
+    
+    // Calculate spent (won auctions)
+    let spent = 0;
+    const closedAgents = allAgents.filter((a: FreeAgentWithBids) => new Date(a.auctionEndTime) <= now);
+    for (const agent of closedAgents) {
+      if (agent.highBidder?.id === userId && agent.currentBid) {
+        spent += agent.currentBid.totalValue;
+      }
+    }
+    
+    // Calculate committed (current high bids on open auctions)
+    let committed = 0;
+    const openAgents = allAgents.filter((a: FreeAgentWithBids) => new Date(a.auctionEndTime) > now);
+    for (const agent of openAgents) {
+      if (agent.highBidder?.id === userId && agent.currentBid) {
+        committed += agent.currentBid.totalValue;
+      }
+    }
+    
+    const available = user.budget - spent - committed;
+    
+    return {
+      budget: user.budget,
+      spent,
+      committed,
+      available,
+    };
+  }
+
+  async updateUserBudget(userId: string, budget: number): Promise<User> {
+    const [updated] = await db
+      .update(users)
+      .set({ budget, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+    return updated;
+  }
+
+  async resetAllBudgets(amount: number): Promise<void> {
+    await db
+      .update(users)
+      .set({ budget: amount, updatedAt: new Date() });
+  }
 }
 
 export const storage = new DatabaseStorage();
