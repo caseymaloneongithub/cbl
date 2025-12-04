@@ -210,6 +210,17 @@ Limit Tracking:
 - UI shows amber banner at top when impersonating with "Viewing as:" and "Exit View" button
 - User dropdown shows "Super Admin" badge and "View as user:" section with user selection
 
+### Commissioner Role Management
+- **Only super admin can assign commissioner status** - The "Make Commissioner" button is only visible to super admins
+- **Only one commissioner allowed at a time** - When assigning a new commissioner, the previous one is automatically removed
+- Uses transactional database operation (`setSoleCommissioner`) for atomic updates:
+  1. Validates target user exists
+  2. Clears all existing commissioners
+  3. Sets the new commissioner
+- API endpoint: `PATCH /api/owners/:id/commissioner` (super admin only)
+- Respects `originalUserId` during impersonation to prevent privilege escalation
+- Super admin can access the Commissioner dashboard page but commissioner-specific actions (like uploading players) are still commissioner-only
+
 ### Password Reset Flow
 - Users with `mustResetPassword=true` are shown a blocking dialog on login
 - Dialog requires setting a new password (minimum 6 characters)
