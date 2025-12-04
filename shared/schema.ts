@@ -1,18 +1,185 @@
-import { sql } from "drizzle-orm";
-import { pgTable, text, varchar } from "drizzle-orm/pg-core";
+import { sql, relations } from "drizzle-orm";
+import {
+  pgTable,
+  text,
+  varchar,
+  integer,
+  boolean,
+  timestamp,
+  real,
+  index,
+  jsonb,
+} from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// Session storage table for Replit Auth
+export const sessions = pgTable(
+  "sessions",
+  {
+    sid: varchar("sid").primaryKey(),
+    sess: jsonb("sess").notNull(),
+    expire: timestamp("expire").notNull(),
+  },
+  (table) => [index("IDX_session_expire").on(table.expire)],
+);
+
+// Users table - supports both owners and commissioners
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
+  email: varchar("email").unique(),
+  firstName: varchar("first_name"),
+  lastName: varchar("last_name"),
+  profileImageUrl: varchar("profile_image_url"),
+  isCommissioner: boolean("is_commissioner").default(false).notNull(),
+  teamName: varchar("team_name"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
+export const usersRelations = relations(users, ({ many }) => ({
+  bids: many(bids),
+  autoBids: many(autoBids),
+}));
+
+// League settings table - stores year multiplier factors
+export const leagueSettings = pgTable("league_settings", {
+  id: integer("id").primaryKey().default(1),
+  yearFactor1: real("year_factor_1").default(1.0).notNull(),
+  yearFactor2: real("year_factor_2").default(1.8).notNull(),
+  yearFactor3: real("year_factor_3").default(2.5).notNull(),
+  yearFactor4: real("year_factor_4").default(3.1).notNull(),
+  yearFactor5: real("year_factor_5").default(3.6).notNull(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-export type InsertUser = z.infer<typeof insertUserSchema>;
+// Free agents table - players available for bidding
+export const freeAgents = pgTable("free_agents", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  name: varchar("name", { length: 255 }).notNull(),
+  position: varchar("position", { length: 50 }).notNull(),
+  team: varchar("team", { length: 100 }),
+  auctionEndTime: timestamp("auction_end_time").notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  winnerId: varchar("winner_id").references(() => users.id),
+  winningBidId: integer("winning_bid_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const freeAgentsRelations = relations(freeAgents, ({ one, many }) => ({
+  winner: one(users, {
+    fields: [freeAgents.winnerId],
+    references: [users.id],
+  }),
+  bids: many(bids),
+  autoBids: many(autoBids),
+}));
+
+// Bids table - all bids placed on free agents
+export const bids = pgTable("bids", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  freeAgentId: integer("free_agent_id").references(() => freeAgents.id).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  amount: real("amount").notNull(),
+  years: integer("years").notNull(),
+  totalValue: real("total_value").notNull(),
+  isAutoBid: boolean("is_auto_bid").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const bidsRelations = relations(bids, ({ one }) => ({
+  freeAgent: one(freeAgents, {
+    fields: [bids.freeAgentId],
+    references: [freeAgents.id],
+  }),
+  user: one(users, {
+    fields: [bids.userId],
+    references: [users.id],
+  }),
+}));
+
+// Auto-bids table - stores maximum bid settings per user per player
+export const autoBids = pgTable("auto_bids", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  freeAgentId: integer("free_agent_id").references(() => freeAgents.id).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  maxAmount: real("max_amount").notNull(),
+  years: integer("years").notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const autoBidsRelations = relations(autoBids, ({ one }) => ({
+  freeAgent: one(freeAgents, {
+    fields: [autoBids.freeAgentId],
+    references: [freeAgents.id],
+  }),
+  user: one(users, {
+    fields: [autoBids.userId],
+    references: [users.id],
+  }),
+}));
+
+// Insert schemas
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertLeagueSettingsSchema = createInsertSchema(leagueSettings).omit({
+  id: true,
+  updatedAt: true,
+});
+
+export const insertFreeAgentSchema = createInsertSchema(freeAgents).omit({
+  id: true,
+  winnerId: true,
+  winningBidId: true,
+  createdAt: true,
+});
+
+export const insertBidSchema = createInsertSchema(bids).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertAutoBidSchema = createInsertSchema(autoBids).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Types
+export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
+export type InsertUser = z.infer<typeof insertUserSchema>;
+
+export type LeagueSettings = typeof leagueSettings.$inferSelect;
+export type InsertLeagueSettings = z.infer<typeof insertLeagueSettingsSchema>;
+
+export type FreeAgent = typeof freeAgents.$inferSelect;
+export type InsertFreeAgent = z.infer<typeof insertFreeAgentSchema>;
+
+export type Bid = typeof bids.$inferSelect;
+export type InsertBid = z.infer<typeof insertBidSchema>;
+
+export type AutoBid = typeof autoBids.$inferSelect;
+export type InsertAutoBid = z.infer<typeof insertAutoBidSchema>;
+
+// Extended types for frontend use
+export type FreeAgentWithBids = FreeAgent & {
+  currentBid: Bid | null;
+  highBidder: User | null;
+  bidCount: number;
+};
+
+export type BidWithUser = Bid & {
+  user: User;
+};
+
+export type UserWithStats = User & {
+  activeBids: number;
+  wonPlayers: number;
+};
