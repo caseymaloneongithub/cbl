@@ -62,6 +62,8 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange }: AutoBidDialogPr
     ? [settings.yearFactor1, settings.yearFactor2, settings.yearFactor3, settings.yearFactor4, settings.yearFactor5]
     : [1, 1.25, 1.33, 1.43, 1.55];
 
+  const playerMinimumYears = freeAgent?.minimumYears || 1;
+
   const form = useForm<AutoBidFormData>({
     resolver: zodResolver(autoBidSchema),
     defaultValues: {
@@ -73,21 +75,22 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange }: AutoBidDialogPr
 
   useEffect(() => {
     if (open && existingAutoBid) {
+      const validYears = Math.max(existingAutoBid.years, playerMinimumYears);
       form.reset({
         maxAmount: existingAutoBid.maxAmount,
-        years: existingAutoBid.years,
+        years: validYears,
         isActive: existingAutoBid.isActive,
       });
-      setSelectedYears(existingAutoBid.years);
+      setSelectedYears(validYears);
     } else if (open) {
       form.reset({
         maxAmount: 100,
-        years: 1,
+        years: playerMinimumYears,
         isActive: true,
       });
-      setSelectedYears(1);
+      setSelectedYears(playerMinimumYears);
     }
-  }, [open, existingAutoBid, form]);
+  }, [open, existingAutoBid, playerMinimumYears, form]);
 
   const watchMaxAmount = form.watch("maxAmount");
   const watchIsActive = form.watch("isActive");
@@ -200,6 +203,11 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange }: AutoBidDialogPr
                   {/* Year Selection */}
                   <div>
                     <FormLabel>Preferred Contract Length</FormLabel>
+                    {playerMinimumYears > 1 && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        This player requires at least a {playerMinimumYears}-year contract
+                      </p>
+                    )}
                     <div className="flex gap-2 mt-2">
                       {[1, 2, 3, 4, 5].map((year) => (
                         <Button
@@ -211,6 +219,7 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange }: AutoBidDialogPr
                             setSelectedYears(year);
                             form.setValue("years", year);
                           }}
+                          disabled={year < playerMinimumYears}
                           data-testid={`button-auto-year-${year}`}
                         >
                           {year}yr

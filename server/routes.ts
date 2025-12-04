@@ -147,11 +147,23 @@ export async function registerRoutes(
           }
         }
         
+        // Validate minimumYears: must be a valid number 1-5
+        let minimumYears = 1;
+        if (p.minimumYears !== undefined && p.minimumYears !== null && p.minimumYears !== "") {
+          const parsedYears = Number(p.minimumYears);
+          if (isNaN(parsedYears) || parsedYears < 1 || parsedYears > 5) {
+            invalidPlayers.push(`Row ${index + 2} (${name || "unknown"}): Invalid minimum years "${p.minimumYears}" - must be 1-5`);
+          } else {
+            minimumYears = Math.floor(parsedYears);
+          }
+        }
+        
         return {
           name: name || `Unknown Player ${index}`,
           position: p.position || "UTIL",
           team: p.team || null,
           minimumBid,
+          minimumYears,
           auctionEndTime: p.auctionEndTime ? new Date(p.auctionEndTime) : defaultEndTime,
           isActive: true,
         };
@@ -200,12 +212,22 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Cannot relist - player has existing bids" });
       }
 
-      const { minimumBid, auctionEndTime } = req.body;
+      const { minimumBid, minimumYears, auctionEndTime } = req.body;
       
       // Validate minimumBid is a valid number >= 1
       const parsedMinBid = Number(minimumBid);
       if (isNaN(parsedMinBid) || parsedMinBid < 1) {
         return res.status(400).json({ message: "Minimum bid must be a valid number of at least $1" });
+      }
+      
+      // Validate minimumYears is a valid number 1-5 (optional, defaults to 1)
+      let parsedMinYears = 1;
+      if (minimumYears !== undefined && minimumYears !== null && minimumYears !== "") {
+        parsedMinYears = Number(minimumYears);
+        if (isNaN(parsedMinYears) || parsedMinYears < 1 || parsedMinYears > 5) {
+          return res.status(400).json({ message: "Minimum years must be between 1 and 5" });
+        }
+        parsedMinYears = Math.floor(parsedMinYears);
       }
       
       if (!auctionEndTime) {
@@ -217,8 +239,8 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Auction end time must be in the future" });
       }
 
-      // Update the agent with new minimum bid and end time
-      const updatedAgent = await storage.relistFreeAgent(agentId, parsedMinBid, newEndTime);
+      // Update the agent with new minimum bid, minimum years, and end time
+      const updatedAgent = await storage.relistFreeAgent(agentId, parsedMinBid, parsedMinYears, newEndTime);
       res.json(updatedAgent);
     } catch (error) {
       console.error("Error relisting free agent:", error);
@@ -256,6 +278,14 @@ export async function registerRoutes(
       
       if (!amount || !years || years < 1 || years > 5) {
         return res.status(400).json({ message: "Invalid bid parameters" });
+      }
+
+      // Check if bid meets minimum years requirement
+      const minimumYears = agent.minimumYears || 1;
+      if (years < minimumYears) {
+        return res.status(400).json({ 
+          message: `This player requires at least a ${minimumYears}-year contract` 
+        });
       }
 
       // Get settings for year factors
@@ -354,6 +384,14 @@ export async function registerRoutes(
       }
 
       const { maxAmount, years, isActive } = req.body;
+      
+      // Check if auto-bid meets minimum years requirement
+      const minimumYears = agent.minimumYears || 1;
+      if (years < minimumYears) {
+        return res.status(400).json({ 
+          message: `This player requires at least a ${minimumYears}-year contract` 
+        });
+      }
       
       const autoBid = await storage.createOrUpdateAutoBid({
         freeAgentId: agentId,

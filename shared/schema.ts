@@ -63,6 +63,7 @@ export const freeAgents = pgTable("free_agents", {
   position: varchar("position", { length: 50 }).notNull(),
   team: varchar("team", { length: 100 }),
   minimumBid: real("minimum_bid").default(1).notNull(),
+  minimumYears: integer("minimum_years").default(1).notNull(),
   auctionEndTime: timestamp("auction_end_time").notNull(),
   isActive: boolean("is_active").default(true).notNull(),
   winnerId: varchar("winner_id").references(() => users.id),

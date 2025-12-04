@@ -61,6 +61,7 @@ export function BidDialog({ freeAgent, open, onOpenChange }: BidDialogProps) {
 
   const currentTotalValue = freeAgent?.currentBid?.totalValue || 0;
   const playerMinimumBid = freeAgent?.minimumBid || 1;
+  const playerMinimumYears = freeAgent?.minimumYears || 1;
   const minimumBid = currentTotalValue > 0
     ? calculateMinimumBid(currentTotalValue, selectedYears, yearFactors)
     : playerMinimumBid;
@@ -75,12 +76,17 @@ export function BidDialog({ freeAgent, open, onOpenChange }: BidDialogProps) {
 
   useEffect(() => {
     if (open) {
+      // Ensure selected years respects minimum years
+      const validYears = Math.max(selectedYears, playerMinimumYears);
+      if (validYears !== selectedYears) {
+        setSelectedYears(validYears);
+      }
       form.reset({
         amount: minimumBid,
-        years: selectedYears,
+        years: validYears,
       });
     }
-  }, [open, minimumBid, selectedYears, form]);
+  }, [open, minimumBid, selectedYears, playerMinimumYears, form]);
 
   const watchAmount = form.watch("amount");
   const totalValue = calculateTotalValue(watchAmount || 0, selectedYears, yearFactors);
@@ -175,6 +181,11 @@ export function BidDialog({ freeAgent, open, onOpenChange }: BidDialogProps) {
               {/* Year Selection */}
               <div>
                 <FormLabel>Contract Years</FormLabel>
+                {playerMinimumYears > 1 && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    This player requires at least a {playerMinimumYears}-year contract
+                  </p>
+                )}
                 <div className="flex gap-2 mt-2">
                   {[1, 2, 3, 4, 5].map((year) => (
                     <Button
@@ -190,6 +201,7 @@ export function BidDialog({ freeAgent, open, onOpenChange }: BidDialogProps) {
                           : playerMinimumBid;
                         form.setValue("amount", newMinBid);
                       }}
+                      disabled={year < playerMinimumYears}
                       data-testid={`button-year-${year}`}
                     >
                       {year}yr

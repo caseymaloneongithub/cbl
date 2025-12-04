@@ -292,7 +292,9 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
                           {agent.currentBid ? (
                             <span>{agent.currentBid.years}yr</span>
                           ) : (
-                            <span className="text-muted-foreground">-</span>
+                            <span className="text-muted-foreground" title={agent.minimumYears > 1 ? `Min ${agent.minimumYears}yr contract required` : ""}>
+                              {agent.minimumYears > 1 ? `${agent.minimumYears}yr+` : "-"}
+                            </span>
                           )}
                         </TableCell>
                         <TableCell className="text-right font-mono font-medium">

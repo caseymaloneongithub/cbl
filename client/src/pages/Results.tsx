@@ -34,6 +34,7 @@ export default function Results() {
   const [relistDialogOpen, setRelistDialogOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<FreeAgentWithBids | null>(null);
   const [relistMinBid, setRelistMinBid] = useState(1);
+  const [relistMinYears, setRelistMinYears] = useState(1);
   const [relistEndDate, setRelistEndDate] = useState("");
 
   useEffect(() => {
@@ -55,9 +56,10 @@ export default function Results() {
   });
 
   const relistMutation = useMutation({
-    mutationFn: async ({ agentId, minimumBid, auctionEndTime }: { agentId: number; minimumBid: number; auctionEndTime: string }) => {
+    mutationFn: async ({ agentId, minimumBid, minimumYears, auctionEndTime }: { agentId: number; minimumBid: number; minimumYears: number; auctionEndTime: string }) => {
       await apiRequest("POST", `/api/free-agents/${agentId}/relist`, {
         minimumBid,
+        minimumYears,
         auctionEndTime,
       });
     },
@@ -83,6 +85,7 @@ export default function Results() {
   const handleRelistClick = (agent: FreeAgentWithBids) => {
     setSelectedAgent(agent);
     setRelistMinBid(agent.minimumBid || 1);
+    setRelistMinYears(agent.minimumYears || 1);
     const defaultEndDate = new Date();
     defaultEndDate.setDate(defaultEndDate.getDate() + 7);
     setRelistEndDate(defaultEndDate.toISOString().slice(0, 16));
@@ -125,6 +128,7 @@ export default function Results() {
     relistMutation.mutate({
       agentId: selectedAgent.id,
       minimumBid: relistMinBid,
+      minimumYears: relistMinYears,
       auctionEndTime: endTime.toISOString(),
     });
   };
@@ -275,6 +279,24 @@ export default function Results() {
                 min={1}
                 data-testid="input-relist-min-bid"
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Minimum Contract Years</Label>
+              <div className="flex gap-2">
+                {[1, 2, 3, 4, 5].map((year) => (
+                  <Button
+                    key={year}
+                    type="button"
+                    variant={relistMinYears === year ? "default" : "outline"}
+                    className="flex-1"
+                    onClick={() => setRelistMinYears(year)}
+                    data-testid={`button-relist-year-${year}`}
+                  >
+                    {year}yr
+                  </Button>
+                ))}
+              </div>
             </div>
 
             <div className="space-y-2">

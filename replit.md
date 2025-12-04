@@ -147,13 +147,20 @@ Each new bid must have a total value at least 10% higher than the current highes
 - Auto-bids automatically place minimum winning bids up to the user's maximum
 - Auto-bids check available budget before placing each bid
 
-### Minimum Bid & Relist Feature
-- Each free agent has a `minimumBid` field (default: $1)
-- Commissioner can set minimum bid when uploading via CSV (column: minimum_bid, min_bid, minbid, or min)
+### Minimum Bid & Minimum Years
+- Each free agent has a `minimumBid` field (default: $1) and `minimumYears` field (default: 1)
+- Commissioner can set these when uploading via CSV:
+  - minimum_bid column (aliases: min_bid, minbid, min)
+  - minimum_years column (aliases: min_years, minyears)
+- Players requiring multi-year contracts will show "Xyr+" in the Years column
+- BidDialog and AutoBidDialog disable year buttons below the minimum
+- Server validates bids/auto-bids reject contracts shorter than minimumYears
+
+### Relist Feature
 - If a player receives no bids and auction closes, commissioner can relist them:
   - Navigate to Results page
   - Click "Relist" button on players with no bids
-  - Set new minimum bid and auction end date
+  - Set new minimum bid, minimum years, and auction end date
   - Player returns to active auctions
 
 ### Page Structure

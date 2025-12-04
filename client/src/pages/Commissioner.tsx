@@ -70,6 +70,7 @@ interface ParsedPlayer {
   position: string;
   team: string;
   minimumBid: number;
+  minimumYears: number;
   auctionEndTime: string;
 }
 
@@ -205,6 +206,7 @@ export default function Commissioner() {
     const posIdx = headers.findIndex(h => h === "position" || h === "pos");
     const teamIdx = headers.findIndex(h => h === "team");
     const minBidIdx = headers.findIndex(h => h === "minimum_bid" || h === "min_bid" || h === "minbid" || h === "min");
+    const minYearsIdx = headers.findIndex(h => h === "minimum_years" || h === "min_years" || h === "minyears");
     const endTimeIdx = headers.findIndex(h => h === "end" || h === "endtime" || h === "auction_end" || h === "end_time");
 
     if (nameIdx === -1 || posIdx === -1) {
@@ -220,11 +222,13 @@ export default function Commissioner() {
     for (let i = 1; i < lines.length; i++) {
       const values = lines[i].split(",").map(v => v.trim());
       if (values[nameIdx]) {
+        const minYearsVal = minYearsIdx !== -1 ? parseInt(values[minYearsIdx]) : 1;
         players.push({
           name: values[nameIdx],
           position: values[posIdx] || "UTIL",
           team: teamIdx !== -1 ? values[teamIdx] || "" : "",
           minimumBid: minBidIdx !== -1 ? parseFloat(values[minBidIdx]) || 1 : 1,
+          minimumYears: isNaN(minYearsVal) || minYearsVal < 1 || minYearsVal > 5 ? 1 : minYearsVal,
           auctionEndTime: endTimeIdx !== -1 ? values[endTimeIdx] : "",
         });
       }
@@ -626,7 +630,7 @@ export default function Commissioner() {
             Upload Free Agents
           </CardTitle>
           <CardDescription>
-            Upload a CSV file with player data. Required: name, position. Optional: team, minimum_bid, end_time
+            Upload a CSV file with player data. Required: name, position. Optional: team, minimum_bid, minimum_years, end_time
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -684,6 +688,8 @@ export default function Commissioner() {
                       <TableHead>Name</TableHead>
                       <TableHead>Position</TableHead>
                       <TableHead>Team</TableHead>
+                      <TableHead>Min Bid</TableHead>
+                      <TableHead>Min Yrs</TableHead>
                       <TableHead>End Time</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -695,6 +701,8 @@ export default function Commissioner() {
                           <Badge variant="outline">{player.position}</Badge>
                         </TableCell>
                         <TableCell>{player.team || "-"}</TableCell>
+                        <TableCell>${player.minimumBid}</TableCell>
+                        <TableCell>{player.minimumYears}yr</TableCell>
                         <TableCell className="text-muted-foreground">
                           {player.auctionEndTime || "Default"}
                         </TableCell>
@@ -702,7 +710,7 @@ export default function Commissioner() {
                     ))}
                     {parsedPlayers.length > 10 && (
                       <TableRow>
-                        <TableCell colSpan={4} className="text-center text-muted-foreground">
+                        <TableCell colSpan={6} className="text-center text-muted-foreground">
                           ... and {parsedPlayers.length - 10} more players
                         </TableCell>
                       </TableRow>
