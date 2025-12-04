@@ -43,16 +43,10 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
   const [autoBidDialogOpen, setAutoBidDialogOpen] = useState(false);
   
   const [searchTerm, setSearchTerm] = useState("");
-  const [positionFilter, setPositionFilter] = useState<string>("all");
   const [teamFilter, setTeamFilter] = useState<string>("all");
   const [playerTypeFilter, setPlayerTypeFilter] = useState<PlayerTypeFilter>("all");
   const [sortField, setSortField] = useState<SortField>("endTime");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
-
-  const uniquePositions = useMemo(() => {
-    const positions = new Set(freeAgents.map(a => a.position));
-    return Array.from(positions).sort();
-  }, [freeAgents]);
 
   const uniqueTeams = useMemo(() => {
     const teams = new Set(freeAgents.filter(a => a.team).map(a => a.team!));
@@ -68,10 +62,6 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
         a => a.name.toLowerCase().includes(term) || 
              a.team?.toLowerCase().includes(term)
       );
-    }
-
-    if (positionFilter !== "all") {
-      result = result.filter(a => a.position === positionFilter);
     }
 
     if (teamFilter !== "all") {
@@ -152,7 +142,7 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
     });
 
     return result;
-  }, [freeAgents, searchTerm, positionFilter, teamFilter, playerTypeFilter, sortField, sortDirection]);
+  }, [freeAgents, searchTerm, teamFilter, playerTypeFilter, sortField, sortDirection]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -174,12 +164,11 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
 
   const clearFilters = () => {
     setSearchTerm("");
-    setPositionFilter("all");
     setTeamFilter("all");
     setPlayerTypeFilter("all");
   };
 
-  const hasActiveFilters = searchTerm || positionFilter !== "all" || teamFilter !== "all" || playerTypeFilter !== "all";
+  const hasActiveFilters = searchTerm || teamFilter !== "all" || playerTypeFilter !== "all";
 
   const formatStat = (value: number | null | undefined, decimals: number = 0): string => {
     if (value === null || value === undefined) return "-";
@@ -210,18 +199,6 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
           />
         </div>
         
-        <Select value={positionFilter} onValueChange={setPositionFilter}>
-          <SelectTrigger className="w-full sm:w-[140px]" data-testid="select-position">
-            <SelectValue placeholder="Position" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Positions</SelectItem>
-            {uniquePositions.map(pos => (
-              <SelectItem key={pos} value={pos}>{pos}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
         <Select value={teamFilter} onValueChange={setTeamFilter}>
           <SelectTrigger className="w-full sm:w-[160px]" data-testid="select-team">
             <SelectValue placeholder="Team" />
