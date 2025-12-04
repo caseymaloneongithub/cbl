@@ -79,6 +79,7 @@ interface ParsedPlayer {
   runs?: number;
   sb?: number;
   ops?: number;
+  pa?: number;
   // Pitcher stats
   wins?: number;
   losses?: number;
@@ -223,6 +224,19 @@ export default function Commissioner() {
     },
   });
 
+  const updateUserLimits = useMutation({
+    mutationFn: async ({ userId, limits }: { userId: string; limits: { rosterLimit?: number | null; ipLimit?: number | null; paLimit?: number | null } }) => {
+      await apiRequest("PATCH", `/api/users/${userId}/limits`, limits);
+    },
+    onSuccess: () => {
+      toast({ title: "Limits Updated", description: "Team limits have been saved." });
+      queryClient.invalidateQueries({ queryKey: ["/api/owners"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const uploadUsers = useMutation({
     mutationFn: async (users: ParsedUser[]) => {
       const res = await apiRequest("POST", "/api/users/bulk", { users });
@@ -277,6 +291,7 @@ export default function Commissioner() {
     const runsIdx = headers.findIndex(h => h === "runs" || h === "r");
     const sbIdx = headers.findIndex(h => h === "sb" || h === "stolen_bases" || h === "steals");
     const opsIdx = headers.findIndex(h => h === "ops");
+    const paIdx = headers.findIndex(h => h === "pa" || h === "plate_appearances");
     
     // Pitcher stats columns
     const winsIdx = headers.findIndex(h => h === "wins" || h === "w");
@@ -320,6 +335,7 @@ export default function Commissioner() {
           runs: parseNum(values[runsIdx]),
           sb: parseNum(values[sbIdx]),
           ops: parseNum(values[opsIdx]),
+          pa: parseNum(values[paIdx]),
           // Pitcher stats
           wins: parseNum(values[winsIdx]),
           losses: parseNum(values[lossesIdx]),
@@ -706,14 +722,14 @@ export default function Commissioner() {
         </Card>
 
         {/* League Owners */}
-        <Card>
+        <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="h-5 w-5" />
-              League Owners
+              League Owners & Team Limits
             </CardTitle>
             <CardDescription>
-              View and manage team owners
+              View and manage team owners, budgets, and team limits. Leave blank for unlimited.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -728,38 +744,103 @@ export default function Commissioner() {
                 No owners have joined yet.
               </p>
             ) : (
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {owners.map((owner) => (
-                  <div
-                    key={owner.id}
-                    className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
-                    data-testid={`owner-${owner.id}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div>
-                        <span className="font-medium">
-                          {owner.firstName} {owner.lastName}
-                        </span>
-                        {owner.isCommissioner && (
-                          <Badge variant="secondary" className="ml-2">
-                            <Crown className="h-3 w-3 mr-1" />
-                            Commissioner
-                          </Badge>
-                        )}
-                        <p className="text-xs text-muted-foreground">{owner.email}</p>
-                      </div>
-                    </div>
-                    {!owner.isCommissioner && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => makeCommissioner.mutate(owner.id)}
-                      >
-                        <Crown className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
-                ))}
+              <div className="border rounded-lg overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Owner</TableHead>
+                      <TableHead>Team</TableHead>
+                      <TableHead className="text-right">Budget</TableHead>
+                      <TableHead className="text-right">Roster Limit</TableHead>
+                      <TableHead className="text-right">IP Limit</TableHead>
+                      <TableHead className="text-right">PA Limit</TableHead>
+                      <TableHead className="text-center">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {owners.map((owner) => (
+                      <TableRow key={owner.id} data-testid={`owner-row-${owner.id}`}>
+                        <TableCell>
+                          <div>
+                            <span className="font-medium">
+                              {owner.firstName} {owner.lastName}
+                            </span>
+                            {owner.isCommissioner && (
+                              <Badge variant="secondary" className="ml-2">
+                                <Crown className="h-3 w-3 mr-1" />
+                                Comm
+                              </Badge>
+                            )}
+                            <p className="text-xs text-muted-foreground">{owner.email}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell>{owner.teamName || "-"}</TableCell>
+                        <TableCell className="text-right">${owner.budget}</TableCell>
+                        <TableCell className="text-right">
+                          <Input
+                            type="number"
+                            min="0"
+                            className="w-20 h-8 text-right"
+                            placeholder="--"
+                            defaultValue={owner.rosterLimit ?? ""}
+                            onBlur={(e) => {
+                              const val = e.target.value === "" ? null : parseInt(e.target.value);
+                              if (val !== owner.rosterLimit) {
+                                updateUserLimits.mutate({ userId: owner.id, limits: { rosterLimit: val } });
+                              }
+                            }}
+                            data-testid={`input-roster-limit-${owner.id}`}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            className="w-20 h-8 text-right"
+                            placeholder="--"
+                            defaultValue={owner.ipLimit ?? ""}
+                            onBlur={(e) => {
+                              const val = e.target.value === "" ? null : parseFloat(e.target.value);
+                              if (val !== owner.ipLimit) {
+                                updateUserLimits.mutate({ userId: owner.id, limits: { ipLimit: val } });
+                              }
+                            }}
+                            data-testid={`input-ip-limit-${owner.id}`}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Input
+                            type="number"
+                            min="0"
+                            className="w-20 h-8 text-right"
+                            placeholder="--"
+                            defaultValue={owner.paLimit ?? ""}
+                            onBlur={(e) => {
+                              const val = e.target.value === "" ? null : parseInt(e.target.value);
+                              if (val !== owner.paLimit) {
+                                updateUserLimits.mutate({ userId: owner.id, limits: { paLimit: val } });
+                              }
+                            }}
+                            data-testid={`input-pa-limit-${owner.id}`}
+                          />
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {!owner.isCommissioner && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => makeCommissioner.mutate(owner.id)}
+                              title="Make Commissioner"
+                            >
+                              <Crown className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
             )}
           </CardContent>
