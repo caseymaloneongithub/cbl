@@ -283,7 +283,9 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
                               {formatCurrency(agent.currentBid.amount)}
                             </span>
                           ) : (
-                            <span className="text-muted-foreground">-</span>
+                            <span className="text-muted-foreground" title={`Min: ${formatCurrency(agent.minimumBid)}`}>
+                              {formatCurrency(agent.minimumBid)} min
+                            </span>
                           )}
                         </TableCell>
                         <TableCell className="text-center font-mono">

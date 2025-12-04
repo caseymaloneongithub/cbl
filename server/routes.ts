@@ -128,19 +128,101 @@ export async function registerRoutes(
       const defaultEndTime = new Date();
       defaultEndTime.setDate(defaultEndTime.getDate() + 7);
 
-      const agentsToCreate = players.map((p: any) => ({
-        name: p.name,
-        position: p.position || "UTIL",
-        team: p.team || null,
-        auctionEndTime: p.auctionEndTime ? new Date(p.auctionEndTime) : defaultEndTime,
-        isActive: true,
-      }));
+      // Validate and sanitize player data
+      const invalidPlayers: string[] = [];
+      const agentsToCreate = players.map((p: any, index: number) => {
+        const name = p.name?.trim();
+        if (!name) {
+          invalidPlayers.push(`Row ${index + 2}: Missing player name`);
+        }
+        
+        // Validate minimumBid: must be a valid number >= 1
+        let minimumBid = 1;
+        if (p.minimumBid !== undefined && p.minimumBid !== null && p.minimumBid !== "") {
+          const parsedBid = Number(p.minimumBid);
+          if (isNaN(parsedBid) || parsedBid < 1) {
+            invalidPlayers.push(`Row ${index + 2} (${name || "unknown"}): Invalid minimum bid "${p.minimumBid}" - must be a number >= 1`);
+          } else {
+            minimumBid = parsedBid;
+          }
+        }
+        
+        return {
+          name: name || `Unknown Player ${index}`,
+          position: p.position || "UTIL",
+          team: p.team || null,
+          minimumBid,
+          auctionEndTime: p.auctionEndTime ? new Date(p.auctionEndTime) : defaultEndTime,
+          isActive: true,
+        };
+      });
+      
+      // If there are validation errors, reject the entire upload
+      if (invalidPlayers.length > 0) {
+        return res.status(400).json({ 
+          message: `CSV validation failed:\n${invalidPlayers.slice(0, 5).join('\n')}${invalidPlayers.length > 5 ? `\n... and ${invalidPlayers.length - 5} more errors` : ''}` 
+        });
+      }
 
       const newAgents = await storage.createFreeAgentsBulk(agentsToCreate);
       res.json(newAgents);
     } catch (error) {
       console.error("Error uploading free agents:", error);
       res.status(500).json({ message: "Failed to upload free agents" });
+    }
+  });
+
+  // Commissioner: Relist a player with no bids (new minimum bid and end time)
+  app.post("/api/free-agents/:id/relist", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isCommissioner) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const agentId = parseInt(req.params.id);
+      const agent = await storage.getFreeAgent(agentId);
+      
+      if (!agent) {
+        return res.status(404).json({ message: "Free agent not found" });
+      }
+
+      // Check if auction has ended
+      if (new Date(agent.auctionEndTime) > new Date()) {
+        return res.status(400).json({ message: "Cannot relist - auction is still active" });
+      }
+
+      // Check if there are any bids
+      const bids = await storage.getBidsForAgent(agentId);
+      if (bids.length > 0) {
+        return res.status(400).json({ message: "Cannot relist - player has existing bids" });
+      }
+
+      const { minimumBid, auctionEndTime } = req.body;
+      
+      // Validate minimumBid is a valid number >= 1
+      const parsedMinBid = Number(minimumBid);
+      if (isNaN(parsedMinBid) || parsedMinBid < 1) {
+        return res.status(400).json({ message: "Minimum bid must be a valid number of at least $1" });
+      }
+      
+      if (!auctionEndTime) {
+        return res.status(400).json({ message: "Auction end time is required" });
+      }
+
+      const newEndTime = new Date(auctionEndTime);
+      if (newEndTime <= new Date()) {
+        return res.status(400).json({ message: "Auction end time must be in the future" });
+      }
+
+      // Update the agent with new minimum bid and end time
+      const updatedAgent = await storage.relistFreeAgent(agentId, parsedMinBid, newEndTime);
+      res.json(updatedAgent);
+    } catch (error) {
+      console.error("Error relisting free agent:", error);
+      res.status(500).json({ message: "Failed to relist free agent" });
     }
   });
 
@@ -188,9 +270,16 @@ export async function registerRoutes(
       
       const totalValue = amount * yearFactors[years - 1];
 
-      // Check if bid beats current high bid by 10%
+      // Check if bid meets minimum bid requirement (always enforce the player's minimum)
+      if (amount < agent.minimumBid) {
+        return res.status(400).json({ 
+          message: `Bid must be at least $${agent.minimumBid} (minimum bid for this player)` 
+        });
+      }
+      
       const currentHighBid = await storage.getHighestBidForAgent(agentId);
       if (currentHighBid) {
+        // Subsequent bid - must beat current high bid by 10% total value
         const minRequired = currentHighBid.totalValue * 1.1;
         if (totalValue < minRequired) {
           return res.status(400).json({ 
@@ -200,6 +289,7 @@ export async function registerRoutes(
       }
 
       // Check budget if enforcement is enabled
+      // Budget tracks bid AMOUNT, not total value
       if (settings.enforceBudget) {
         const budgetInfo = await storage.getUserBudgetInfo(userId);
         
@@ -207,12 +297,12 @@ export async function registerRoutes(
         // If user is already high bidder on this auction, that amount is freed up
         let availableForThisBid = budgetInfo.available;
         if (currentHighBid?.userId === userId) {
-          availableForThisBid += currentHighBid.totalValue;
+          availableForThisBid += currentHighBid.amount;
         }
         
-        if (totalValue > availableForThisBid) {
+        if (amount > availableForThisBid) {
           return res.status(400).json({ 
-            message: `Bid exceeds your available budget. Available: $${Math.floor(availableForThisBid)}, Bid total: $${Math.ceil(totalValue)}` 
+            message: `Bid exceeds your available budget. Available: $${Math.floor(availableForThisBid)}, Bid amount: $${amount}` 
           });
         }
       }
@@ -277,53 +367,64 @@ export async function registerRoutes(
       if (isActive) {
         const settings = await storage.getSettings();
         const currentHighBid = await storage.getHighestBidForAgent(agentId);
+        const yearFactors = [
+          settings.yearFactor1,
+          settings.yearFactor2,
+          settings.yearFactor3,
+          settings.yearFactor4,
+          settings.yearFactor5,
+        ];
+        const factor = yearFactors[years - 1];
+        
+        // Check budget if enforcement is enabled
+        let availableBudget = Infinity;
+        if (settings.enforceBudget) {
+          const budgetInfo = await storage.getUserBudgetInfo(userId);
+          availableBudget = budgetInfo.available;
+          // If already high bidder, that amount is freed
+          if (currentHighBid?.userId === userId) {
+            availableBudget += currentHighBid.amount;
+          }
+        }
         
         if (currentHighBid && currentHighBid.userId !== userId) {
           // Try to beat the current bid
-          const yearFactors = [
-            settings.yearFactor1,
-            settings.yearFactor2,
-            settings.yearFactor3,
-            settings.yearFactor4,
-            settings.yearFactor5,
-          ];
-          
-          const factor = yearFactors[years - 1];
           const maxTotalValue = maxAmount * factor;
           const requiredTotalValue = currentHighBid.totalValue * 1.1;
           
           if (maxTotalValue >= requiredTotalValue) {
-            const bidAmount = Math.ceil(requiredTotalValue / factor);
+            // Calculate bid amount, ensuring it meets the player's minimum bid
+            let bidAmount = Math.ceil(requiredTotalValue / factor);
+            bidAmount = Math.max(bidAmount, agent.minimumBid);
             const bidTotalValue = bidAmount * factor;
             
+            // Check max amount and budget before placing bid
+            if (bidAmount <= maxAmount && bidAmount <= availableBudget) {
+              await storage.createBid({
+                freeAgentId: agentId,
+                userId,
+                amount: bidAmount,
+                years,
+                totalValue: bidTotalValue,
+                isAutoBid: true,
+              });
+            }
+          }
+        } else if (!currentHighBid) {
+          // No current bid, place minimum bid (player's minimum or $1)
+          const startingBid = Math.max(agent.minimumBid, 1);
+          
+          // Check max amount and budget before placing bid
+          if (maxAmount >= startingBid && startingBid <= availableBudget) {
             await storage.createBid({
               freeAgentId: agentId,
               userId,
-              amount: bidAmount,
+              amount: startingBid,
               years,
-              totalValue: bidTotalValue,
+              totalValue: startingBid * factor,
               isAutoBid: true,
             });
           }
-        } else if (!currentHighBid) {
-          // No current bid, place minimum bid
-          const yearFactors = [
-            settings.yearFactor1,
-            settings.yearFactor2,
-            settings.yearFactor3,
-            settings.yearFactor4,
-            settings.yearFactor5,
-          ];
-          const factor = yearFactors[years - 1];
-          
-          await storage.createBid({
-            freeAgentId: agentId,
-            userId,
-            amount: 1,
-            years,
-            totalValue: 1 * factor,
-            isAutoBid: true,
-          });
         }
       }
 
@@ -549,6 +650,10 @@ async function processAutoBids(
   settings: any
 ): Promise<void> {
   const autoBids = await storage.getAutoBidsForAgent(agentId);
+  const agent = await storage.getFreeAgent(agentId);
+  
+  if (!agent) return;
+  
   const yearFactors = [
     settings.yearFactor1,
     settings.yearFactor2,
@@ -565,16 +670,25 @@ async function processAutoBids(
     const requiredTotalValue = currentTotalValue * 1.1;
 
     if (maxTotalValue >= requiredTotalValue) {
-      const bidAmount = Math.ceil(requiredTotalValue / factor);
+      // Calculate bid amount, ensuring it meets the player's minimum bid
+      let bidAmount = Math.ceil(requiredTotalValue / factor);
+      bidAmount = Math.max(bidAmount, agent.minimumBid);
       const bidTotalValue = bidAmount * factor;
+      
+      // Check if bid still fits within max amount after enforcing minimum
+      if (bidAmount > autoBid.maxAmount) {
+        continue; // Skip if minimum bid exceeds user's max amount
+      }
 
       // Check budget if enforcement is enabled
+      // Budget tracks bid AMOUNT, not total value
       if (settings.enforceBudget) {
         try {
+          // Recalculate budget before each auto-bid placement
           const budgetInfo = await storage.getUserBudgetInfo(autoBid.userId);
           
-          // For auto-bids, check if user has enough available budget
-          if (bidTotalValue > budgetInfo.available) {
+          // For auto-bids, check if user has enough available budget for the AMOUNT
+          if (bidAmount > budgetInfo.available) {
             // Skip this auto-bid, user doesn't have enough budget
             continue;
           }

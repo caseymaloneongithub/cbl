@@ -125,15 +125,39 @@ Preferred communication style: Simple, everyday language.
 - **Real-time countdown timers** - Shows time remaining for each auction
 - **Dark/Light theme support** - System-based theme with manual toggle
 - **Responsive Material Design** - Professional sports aesthetic with Roboto fonts
+- **Search/filtering/sorting** - Filter free agents by name, position, team with column sorting
+- **CSV export** - Commissioner can export auction results and final rosters as CSV files
+- **Budget system** - Per-team variable budgets tracking dollar amounts (not total values)
+- **Minimum bid support** - Each player has a minimum starting bid, configurable in CSV uploads
+- **Relist players** - Commissioner can relist players with no bids with new minimum bid and end date
+
+### Budget System
+- Budget is per-team and can vary by team (not a fixed amount for all teams)
+- Budget tracks the **dollar amount of the bid**, NOT the total value (amount × year factor)
+- Spent = sum of winning bid amounts on closed auctions
+- Committed = sum of current high bid amounts on open auctions
+- Available = Team Budget - Spent - Committed
+- Budget enforcement can be toggled on/off by commissioner
 
 ### Bid Validation Logic
 Each new bid must have a total value at least 10% higher than the current highest bid:
 - Total Value = Annual Amount × Year Factor
-- Year factors are configurable by commissioner (defaults: 1.0, 1.8, 2.5, 3.1, 3.6)
+- Year factors are configurable by commissioner (defaults: 1.0, 1.25, 1.33, 1.43, 1.55)
+- First bid must meet the player's minimum bid requirement
 - Auto-bids automatically place minimum winning bids up to the user's maximum
+- Auto-bids check available budget before placing each bid
+
+### Minimum Bid & Relist Feature
+- Each free agent has a `minimumBid` field (default: $1)
+- Commissioner can set minimum bid when uploading via CSV (column: minimum_bid, min_bid, minbid, or min)
+- If a player receives no bids and auction closes, commissioner can relist them:
+  - Navigate to Results page
+  - Click "Relist" button on players with no bids
+  - Set new minimum bid and auction end date
+  - Player returns to active auctions
 
 ### Page Structure
 - `/` - Landing page (unauthenticated) or Home dashboard (authenticated)
 - `/my-bids` - User's active bids and auto-bid configurations
-- `/results` - Completed auctions with winners
+- `/results` - Completed auctions with winners (commissioner can relist no-bid players)
 - `/commissioner` - Admin controls (commissioner only)

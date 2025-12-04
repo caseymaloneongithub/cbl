@@ -57,12 +57,13 @@ export function BidDialog({ freeAgent, open, onOpenChange }: BidDialogProps) {
 
   const yearFactors = settings
     ? [settings.yearFactor1, settings.yearFactor2, settings.yearFactor3, settings.yearFactor4, settings.yearFactor5]
-    : [1, 1.8, 2.5, 3.1, 3.6];
+    : [1, 1.25, 1.33, 1.43, 1.55];
 
   const currentTotalValue = freeAgent?.currentBid?.totalValue || 0;
+  const playerMinimumBid = freeAgent?.minimumBid || 1;
   const minimumBid = currentTotalValue > 0
     ? calculateMinimumBid(currentTotalValue, selectedYears, yearFactors)
-    : 1;
+    : playerMinimumBid;
 
   const form = useForm<BidFormData>({
     resolver: zodResolver(bidSchema),
@@ -155,7 +156,12 @@ export function BidDialog({ freeAgent, open, onOpenChange }: BidDialogProps) {
                 </span>
               </div>
             ) : (
-              <span className="text-lg text-muted-foreground">No bids yet</span>
+              <div>
+                <span className="text-lg text-muted-foreground">No bids yet</span>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Minimum opening bid: {formatCurrency(playerMinimumBid)}
+                </p>
+              </div>
             )}
             {freeAgent.highBidder && (
               <p className="text-sm text-muted-foreground mt-1">
@@ -181,7 +187,7 @@ export function BidDialog({ freeAgent, open, onOpenChange }: BidDialogProps) {
                         form.setValue("years", year);
                         const newMinBid = currentTotalValue > 0
                           ? calculateMinimumBid(currentTotalValue, year, yearFactors)
-                          : 1;
+                          : playerMinimumBid;
                         form.setValue("amount", newMinBid);
                       }}
                       data-testid={`button-year-${year}`}
@@ -214,11 +220,12 @@ export function BidDialog({ freeAgent, open, onOpenChange }: BidDialogProps) {
                       </div>
                     </FormControl>
                     <FormMessage />
-                    {currentTotalValue > 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        Minimum bid: {formatCurrency(minimumBid)}/yr (10% increase in total value)
-                      </p>
-                    )}
+                    <p className="text-xs text-muted-foreground">
+                      {currentTotalValue > 0 
+                        ? `Minimum bid: ${formatCurrency(minimumBid)}/yr (10% increase in total value)`
+                        : `Minimum opening bid: ${formatCurrency(playerMinimumBid)}/yr`
+                      }
+                    </p>
                   </FormItem>
                 )}
               />

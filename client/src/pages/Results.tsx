@@ -1,10 +1,20 @@
-import { useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -14,12 +24,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { FreeAgentWithBids } from "@shared/schema";
-import { Trophy } from "lucide-react";
+import { Trophy, RefreshCcw, Loader2 } from "lucide-react";
 
 export default function Results() {
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const { toast } = useToast();
+  const [relistDialogOpen, setRelistDialogOpen] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState<FreeAgentWithBids | null>(null);
+  const [relistMinBid, setRelistMinBid] = useState(1);
+  const [relistEndDate, setRelistEndDate] = useState("");
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -38,6 +53,83 @@ export default function Results() {
     queryKey: ["/api/results"],
     enabled: isAuthenticated,
   });
+
+  const relistMutation = useMutation({
+    mutationFn: async ({ agentId, minimumBid, auctionEndTime }: { agentId: number; minimumBid: number; auctionEndTime: string }) => {
+      await apiRequest("POST", `/api/free-agents/${agentId}/relist`, {
+        minimumBid,
+        auctionEndTime,
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Player Relisted",
+        description: `${selectedAgent?.name} has been relisted for auction.`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/results"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/free-agents"] });
+      setRelistDialogOpen(false);
+      setSelectedAgent(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Relist Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleRelistClick = (agent: FreeAgentWithBids) => {
+    setSelectedAgent(agent);
+    setRelistMinBid(agent.minimumBid || 1);
+    const defaultEndDate = new Date();
+    defaultEndDate.setDate(defaultEndDate.getDate() + 7);
+    setRelistEndDate(defaultEndDate.toISOString().slice(0, 16));
+    setRelistDialogOpen(true);
+  };
+
+  const handleRelistSubmit = () => {
+    if (!selectedAgent) return;
+    
+    // Validate minimum bid
+    if (!relistMinBid || relistMinBid < 1) {
+      toast({
+        title: "Invalid Minimum Bid",
+        description: "Minimum bid must be at least $1",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Validate end date
+    if (!relistEndDate) {
+      toast({
+        title: "End Date Required",
+        description: "Please select an auction end date",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    const endTime = new Date(relistEndDate);
+    if (endTime <= new Date()) {
+      toast({
+        title: "Invalid End Date",
+        description: "Auction end date must be in the future",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    relistMutation.mutate({
+      agentId: selectedAgent.id,
+      minimumBid: relistMinBid,
+      auctionEndTime: endTime.toISOString(),
+    });
+  };
+
+  const isCommissioner = user?.isCommissioner;
 
   if (authLoading) {
     return (
@@ -89,6 +181,7 @@ export default function Results() {
                     <TableHead className="font-semibold text-center">Years</TableHead>
                     <TableHead className="font-semibold text-right">Total Value</TableHead>
                     <TableHead className="font-semibold text-center">Auction Ended</TableHead>
+                    {isCommissioner && <TableHead className="font-semibold text-right">Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -134,6 +227,21 @@ export default function Results() {
                       <TableCell className="text-center text-muted-foreground text-sm">
                         {formatDate(agent.auctionEndTime)}
                       </TableCell>
+                      {isCommissioner && (
+                        <TableCell className="text-right">
+                          {!agent.currentBid && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleRelistClick(agent)}
+                              data-testid={`button-relist-${agent.id}`}
+                            >
+                              <RefreshCcw className="h-4 w-4 mr-1" />
+                              Relist
+                            </Button>
+                          )}
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -142,6 +250,71 @@ export default function Results() {
           </CardContent>
         </Card>
       )}
+
+      {/* Relist Dialog */}
+      <Dialog open={relistDialogOpen} onOpenChange={setRelistDialogOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCcw className="h-5 w-5" />
+              Relist Player
+            </DialogTitle>
+            <DialogDescription>
+              Re-enter {selectedAgent?.name} with a new minimum bid and auction end date.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-4">
+            <div className="space-y-2">
+              <Label htmlFor="relist-min-bid">Minimum Bid ($)</Label>
+              <Input
+                id="relist-min-bid"
+                type="number"
+                value={relistMinBid}
+                onChange={(e) => setRelistMinBid(parseInt(e.target.value) || 1)}
+                min={1}
+                data-testid="input-relist-min-bid"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="relist-end-date">Auction End Date</Label>
+              <Input
+                id="relist-end-date"
+                type="datetime-local"
+                value={relistEndDate}
+                onChange={(e) => setRelistEndDate(e.target.value)}
+                data-testid="input-relist-end-date"
+              />
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setRelistDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={handleRelistSubmit}
+                disabled={relistMutation.isPending}
+                data-testid="button-confirm-relist"
+              >
+                {relistMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Relisting...
+                  </>
+                ) : (
+                  "Relist Player"
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

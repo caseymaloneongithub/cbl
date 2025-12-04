@@ -60,7 +60,7 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange }: AutoBidDialogPr
 
   const yearFactors = settings
     ? [settings.yearFactor1, settings.yearFactor2, settings.yearFactor3, settings.yearFactor4, settings.yearFactor5]
-    : [1, 1.8, 2.5, 3.1, 3.6];
+    : [1, 1.25, 1.33, 1.43, 1.55];
 
   const form = useForm<AutoBidFormData>({
     resolver: zodResolver(autoBidSchema),
@@ -159,9 +159,13 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange }: AutoBidDialogPr
               <span className="text-sm text-muted-foreground">Auction ends</span>
               <CountdownTimer endTime={freeAgent.auctionEndTime} />
             </div>
-            {freeAgent.currentBid && (
+            {freeAgent.currentBid ? (
               <div className="mt-2 text-sm">
                 Current high bid: <span className="font-mono font-medium">{formatCurrency(freeAgent.currentBid.totalValue)}</span>
+              </div>
+            ) : (
+              <div className="mt-2 text-sm">
+                Minimum opening bid: <span className="font-mono font-medium">{formatCurrency(freeAgent.minimumBid)}</span>
               </div>
             )}
           </div>

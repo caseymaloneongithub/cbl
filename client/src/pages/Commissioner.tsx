@@ -69,6 +69,7 @@ interface ParsedPlayer {
   name: string;
   position: string;
   team: string;
+  minimumBid: number;
   auctionEndTime: string;
 }
 
@@ -107,10 +108,10 @@ export default function Commissioner() {
     resolver: zodResolver(settingsSchema),
     defaultValues: {
       yearFactor1: 1.0,
-      yearFactor2: 1.8,
-      yearFactor3: 2.5,
-      yearFactor4: 3.1,
-      yearFactor5: 3.6,
+      yearFactor2: 1.25,
+      yearFactor3: 1.33,
+      yearFactor4: 1.43,
+      yearFactor5: 1.55,
       defaultBudget: 260,
       enforceBudget: true,
     },
@@ -203,6 +204,7 @@ export default function Commissioner() {
     const nameIdx = headers.findIndex(h => h === "name" || h === "player");
     const posIdx = headers.findIndex(h => h === "position" || h === "pos");
     const teamIdx = headers.findIndex(h => h === "team");
+    const minBidIdx = headers.findIndex(h => h === "minimum_bid" || h === "min_bid" || h === "minbid" || h === "min");
     const endTimeIdx = headers.findIndex(h => h === "end" || h === "endtime" || h === "auction_end" || h === "end_time");
 
     if (nameIdx === -1 || posIdx === -1) {
@@ -222,6 +224,7 @@ export default function Commissioner() {
           name: values[nameIdx],
           position: values[posIdx] || "UTIL",
           team: teamIdx !== -1 ? values[teamIdx] || "" : "",
+          minimumBid: minBidIdx !== -1 ? parseFloat(values[minBidIdx]) || 1 : 1,
           auctionEndTime: endTimeIdx !== -1 ? values[endTimeIdx] : "",
         });
       }
@@ -623,7 +626,7 @@ export default function Commissioner() {
             Upload Free Agents
           </CardTitle>
           <CardDescription>
-            Upload a CSV file with player data. Required columns: name, position. Optional: team, end_time
+            Upload a CSV file with player data. Required: name, position. Optional: team, minimum_bid, end_time
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">

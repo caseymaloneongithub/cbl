@@ -39,6 +39,7 @@ export interface IStorage {
   createFreeAgent(agent: InsertFreeAgent): Promise<FreeAgent>;
   createFreeAgentsBulk(agents: InsertFreeAgent[]): Promise<FreeAgent[]>;
   updateFreeAgentWinner(id: number, winnerId: string, winningBidId: number): Promise<void>;
+  relistFreeAgent(id: number, minimumBid: number, auctionEndTime: Date): Promise<FreeAgent>;
   
   // Bids
   getBid(id: number): Promise<Bid | undefined>;
@@ -193,6 +194,21 @@ export class DatabaseStorage implements IStorage {
       .update(freeAgents)
       .set({ winnerId, winningBidId, isActive: false })
       .where(eq(freeAgents.id, id));
+  }
+
+  async relistFreeAgent(id: number, minimumBid: number, auctionEndTime: Date): Promise<FreeAgent> {
+    const [updated] = await db
+      .update(freeAgents)
+      .set({ 
+        minimumBid, 
+        auctionEndTime, 
+        isActive: true,
+        winnerId: null,
+        winningBidId: null
+      })
+      .where(eq(freeAgents.id, id))
+      .returning();
+    return updated;
   }
 
   // Bids
@@ -383,21 +399,21 @@ export class DatabaseStorage implements IStorage {
     const allAgents = await this.getAllFreeAgents();
     const now = new Date();
     
-    // Calculate spent (won auctions)
+    // Calculate spent (won auctions) - tracks bid AMOUNT, not total value
     let spent = 0;
     const closedAgents = allAgents.filter((a: FreeAgentWithBids) => new Date(a.auctionEndTime) <= now);
     for (const agent of closedAgents) {
       if (agent.highBidder?.id === userId && agent.currentBid) {
-        spent += agent.currentBid.totalValue;
+        spent += agent.currentBid.amount;
       }
     }
     
-    // Calculate committed (current high bids on open auctions)
+    // Calculate committed (current high bids on open auctions) - tracks bid AMOUNT, not total value
     let committed = 0;
     const openAgents = allAgents.filter((a: FreeAgentWithBids) => new Date(a.auctionEndTime) > now);
     for (const agent of openAgents) {
       if (agent.highBidder?.id === userId && agent.currentBid) {
-        committed += agent.currentBid.totalValue;
+        committed += agent.currentBid.amount;
       }
     }
     
