@@ -62,8 +62,10 @@ export function BidDialog({ freeAgent, open, onOpenChange }: BidDialogProps) {
   const currentTotalValue = freeAgent?.currentBid?.totalValue || 0;
   const playerMinimumBid = freeAgent?.minimumBid || 1;
   const playerMinimumYears = freeAgent?.minimumYears || 1;
+  // Minimum bid is always at least the player's minimum bid (dollar amount)
+  // When there's a current bid, also ensure it beats the total value by 10%
   const minimumBid = currentTotalValue > 0
-    ? calculateMinimumBid(currentTotalValue, selectedYears, yearFactors)
+    ? Math.max(calculateMinimumBid(currentTotalValue, selectedYears, yearFactors), playerMinimumBid)
     : playerMinimumBid;
 
   const form = useForm<BidFormData>({
