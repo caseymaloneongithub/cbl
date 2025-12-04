@@ -23,9 +23,12 @@ import { eq, and, desc, lt, sql } from "drizzle-orm";
 export interface IStorage {
   // User operations
   getUser(id: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
   getAllUsers(): Promise<User[]>;
   updateUserCommissioner(id: string, isCommissioner: boolean): Promise<User | undefined>;
+  updateUserPassword(id: string, passwordHash: string, mustResetPassword: boolean): Promise<User | undefined>;
+  createUserWithPassword(userData: { email: string; passwordHash: string; firstName?: string; lastName?: string; teamName?: string; budget?: number; isCommissioner?: boolean; mustResetPassword?: boolean }): Promise<User>;
   
   // League settings
   getSettings(): Promise<LeagueSettings>;
@@ -70,6 +73,11 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
   async upsertUser(userData: UpsertUser): Promise<User> {
     const [user] = await db
       .insert(users)
@@ -97,6 +105,41 @@ export class DatabaseStorage implements IStorage {
       .update(users)
       .set({ isCommissioner, updatedAt: new Date() })
       .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
+  async updateUserPassword(id: string, passwordHash: string, mustResetPassword: boolean): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({ passwordHash, mustResetPassword, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
+  async createUserWithPassword(userData: { 
+    email: string; 
+    passwordHash: string; 
+    firstName?: string; 
+    lastName?: string; 
+    teamName?: string; 
+    budget?: number; 
+    isCommissioner?: boolean; 
+    mustResetPassword?: boolean;
+  }): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values({
+        email: userData.email,
+        passwordHash: userData.passwordHash,
+        firstName: userData.firstName,
+        lastName: userData.lastName,
+        teamName: userData.teamName,
+        budget: userData.budget ?? 260,
+        isCommissioner: userData.isCommissioner ?? false,
+        mustResetPassword: userData.mustResetPassword ?? true,
+      })
       .returning();
     return user;
   }

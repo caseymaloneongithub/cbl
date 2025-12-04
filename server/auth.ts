@@ -1,0 +1,201 @@
+import session from "express-session";
+import type { Express, RequestHandler } from "express";
+import connectPg from "connect-pg-simple";
+import bcrypt from "bcryptjs";
+import { storage } from "./storage";
+
+declare module "express-session" {
+  interface SessionData {
+    userId: string;
+  }
+}
+
+export function getSession() {
+  const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
+  const pgStore = connectPg(session);
+  const sessionStore = new pgStore({
+    conString: process.env.DATABASE_URL,
+    createTableIfMissing: false,
+    ttl: sessionTtl,
+    tableName: "sessions",
+  });
+  return session({
+    secret: process.env.SESSION_SECRET!,
+    store: sessionStore,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      maxAge: sessionTtl,
+      sameSite: "lax",
+    },
+  });
+}
+
+export async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, 12);
+}
+
+export async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  return bcrypt.compare(password, hash);
+}
+
+export function generateRandomPassword(length: number = 12): string {
+  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%";
+  let password = "";
+  for (let i = 0; i < length; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return password;
+}
+
+export async function setupAuth(app: Express) {
+  app.set("trust proxy", 1);
+  app.use(getSession());
+
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+
+      if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
+      }
+
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+
+      if (!user.passwordHash) {
+        return res.status(401).json({ message: "Account not set up. Contact your commissioner." });
+      }
+
+      const isValid = await verifyPassword(password, user.passwordHash);
+      if (!isValid) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+
+      req.session.regenerate((err) => {
+        if (err) {
+          return res.status(500).json({ message: "Session error" });
+        }
+        req.session.userId = user.id;
+        req.session.save((err) => {
+          if (err) {
+            return res.status(500).json({ message: "Session error" });
+          }
+          res.json({
+            id: user.id,
+            email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            teamName: user.teamName,
+            isCommissioner: user.isCommissioner,
+            mustResetPassword: user.mustResetPassword,
+          });
+        });
+      });
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        return res.status(500).json({ message: "Logout failed" });
+      }
+      res.clearCookie("connect.sid");
+      res.json({ message: "Logged out successfully" });
+    });
+  });
+
+  app.get("/api/auth/me", async (req, res) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    try {
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        req.session.destroy(() => {});
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      res.json({
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        profileImageUrl: user.profileImageUrl,
+        teamName: user.teamName,
+        budget: user.budget,
+        isCommissioner: user.isCommissioner,
+        mustResetPassword: user.mustResetPassword,
+      });
+    } catch (error) {
+      console.error("Get user error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/change-password", isAuthenticated, async (req, res) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
+      const userId = req.session.userId!;
+
+      if (!newPassword || newPassword.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(400).json({ message: "User not found" });
+      }
+
+      // If user has a password hash, verify current password is provided and correct
+      // Exception: Users in forced reset state don't need current password
+      if (user.passwordHash && !user.mustResetPassword) {
+        if (!currentPassword) {
+          return res.status(400).json({ message: "Current password is required" });
+        }
+        const isValid = await verifyPassword(currentPassword, user.passwordHash);
+        if (!isValid) {
+          return res.status(401).json({ message: "Current password is incorrect" });
+        }
+      }
+
+      // If user has no password hash but is also not in forced reset state,
+      // this is an invalid account state - reject the request
+      if (!user.passwordHash && !user.mustResetPassword) {
+        return res.status(400).json({ message: "Account not properly configured" });
+      }
+
+      const newHash = await hashPassword(newPassword);
+      await storage.updateUserPassword(userId, newHash, false);
+
+      res.json({ message: "Password changed successfully" });
+    } catch (error) {
+      console.error("Change password error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+}
+
+export const isAuthenticated: RequestHandler = async (req, res, next) => {
+  if (!req.session.userId) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  try {
+    const user = await storage.getUser(req.session.userId);
+    if (!user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    next();
+  } catch (error) {
+    res.status(500).json({ message: "Internal server error" });
+  }
+};

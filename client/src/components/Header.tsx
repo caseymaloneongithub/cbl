@@ -22,7 +22,7 @@ const navLinks = [
 ];
 
 export function Header() {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, logout, isLoggingOut } = useAuth();
   const [location] = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -153,19 +153,24 @@ export function Header() {
                       </>
                     )}
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem asChild>
-                      <a href="/api/logout" className="cursor-pointer" data-testid="button-logout">
-                        <LogOut className="mr-2 h-4 w-4" />
-                        Log out
-                      </a>
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      onClick={() => logout()}
+                      disabled={isLoggingOut}
+                      data-testid="button-logout"
+                    >
+                      <LogOut className="mr-2 h-4 w-4" />
+                      {isLoggingOut ? "Logging out..." : "Log out"}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </>
             ) : (
-              <Button asChild data-testid="button-login">
-                <a href="/api/login">Log In</a>
-              </Button>
+              <Link href="/">
+                <Button data-testid="button-login">
+                  Log In
+                </Button>
+              </Link>
             )}
           </div>
         </div>

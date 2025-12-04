@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
+import { setupAuth, isAuthenticated, hashPassword, generateRandomPassword } from "./auth";
 import { insertBidSchema, insertAutoBidSchema } from "@shared/schema";
 import { z } from "zod";
 
@@ -11,18 +11,6 @@ export async function registerRoutes(
 ): Promise<Server> {
   // Auth middleware
   await setupAuth(app);
-
-  // Auth routes
-  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      res.json(user);
-    } catch (error) {
-      console.error("Error fetching user:", error);
-      res.status(500).json({ message: "Failed to fetch user" });
-    }
-  });
 
   // League settings routes
   app.get("/api/settings", isAuthenticated, async (req, res) => {
@@ -37,7 +25,7 @@ export async function registerRoutes(
 
   app.patch("/api/settings", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId!;
       const user = await storage.getUser(userId);
       
       if (!user?.isCommissioner) {
@@ -55,7 +43,7 @@ export async function registerRoutes(
   // Owners routes
   app.get("/api/owners", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId!;
       const user = await storage.getUser(userId);
       
       if (!user?.isCommissioner) {
@@ -72,7 +60,7 @@ export async function registerRoutes(
 
   app.patch("/api/owners/:id/commissioner", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId!;
       const user = await storage.getUser(userId);
       
       if (!user?.isCommissioner) {
@@ -112,7 +100,7 @@ export async function registerRoutes(
 
   app.post("/api/free-agents/bulk", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId!;
       const user = await storage.getUser(userId);
       
       if (!user?.isCommissioner) {
@@ -187,7 +175,7 @@ export async function registerRoutes(
   // Commissioner: Relist a player with no bids (new minimum bid and end time)
   app.post("/api/free-agents/:id/relist", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId!;
       const user = await storage.getUser(userId);
       
       if (!user?.isCommissioner) {
@@ -262,7 +250,7 @@ export async function registerRoutes(
 
   app.post("/api/free-agents/:id/bids", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId!;
       const agentId = parseInt(req.params.id);
       
       const agent = await storage.getFreeAgent(agentId);
@@ -359,7 +347,7 @@ export async function registerRoutes(
   // Auto-bid routes
   app.get("/api/free-agents/:id/auto-bid", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId!;
       const agentId = parseInt(req.params.id);
       const autoBid = await storage.getAutoBid(agentId, userId);
       res.json(autoBid || null);
@@ -371,7 +359,7 @@ export async function registerRoutes(
 
   app.post("/api/free-agents/:id/auto-bid", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId!;
       const agentId = parseInt(req.params.id);
       
       const agent = await storage.getFreeAgent(agentId);
@@ -476,7 +464,7 @@ export async function registerRoutes(
   // My bids
   app.get("/api/my-bids", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId!;
       const bids = await storage.getUserBids(userId);
       res.json(bids);
     } catch (error) {
@@ -487,7 +475,7 @@ export async function registerRoutes(
 
   app.get("/api/my-auto-bids", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId!;
       const autoBids = await storage.getUserAutoBids(userId);
       res.json(autoBids);
     } catch (error) {
@@ -499,7 +487,7 @@ export async function registerRoutes(
   // Stats
   app.get("/api/stats", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId!;
       const stats = await storage.getUserStats(userId);
       res.json(stats);
     } catch (error) {
@@ -511,7 +499,7 @@ export async function registerRoutes(
   // Budget
   app.get("/api/budget", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId!;
       const budgetInfo = await storage.getUserBudgetInfo(userId);
       res.json(budgetInfo);
     } catch (error) {
@@ -523,7 +511,7 @@ export async function registerRoutes(
   // Commissioner: Update user budget
   app.patch("/api/users/:userId/budget", isAuthenticated, async (req: any, res) => {
     try {
-      const adminId = req.user.claims.sub;
+      const adminId = req.session.userId!;
       const admin = await storage.getUser(adminId);
       
       if (!admin?.isCommissioner) {
@@ -548,7 +536,7 @@ export async function registerRoutes(
   // Commissioner: Reset all budgets
   app.post("/api/users/reset-budgets", isAuthenticated, async (req: any, res) => {
     try {
-      const adminId = req.user.claims.sub;
+      const adminId = req.session.userId!;
       const admin = await storage.getUser(adminId);
       
       if (!admin?.isCommissioner) {
@@ -567,7 +555,7 @@ export async function registerRoutes(
   // CSV Export - Auction Results
   app.get("/api/exports/auction-results.csv", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId!;
       const user = await storage.getUser(userId);
       
       if (!user?.isCommissioner) {
@@ -618,7 +606,7 @@ export async function registerRoutes(
   // CSV Export - Final Rosters by Owner
   app.get("/api/exports/final-rosters.csv", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId!;
       const user = await storage.getUser(userId);
       
       if (!user?.isCommissioner) {
@@ -674,6 +662,140 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error exporting final rosters:", error);
       res.status(500).json({ message: "Failed to export final rosters" });
+    }
+  });
+
+  // Commissioner: Create a single user with password
+  app.post("/api/users", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminId = req.session.userId!;
+      const admin = await storage.getUser(adminId);
+      
+      if (!admin?.isCommissioner) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const { email, firstName, lastName, teamName, budget, isCommissioner, password } = req.body;
+
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+
+      // Check if user already exists
+      const existing = await storage.getUserByEmail(email);
+      if (existing) {
+        return res.status(400).json({ message: "User with this email already exists" });
+      }
+
+      // Generate or use provided password
+      const userPassword = password || generateRandomPassword();
+      const passwordHash = await hashPassword(userPassword);
+
+      const user = await storage.createUserWithPassword({
+        email,
+        passwordHash,
+        firstName,
+        lastName,
+        teamName,
+        budget: budget ?? 260,
+        isCommissioner: isCommissioner ?? false,
+        mustResetPassword: !password, // Must reset if auto-generated
+      });
+
+      res.json({ 
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          teamName: user.teamName,
+          budget: user.budget,
+          isCommissioner: user.isCommissioner,
+        },
+        temporaryPassword: !password ? userPassword : undefined,
+      });
+    } catch (error) {
+      console.error("Error creating user:", error);
+      res.status(500).json({ message: "Failed to create user" });
+    }
+  });
+
+  // Bulk user creation validation schema
+  const bulkUserSchema = z.object({
+    users: z.array(z.object({
+      email: z.string().email("Invalid email format"),
+      firstName: z.string().optional(),
+      lastName: z.string().optional(),
+      teamName: z.string().optional(),
+      budget: z.number().min(0).max(100000).optional(),
+    })).min(1, "At least one user is required").max(500, "Maximum 500 users per upload"),
+  });
+
+  // Commissioner: Bulk create users via CSV
+  app.post("/api/users/bulk", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminId = req.session.userId!;
+      const admin = await storage.getUser(adminId);
+      
+      if (!admin?.isCommissioner) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      // Validate input
+      const validation = bulkUserSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "Invalid input", 
+          errors: validation.error.flatten().fieldErrors 
+        });
+      }
+
+      const { users: usersData } = validation.data;
+
+      const results: { email: string; password: string; success: boolean; error?: string }[] = [];
+      const settings = await storage.getSettings();
+
+      for (const userData of usersData) {
+        const email = userData.email.trim();
+        try {
+          // Check if user already exists
+          const existing = await storage.getUserByEmail(email);
+          if (existing) {
+            results.push({ email, password: "", success: false, error: "User already exists" });
+            continue;
+          }
+
+          const tempPassword = generateRandomPassword();
+          const passwordHash = await hashPassword(tempPassword);
+
+          const budget = userData.budget !== undefined ? userData.budget : settings.defaultBudget;
+
+          await storage.createUserWithPassword({
+            email,
+            passwordHash,
+            firstName: userData.firstName?.trim(),
+            lastName: userData.lastName?.trim(),
+            teamName: userData.teamName?.trim(),
+            budget,
+            isCommissioner: false,
+            mustResetPassword: true,
+          });
+
+          results.push({ email, password: tempPassword, success: true });
+        } catch (err: any) {
+          results.push({ 
+            email, 
+            password: "", 
+            success: false, 
+            error: err.message || "Unknown error" 
+          });
+        }
+      }
+
+      res.json({ results });
+    } catch (error) {
+      console.error("Error bulk creating users:", error);
+      res.status(500).json({ message: "Failed to bulk create users" });
     }
   });
 

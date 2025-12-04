@@ -74,6 +74,14 @@ interface ParsedPlayer {
   auctionEndTime: string;
 }
 
+interface ParsedUser {
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  teamName?: string;
+  budget?: number;
+}
+
 export default function Commissioner() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const { toast } = useToast();
@@ -81,6 +89,9 @@ export default function Commissioner() {
   const [dragActive, setDragActive] = useState(false);
   const [exportingResults, setExportingResults] = useState(false);
   const [exportingRosters, setExportingRosters] = useState(false);
+  const [parsedUsers, setParsedUsers] = useState<ParsedUser[]>([]);
+  const [usersDragActive, setUsersDragActive] = useState(false);
+  const [uploadedCredentials, setUploadedCredentials] = useState<{ email: string; password: string }[]>([]);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -90,7 +101,7 @@ export default function Commissioner() {
         variant: "destructive",
       });
       setTimeout(() => {
-        window.location.href = "/api/login";
+        window.location.href = "/";
       }, 500);
     }
   }, [isAuthenticated, authLoading, toast]);
@@ -148,7 +159,7 @@ export default function Commissioner() {
           variant: "destructive",
         });
         setTimeout(() => {
-          window.location.href = "/api/login";
+          window.location.href = "/";
         }, 500);
         return;
       }
@@ -177,7 +188,7 @@ export default function Commissioner() {
           variant: "destructive",
         });
         setTimeout(() => {
-          window.location.href = "/api/login";
+          window.location.href = "/";
         }, 500);
         return;
       }
@@ -195,6 +206,42 @@ export default function Commissioner() {
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const uploadUsers = useMutation({
+    mutationFn: async (users: ParsedUser[]) => {
+      const res = await apiRequest("POST", "/api/users/bulk", { users });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      const successCount = data.results.filter((r: any) => r.success).length;
+      const credentials = data.results
+        .filter((r: any) => r.success && r.password)
+        .map((r: any) => ({ email: r.email, password: r.password }));
+      
+      setUploadedCredentials(credentials);
+      
+      toast({
+        title: "Users Created",
+        description: `${successCount} users have been created. Download credentials below.`,
+      });
+      setParsedUsers([]);
+      queryClient.invalidateQueries({ queryKey: ["/api/owners"] });
+    },
+    onError: (error: Error) => {
+      if (isUnauthorizedError(error)) {
+        toast({
+          title: "Unauthorized",
+          description: "You are logged out. Logging in again...",
+          variant: "destructive",
+        });
+        setTimeout(() => {
+          window.location.href = "/";
+        }, 500);
+        return;
+      }
+      toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -237,6 +284,42 @@ export default function Commissioner() {
     setParsedPlayers(players);
   }, [toast]);
 
+  const parseUserCSV = useCallback((text: string) => {
+    const lines = text.trim().split("\n");
+    const headers = lines[0].toLowerCase().split(",").map(h => h.trim());
+    
+    const emailIdx = headers.findIndex(h => h === "email");
+    const firstNameIdx = headers.findIndex(h => h === "first_name" || h === "firstname");
+    const lastNameIdx = headers.findIndex(h => h === "last_name" || h === "lastname");
+    const teamNameIdx = headers.findIndex(h => h === "team_name" || h === "teamname" || h === "team");
+    const budgetIdx = headers.findIndex(h => h === "budget");
+
+    if (emailIdx === -1) {
+      toast({
+        title: "Invalid CSV",
+        description: "CSV must have 'email' column",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const users: ParsedUser[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(",").map(v => v.trim());
+      if (values[emailIdx]) {
+        users.push({
+          email: values[emailIdx],
+          firstName: firstNameIdx !== -1 ? values[firstNameIdx] : undefined,
+          lastName: lastNameIdx !== -1 ? values[lastNameIdx] : undefined,
+          teamName: teamNameIdx !== -1 ? values[teamNameIdx] : undefined,
+          budget: budgetIdx !== -1 && values[budgetIdx] ? parseFloat(values[budgetIdx]) : undefined,
+        });
+      }
+    }
+
+    setParsedUsers(users);
+  }, [toast]);
+
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -274,6 +357,67 @@ export default function Commissioner() {
       reader.readAsText(file);
     }
   }, [parseCSV]);
+
+  const handleUserDrag = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setUsersDragActive(true);
+    } else if (e.type === "dragleave") {
+      setUsersDragActive(false);
+    }
+  }, []);
+
+  const handleUserDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setUsersDragActive(false);
+    
+    const file = e.dataTransfer.files[0];
+    if (file && file.type === "text/csv") {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target?.result as string;
+        parseUserCSV(text);
+      };
+      reader.readAsText(file);
+    }
+  }, [parseUserCSV]);
+
+  const handleUserFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target?.result as string;
+        parseUserCSV(text);
+      };
+      reader.readAsText(file);
+    }
+  }, [parseUserCSV]);
+
+  const downloadCredentials = useCallback(() => {
+    if (uploadedCredentials.length === 0) return;
+    
+    const csv = "Email,Temporary Password\n" + 
+      uploadedCredentials.map(c => `${c.email},${c.password}`).join("\n");
+    
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "user-credentials.csv";
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    
+    toast({
+      title: "Credentials Downloaded",
+      description: "Share these credentials securely with your team owners.",
+    });
+    setUploadedCredentials([]);
+  }, [uploadedCredentials, toast]);
 
   const handleExportResults = async () => {
     setExportingResults(true);
@@ -566,6 +710,149 @@ export default function Commissioner() {
                     )}
                   </div>
                 ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* User Upload Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Upload Team Owners
+            </CardTitle>
+            <CardDescription>
+              Upload a CSV file to create user accounts. Required: email. Optional: first_name, last_name, team_name, budget
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Credentials Download */}
+            {uploadedCredentials.length > 0 && (
+              <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/20 space-y-3">
+                <p className="text-sm font-medium text-green-600 dark:text-green-400">
+                  {uploadedCredentials.length} users created successfully!
+                </p>
+                <Button onClick={downloadCredentials} variant="outline" className="w-full" data-testid="button-download-credentials">
+                  <Download className="mr-2 h-4 w-4" />
+                  Download Credentials CSV
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Share these temporary passwords securely with your team owners.
+                </p>
+              </div>
+            )}
+            
+            {/* Drop Zone */}
+            <div
+              className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+                usersDragActive
+                  ? "border-primary bg-primary/5"
+                  : "border-muted-foreground/25 hover:border-muted-foreground/50"
+              }`}
+              onDragEnter={handleUserDrag}
+              onDragLeave={handleUserDrag}
+              onDragOver={handleUserDrag}
+              onDrop={handleUserDrop}
+            >
+              <Users className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+              <p className="text-sm text-muted-foreground mb-3">
+                Drag and drop a CSV file here, or click to select
+              </p>
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleUserFileSelect}
+                className="hidden"
+                id="user-csv-upload"
+                data-testid="input-user-csv-upload"
+              />
+              <Button variant="outline" size="sm" asChild>
+                <label htmlFor="user-csv-upload" className="cursor-pointer">
+                  Select CSV File
+                </label>
+              </Button>
+            </div>
+
+            {/* Preview Table */}
+            {parsedUsers.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-medium">
+                    Preview ({parsedUsers.length} users)
+                  </h4>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setParsedUsers([])}
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    Clear
+                  </Button>
+                </div>
+                <div className="border rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Team</TableHead>
+                        <TableHead>Budget</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {parsedUsers.slice(0, 10).map((u, idx) => (
+                        <TableRow key={idx}>
+                          <TableCell className="font-medium">{u.email}</TableCell>
+                          <TableCell>{u.firstName || ""} {u.lastName || ""}</TableCell>
+                          <TableCell>{u.teamName || "-"}</TableCell>
+                          <TableCell>{u.budget ? `$${u.budget}` : "Default"}</TableCell>
+                        </TableRow>
+                      ))}
+                      {parsedUsers.length > 10 && (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center text-muted-foreground">
+                            ... and {parsedUsers.length - 10} more users
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button className="w-full" data-testid="button-upload-users">
+                      <Upload className="h-4 w-4 mr-2" />
+                      Create {parsedUsers.length} Users
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Confirm User Creation</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will create {parsedUsers.length} new user accounts with auto-generated passwords.
+                        You will be able to download a CSV with their login credentials.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => uploadUsers.mutate(parsedUsers)}
+                        disabled={uploadUsers.isPending}
+                      >
+                        {uploadUsers.isPending ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Creating...
+                          </>
+                        ) : (
+                          "Create Users"
+                        )}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             )}
           </CardContent>

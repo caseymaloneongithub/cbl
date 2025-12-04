@@ -76,24 +76,31 @@ Preferred communication style: Simple, everyday language.
 
 ### Authentication & Authorization
 
-**Authentication Provider**: Replit Auth using OpenID Connect (OIDC) with Passport.js strategy.
+**Authentication Provider**: Email/password authentication with bcrypt password hashing (cost factor 12).
 
 **Authorization Model**: Simple role-based system with two roles:
 - Regular users (team owners) - can view auctions and place bids
-- Commissioners - can modify league settings, upload free agents, and manage users
+- Commissioners - can modify league settings, upload free agents, manage users, and create new user accounts
 
 **Session Flow**:
-1. User initiates login via `/api/login`
-2. OIDC redirect to Replit authentication
-3. Callback processes tokens and creates/updates user record
-4. Session stored in PostgreSQL with user claims
-5. Protected routes use `isAuthenticated` middleware
+1. User submits email/password to `POST /api/auth/login`
+2. Server validates credentials against bcrypt hash
+3. Session created and stored in PostgreSQL with userId
+4. Protected routes use `isAuthenticated` middleware
+5. User can logout via `POST /api/auth/logout`
+
+**User Management**:
+- Commissioners can upload users via CSV (email, first_name, last_name, team_name, budget)
+- System auto-generates secure passwords for new users
+- Credentials CSV can be downloaded after upload
+- Users with `mustResetPassword` flag are prompted to change password
 
 ### External Dependencies
 
 **Authentication**: 
-- Replit Auth (OIDC provider)
-- Passport.js with openid-client strategy
+- bcryptjs for password hashing
+- express-session for session management
+- connect-pg-simple for PostgreSQL session storage
 
 **Database**:
 - PostgreSQL (required via DATABASE_URL environment variable)
@@ -112,9 +119,7 @@ Preferred communication style: Simple, everyday language.
 
 **Key Environment Variables**:
 - `DATABASE_URL` - PostgreSQL connection string (required)
-- `SESSION_SECRET` - Session encryption key
-- `ISSUER_URL` - OIDC provider URL (defaults to Replit)
-- `REPL_ID` - Replit environment identifier
+- `SESSION_SECRET` - Session encryption key (required)
 
 ## Recent Changes (December 2024)
 
@@ -130,6 +135,8 @@ Preferred communication style: Simple, everyday language.
 - **Budget system** - Per-team variable budgets tracking dollar amounts (not total values)
 - **Minimum bid support** - Each player has a minimum starting bid, configurable in CSV uploads
 - **Relist players** - Commissioner can relist players with no bids with new minimum bid and end date
+- **Email/password authentication** - Full email/password auth with bcrypt hashing, replacing OIDC
+- **Commissioner user management** - Bulk upload users via CSV with auto-generated passwords
 
 ### Budget System
 - Budget is per-team and can vary by team (not a fixed amount for all teams)

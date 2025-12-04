@@ -27,13 +27,15 @@ export const sessions = pgTable(
 // Users table - supports both owners and commissioners
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  email: varchar("email").unique(),
+  email: varchar("email").unique().notNull(),
+  passwordHash: varchar("password_hash"),
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
   isCommissioner: boolean("is_commissioner").default(false).notNull(),
   teamName: varchar("team_name"),
   budget: real("budget").default(260).notNull(),
+  mustResetPassword: boolean("must_reset_password").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
