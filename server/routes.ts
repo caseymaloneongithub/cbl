@@ -146,14 +146,41 @@ export async function registerRoutes(
           }
         }
         
+        // Determine player type from position
+        const position = (p.position || "UTIL").toUpperCase();
+        const pitcherPositions = ["P", "SP", "RP", "CL", "PITCHER"];
+        const playerType = pitcherPositions.includes(position) ? "pitcher" : "hitter";
+
+        // Parse stats (all optional)
+        const parseNum = (val: any): number | null => {
+          if (val === undefined || val === null || val === "") return null;
+          const num = Number(val);
+          return isNaN(num) ? null : num;
+        };
+
         return {
           name: name || `Unknown Player ${index}`,
           position: p.position || "UTIL",
           team: p.team || null,
+          playerType,
           minimumBid,
           minimumYears,
           auctionEndTime: p.auctionEndTime ? new Date(p.auctionEndTime) : defaultEndTime,
           isActive: true,
+          // Hitter stats
+          avg: parseNum(p.avg),
+          hr: parseNum(p.hr) !== null ? Math.floor(parseNum(p.hr)!) : null,
+          rbi: parseNum(p.rbi) !== null ? Math.floor(parseNum(p.rbi)!) : null,
+          runs: parseNum(p.runs) !== null ? Math.floor(parseNum(p.runs)!) : null,
+          sb: parseNum(p.sb) !== null ? Math.floor(parseNum(p.sb)!) : null,
+          ops: parseNum(p.ops),
+          // Pitcher stats
+          wins: parseNum(p.wins) !== null ? Math.floor(parseNum(p.wins)!) : null,
+          losses: parseNum(p.losses) !== null ? Math.floor(parseNum(p.losses)!) : null,
+          era: parseNum(p.era),
+          whip: parseNum(p.whip),
+          strikeouts: parseNum(p.strikeouts) !== null ? Math.floor(parseNum(p.strikeouts)!) : null,
+          ip: parseNum(p.ip),
         };
       });
       

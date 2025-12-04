@@ -130,13 +130,14 @@ Preferred communication style: Simple, everyday language.
 - **Real-time countdown timers** - Shows time remaining for each auction
 - **Dark/Light theme support** - System-based theme with manual toggle
 - **Responsive Material Design** - Professional sports aesthetic with Roboto fonts
-- **Search/filtering/sorting** - Filter free agents by name, position, team with column sorting
+- **Search/filtering/sorting** - Filter free agents by name, position, team, player type with column sorting
 - **CSV export** - Commissioner can export auction results and final rosters as CSV files
 - **Budget system** - Per-team variable budgets tracking dollar amounts (not total values)
 - **Minimum bid support** - Each player has a minimum starting bid, configurable in CSV uploads
 - **Relist players** - Commissioner can relist players with no bids with new minimum bid and end date
 - **Email/password authentication** - Full email/password auth with bcrypt hashing, replacing OIDC
 - **Commissioner user management** - Bulk upload users via CSV with auto-generated passwords
+- **Player stats display** - Sortable stats columns for hitters and pitchers with type-based filtering
 
 ### Budget System
 - Budget is per-team and can vary by team (not a fixed amount for all teams)
@@ -169,6 +170,14 @@ Each new bid must have a total value at least 10% higher than the current highes
   - Click "Relist" button on players with no bids
   - Set new minimum bid, minimum years, and auction end date
   - Player returns to active auctions
+
+### Player Stats Display
+- Players are categorized as "hitter" or "pitcher" based on position (P, SP, RP, CL = pitcher)
+- Stats are displayed when filtering by player type in the FreeAgentsTable
+- Hitter stats: AVG, HR, RBI, R (runs), SB, OPS
+- Pitcher stats: W (wins), L (losses), ERA, WHIP, K (strikeouts), IP
+- All stats columns are sortable
+- Stats can be uploaded via CSV with columns: avg, hr, rbi, runs/r, sb, ops (hitters) and wins/w, losses/l, era, whip, strikeouts/k/so, ip (pitchers)
 
 ### Page Structure
 - `/` - Landing page (unauthenticated) or Home dashboard (authenticated)

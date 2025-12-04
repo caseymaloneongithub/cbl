@@ -72,6 +72,20 @@ interface ParsedPlayer {
   minimumBid: number;
   minimumYears: number;
   auctionEndTime: string;
+  // Hitter stats
+  avg?: number;
+  hr?: number;
+  rbi?: number;
+  runs?: number;
+  sb?: number;
+  ops?: number;
+  // Pitcher stats
+  wins?: number;
+  losses?: number;
+  era?: number;
+  whip?: number;
+  strikeouts?: number;
+  ip?: number;
 }
 
 interface ParsedUser {
@@ -255,6 +269,22 @@ export default function Commissioner() {
     const minBidIdx = headers.findIndex(h => h === "minimum_bid" || h === "min_bid" || h === "minbid" || h === "min");
     const minYearsIdx = headers.findIndex(h => h === "minimum_years" || h === "min_years" || h === "minyears");
     const endTimeIdx = headers.findIndex(h => h === "end" || h === "endtime" || h === "auction_end" || h === "end_time");
+    
+    // Hitter stats columns
+    const avgIdx = headers.findIndex(h => h === "avg" || h === "average" || h === "ba");
+    const hrIdx = headers.findIndex(h => h === "hr" || h === "home_runs" || h === "homers");
+    const rbiIdx = headers.findIndex(h => h === "rbi" || h === "rbis");
+    const runsIdx = headers.findIndex(h => h === "runs" || h === "r");
+    const sbIdx = headers.findIndex(h => h === "sb" || h === "stolen_bases" || h === "steals");
+    const opsIdx = headers.findIndex(h => h === "ops");
+    
+    // Pitcher stats columns
+    const winsIdx = headers.findIndex(h => h === "wins" || h === "w");
+    const lossesIdx = headers.findIndex(h => h === "losses" || h === "l");
+    const eraIdx = headers.findIndex(h => h === "era");
+    const whipIdx = headers.findIndex(h => h === "whip");
+    const strikeoutsIdx = headers.findIndex(h => h === "strikeouts" || h === "k" || h === "so");
+    const ipIdx = headers.findIndex(h => h === "ip" || h === "innings" || h === "innings_pitched");
 
     if (nameIdx === -1 || posIdx === -1) {
       toast({
@@ -264,6 +294,12 @@ export default function Commissioner() {
       });
       return;
     }
+
+    const parseNum = (val: string | undefined): number | undefined => {
+      if (!val || val === "") return undefined;
+      const num = parseFloat(val);
+      return isNaN(num) ? undefined : num;
+    };
 
     const players: ParsedPlayer[] = [];
     for (let i = 1; i < lines.length; i++) {
@@ -277,6 +313,20 @@ export default function Commissioner() {
           minimumBid: minBidIdx !== -1 ? parseFloat(values[minBidIdx]) || 1 : 1,
           minimumYears: isNaN(minYearsVal) || minYearsVal < 1 || minYearsVal > 5 ? 1 : minYearsVal,
           auctionEndTime: endTimeIdx !== -1 ? values[endTimeIdx] : "",
+          // Hitter stats
+          avg: parseNum(values[avgIdx]),
+          hr: parseNum(values[hrIdx]),
+          rbi: parseNum(values[rbiIdx]),
+          runs: parseNum(values[runsIdx]),
+          sb: parseNum(values[sbIdx]),
+          ops: parseNum(values[opsIdx]),
+          // Pitcher stats
+          wins: parseNum(values[winsIdx]),
+          losses: parseNum(values[lossesIdx]),
+          era: parseNum(values[eraIdx]),
+          whip: parseNum(values[whipIdx]),
+          strikeouts: parseNum(values[strikeoutsIdx]),
+          ip: parseNum(values[ipIdx]),
         });
       }
     }

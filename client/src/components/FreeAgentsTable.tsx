@@ -30,8 +30,11 @@ interface FreeAgentsTableProps {
   freeAgents: FreeAgentWithBids[];
 }
 
-type SortField = "name" | "position" | "currentBid" | "totalValue" | "endTime";
+type SortField = "name" | "position" | "currentBid" | "totalValue" | "endTime" | 
+  "avg" | "hr" | "rbi" | "runs" | "sb" | "ops" | 
+  "wins" | "losses" | "era" | "whip" | "strikeouts" | "ip";
 type SortDirection = "asc" | "desc";
+type PlayerTypeFilter = "all" | "hitter" | "pitcher";
 
 export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
   const { user } = useAuth();
@@ -42,6 +45,7 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [positionFilter, setPositionFilter] = useState<string>("all");
   const [teamFilter, setTeamFilter] = useState<string>("all");
+  const [playerTypeFilter, setPlayerTypeFilter] = useState<PlayerTypeFilter>("all");
   const [sortField, setSortField] = useState<SortField>("endTime");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
@@ -74,6 +78,10 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
       result = result.filter(a => a.team === teamFilter);
     }
 
+    if (playerTypeFilter !== "all") {
+      result = result.filter(a => a.playerType === playerTypeFilter);
+    }
+
     result.sort((a, b) => {
       let comparison = 0;
       
@@ -97,13 +105,51 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
         case "endTime":
           comparison = new Date(a.auctionEndTime).getTime() - new Date(b.auctionEndTime).getTime();
           break;
+        // Hitter stats
+        case "avg":
+          comparison = (a.avg ?? 0) - (b.avg ?? 0);
+          break;
+        case "hr":
+          comparison = (a.hr ?? 0) - (b.hr ?? 0);
+          break;
+        case "rbi":
+          comparison = (a.rbi ?? 0) - (b.rbi ?? 0);
+          break;
+        case "runs":
+          comparison = (a.runs ?? 0) - (b.runs ?? 0);
+          break;
+        case "sb":
+          comparison = (a.sb ?? 0) - (b.sb ?? 0);
+          break;
+        case "ops":
+          comparison = (a.ops ?? 0) - (b.ops ?? 0);
+          break;
+        // Pitcher stats
+        case "wins":
+          comparison = (a.wins ?? 0) - (b.wins ?? 0);
+          break;
+        case "losses":
+          comparison = (a.losses ?? 0) - (b.losses ?? 0);
+          break;
+        case "era":
+          comparison = (a.era ?? 0) - (b.era ?? 0);
+          break;
+        case "whip":
+          comparison = (a.whip ?? 0) - (b.whip ?? 0);
+          break;
+        case "strikeouts":
+          comparison = (a.strikeouts ?? 0) - (b.strikeouts ?? 0);
+          break;
+        case "ip":
+          comparison = (a.ip ?? 0) - (b.ip ?? 0);
+          break;
       }
       
       return sortDirection === "asc" ? comparison : -comparison;
     });
 
     return result;
-  }, [freeAgents, searchTerm, positionFilter, teamFilter, sortField, sortDirection]);
+  }, [freeAgents, searchTerm, positionFilter, teamFilter, playerTypeFilter, sortField, sortDirection]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -127,9 +173,15 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
     setSearchTerm("");
     setPositionFilter("all");
     setTeamFilter("all");
+    setPlayerTypeFilter("all");
   };
 
-  const hasActiveFilters = searchTerm || positionFilter !== "all" || teamFilter !== "all";
+  const hasActiveFilters = searchTerm || positionFilter !== "all" || teamFilter !== "all" || playerTypeFilter !== "all";
+
+  const formatStat = (value: number | null | undefined, decimals: number = 0): string => {
+    if (value === null || value === undefined) return "-";
+    return decimals > 0 ? value.toFixed(decimals) : String(value);
+  };
 
   const handleBidClick = (agent: FreeAgentWithBids) => {
     setSelectedAgent(agent);
@@ -176,6 +228,17 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
             {uniqueTeams.map(team => (
               <SelectItem key={team} value={team}>{team}</SelectItem>
             ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={playerTypeFilter} onValueChange={(v) => setPlayerTypeFilter(v as PlayerTypeFilter)}>
+          <SelectTrigger className="w-full sm:w-[140px]" data-testid="select-player-type">
+            <SelectValue placeholder="Player Type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Players</SelectItem>
+            <SelectItem value="hitter">Hitters</SelectItem>
+            <SelectItem value="pitcher">Pitchers</SelectItem>
           </SelectContent>
         </Select>
 
@@ -239,13 +302,57 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
                       {getSortIcon("endTime")}
                     </div>
                   </TableHead>
+                  {playerTypeFilter === "hitter" && (
+                    <>
+                      <TableHead className="font-semibold text-right cursor-pointer select-none" onClick={() => handleSort("avg")}>
+                        <div className="flex items-center justify-end">AVG{getSortIcon("avg")}</div>
+                      </TableHead>
+                      <TableHead className="font-semibold text-right cursor-pointer select-none" onClick={() => handleSort("hr")}>
+                        <div className="flex items-center justify-end">HR{getSortIcon("hr")}</div>
+                      </TableHead>
+                      <TableHead className="font-semibold text-right cursor-pointer select-none" onClick={() => handleSort("rbi")}>
+                        <div className="flex items-center justify-end">RBI{getSortIcon("rbi")}</div>
+                      </TableHead>
+                      <TableHead className="font-semibold text-right cursor-pointer select-none" onClick={() => handleSort("runs")}>
+                        <div className="flex items-center justify-end">R{getSortIcon("runs")}</div>
+                      </TableHead>
+                      <TableHead className="font-semibold text-right cursor-pointer select-none" onClick={() => handleSort("sb")}>
+                        <div className="flex items-center justify-end">SB{getSortIcon("sb")}</div>
+                      </TableHead>
+                      <TableHead className="font-semibold text-right cursor-pointer select-none" onClick={() => handleSort("ops")}>
+                        <div className="flex items-center justify-end">OPS{getSortIcon("ops")}</div>
+                      </TableHead>
+                    </>
+                  )}
+                  {playerTypeFilter === "pitcher" && (
+                    <>
+                      <TableHead className="font-semibold text-right cursor-pointer select-none" onClick={() => handleSort("wins")}>
+                        <div className="flex items-center justify-end">W{getSortIcon("wins")}</div>
+                      </TableHead>
+                      <TableHead className="font-semibold text-right cursor-pointer select-none" onClick={() => handleSort("losses")}>
+                        <div className="flex items-center justify-end">L{getSortIcon("losses")}</div>
+                      </TableHead>
+                      <TableHead className="font-semibold text-right cursor-pointer select-none" onClick={() => handleSort("era")}>
+                        <div className="flex items-center justify-end">ERA{getSortIcon("era")}</div>
+                      </TableHead>
+                      <TableHead className="font-semibold text-right cursor-pointer select-none" onClick={() => handleSort("whip")}>
+                        <div className="flex items-center justify-end">WHIP{getSortIcon("whip")}</div>
+                      </TableHead>
+                      <TableHead className="font-semibold text-right cursor-pointer select-none" onClick={() => handleSort("strikeouts")}>
+                        <div className="flex items-center justify-end">K{getSortIcon("strikeouts")}</div>
+                      </TableHead>
+                      <TableHead className="font-semibold text-right cursor-pointer select-none" onClick={() => handleSort("ip")}>
+                        <div className="flex items-center justify-end">IP{getSortIcon("ip")}</div>
+                      </TableHead>
+                    </>
+                  )}
                   <TableHead className="font-semibold text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredAndSortedAgents.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={playerTypeFilter !== "all" ? 14 : 8} className="text-center py-8 text-muted-foreground">
                       {hasActiveFilters 
                         ? "No players match your filters" 
                         : "No active auctions"}
@@ -323,6 +430,26 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
                         <TableCell className="text-center">
                           <CountdownTimer endTime={agent.auctionEndTime} />
                         </TableCell>
+                        {playerTypeFilter === "hitter" && (
+                          <>
+                            <TableCell className="text-right font-mono text-sm">{formatStat(agent.avg, 3)}</TableCell>
+                            <TableCell className="text-right font-mono text-sm">{formatStat(agent.hr)}</TableCell>
+                            <TableCell className="text-right font-mono text-sm">{formatStat(agent.rbi)}</TableCell>
+                            <TableCell className="text-right font-mono text-sm">{formatStat(agent.runs)}</TableCell>
+                            <TableCell className="text-right font-mono text-sm">{formatStat(agent.sb)}</TableCell>
+                            <TableCell className="text-right font-mono text-sm">{formatStat(agent.ops, 3)}</TableCell>
+                          </>
+                        )}
+                        {playerTypeFilter === "pitcher" && (
+                          <>
+                            <TableCell className="text-right font-mono text-sm">{formatStat(agent.wins)}</TableCell>
+                            <TableCell className="text-right font-mono text-sm">{formatStat(agent.losses)}</TableCell>
+                            <TableCell className="text-right font-mono text-sm">{formatStat(agent.era, 2)}</TableCell>
+                            <TableCell className="text-right font-mono text-sm">{formatStat(agent.whip, 2)}</TableCell>
+                            <TableCell className="text-right font-mono text-sm">{formatStat(agent.strikeouts)}</TableCell>
+                            <TableCell className="text-right font-mono text-sm">{formatStat(agent.ip, 1)}</TableCell>
+                          </>
+                        )}
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
                             <Button

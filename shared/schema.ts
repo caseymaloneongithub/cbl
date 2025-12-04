@@ -64,6 +64,7 @@ export const freeAgents = pgTable("free_agents", {
   name: varchar("name", { length: 255 }).notNull(),
   position: varchar("position", { length: 50 }).notNull(),
   team: varchar("team", { length: 100 }),
+  playerType: varchar("player_type", { length: 20 }).default("hitter").notNull(), // 'pitcher' or 'hitter'
   minimumBid: real("minimum_bid").default(1).notNull(),
   minimumYears: integer("minimum_years").default(1).notNull(),
   auctionEndTime: timestamp("auction_end_time").notNull(),
@@ -71,6 +72,20 @@ export const freeAgents = pgTable("free_agents", {
   winnerId: varchar("winner_id").references(() => users.id),
   winningBidId: integer("winning_bid_id"),
   createdAt: timestamp("created_at").defaultNow(),
+  // Hitter stats
+  avg: real("avg"),           // Batting average (e.g., 0.285)
+  hr: integer("hr"),          // Home runs
+  rbi: integer("rbi"),        // Runs batted in
+  runs: integer("runs"),      // Runs scored
+  sb: integer("sb"),          // Stolen bases
+  ops: real("ops"),           // On-base plus slugging
+  // Pitcher stats
+  wins: integer("wins"),      // Wins
+  losses: integer("losses"),  // Losses
+  era: real("era"),           // Earned run average
+  whip: real("whip"),         // Walks + hits per inning pitched
+  strikeouts: integer("strikeouts"), // Strikeouts
+  ip: real("ip"),             // Innings pitched
 });
 
 export const freeAgentsRelations = relations(freeAgents, ({ one, many }) => ({
