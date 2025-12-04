@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,13 +19,26 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { CountdownTimer } from "./CountdownTimer";
 import { BidDialog } from "./BidDialog";
 import { AutoBidDialog } from "./AutoBidDialog";
 import { formatCurrency, isAuctionClosed } from "@/lib/utils";
 import type { FreeAgentWithBids } from "@shared/schema";
-import { Gavel, Zap, Search, ArrowUpDown, ArrowUp, ArrowDown, X } from "lucide-react";
+import { Gavel, Zap, Search, ArrowUpDown, ArrowUp, ArrowDown, X, Trash2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface FreeAgentsTableProps {
   freeAgents: FreeAgentWithBids[];
@@ -38,6 +52,7 @@ type PlayerTypeFilter = "all" | "hitter" | "pitcher";
 
 export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [selectedAgent, setSelectedAgent] = useState<FreeAgentWithBids | null>(null);
   const [bidDialogOpen, setBidDialogOpen] = useState(false);
   const [autoBidDialogOpen, setAutoBidDialogOpen] = useState(false);
@@ -47,6 +62,22 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
   const [playerTypeFilter, setPlayerTypeFilter] = useState<PlayerTypeFilter>("all");
   const [sortField, setSortField] = useState<SortField>("endTime");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+
+  const isAdmin = user?.isCommissioner || user?.isSuperAdmin;
+
+  const deleteAgent = useMutation({
+    mutationFn: async (agentId: number) => {
+      await apiRequest("DELETE", `/api/free-agents/${agentId}`);
+    },
+    onSuccess: () => {
+      toast({ title: "Player Removed", description: "Free agent has been deleted." });
+      queryClient.invalidateQueries({ queryKey: ["/api/free-agents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Delete Failed", description: error.message, variant: "destructive" });
+    },
+  });
 
   const uniqueTeams = useMemo(() => {
     const teams = new Set(freeAgents.filter(a => a.team).map(a => a.team!));
@@ -456,6 +487,38 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
                               <Zap className="h-4 w-4 mr-1" />
                               Auto
                             </Button>
+                            {isAdmin && (
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-destructive"
+                                    data-testid={`button-delete-${agent.id}`}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Delete Free Agent</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      Are you sure you want to remove {agent.name} from the auction? 
+                                      This will delete all bids and auto-bids for this player.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => deleteAgent.mutate(agent.id)}
+                                      className="bg-destructive text-destructive-foreground"
+                                    >
+                                      Delete
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>

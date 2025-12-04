@@ -321,9 +321,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteFreeAgent(id: number): Promise<void> {
-    await db.delete(bids).where(eq(bids.freeAgentId, id));
-    await db.delete(autoBids).where(eq(autoBids.freeAgentId, id));
-    await db.delete(freeAgents).where(eq(freeAgents.id, id));
+    await db.transaction(async (tx) => {
+      await tx.delete(bids).where(eq(bids.freeAgentId, id));
+      await tx.delete(autoBids).where(eq(autoBids.freeAgentId, id));
+      await tx.delete(freeAgents).where(eq(freeAgents.id, id));
+    });
   }
 
   // Bids
