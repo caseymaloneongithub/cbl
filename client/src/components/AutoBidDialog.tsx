@@ -144,7 +144,7 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange }: AutoBidDialogPr
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[450px]">
+      <DialogContent className="sm:max-w-[450px] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             <Zap className="h-5 w-5 text-primary" />
@@ -155,7 +155,7 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange }: AutoBidDialogPr
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6">
+        <div className="space-y-6 overflow-y-auto flex-1">
           {/* Current Status */}
           <div className="rounded-lg bg-muted/50 p-4">
             <div className="flex justify-between items-center">
