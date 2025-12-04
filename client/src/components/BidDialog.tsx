@@ -139,7 +139,7 @@ export function BidDialog({ freeAgent, open, onOpenChange }: BidDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px] max-h-[90vh] flex flex-col">
+      <DialogContent className="sm:max-w-[550px] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             <span className="text-xl">{freeAgent.name}</span>
