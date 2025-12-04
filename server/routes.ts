@@ -271,6 +271,111 @@ export async function registerRoutes(
     }
   });
 
+  // Create a single free agent (commissioner or super admin only)
+  app.post("/api/free-agents", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Commissioner or super admin access required" });
+      }
+
+      const { name, position, team, minimumBid, minimumYears, auctionEndTime, 
+              avg, hr, rbi, runs, sb, ops, pa, wins, losses, era, whip, strikeouts, ip } = req.body;
+      
+      if (!name?.trim()) {
+        return res.status(400).json({ message: "Player name is required" });
+      }
+
+      // Validate minimumBid
+      const parsedMinBid = Number(minimumBid) || 1;
+      if (parsedMinBid < 1) {
+        return res.status(400).json({ message: "Minimum bid must be at least $1" });
+      }
+
+      // Validate minimumYears
+      const parsedMinYears = Number(minimumYears) || 1;
+      if (parsedMinYears < 1 || parsedMinYears > 5) {
+        return res.status(400).json({ message: "Minimum years must be between 1 and 5" });
+      }
+
+      // Validate auctionEndTime
+      if (!auctionEndTime) {
+        return res.status(400).json({ message: "Auction end time is required" });
+      }
+      
+      const endTime = new Date(auctionEndTime);
+      if (endTime <= new Date()) {
+        return res.status(400).json({ message: "Auction end time must be in the future" });
+      }
+
+      // Determine player type from position
+      const normalizedPosition = (position || "UTIL").toUpperCase();
+      const pitcherPositions = ["P", "SP", "RP", "CL", "PITCHER"];
+      const playerType = pitcherPositions.includes(normalizedPosition) ? "pitcher" : "hitter";
+
+      const parseNum = (val: any): number | null => {
+        if (val === undefined || val === null || val === "") return null;
+        const num = Number(val);
+        return isNaN(num) ? null : num;
+      };
+
+      const agent = await storage.createFreeAgent({
+        name: name.trim(),
+        position: normalizedPosition,
+        team: team?.trim() || null,
+        playerType,
+        minimumBid: parsedMinBid,
+        minimumYears: Math.floor(parsedMinYears),
+        auctionEndTime: endTime,
+        avg: parseNum(avg),
+        hr: parseNum(hr),
+        rbi: parseNum(rbi),
+        runs: parseNum(runs),
+        sb: parseNum(sb),
+        ops: parseNum(ops),
+        pa: parseNum(pa),
+        wins: parseNum(wins),
+        losses: parseNum(losses),
+        era: parseNum(era),
+        whip: parseNum(whip),
+        strikeouts: parseNum(strikeouts),
+        ip: parseNum(ip),
+      });
+
+      res.status(201).json(agent);
+    } catch (error) {
+      console.error("Error creating free agent:", error);
+      res.status(500).json({ message: "Failed to create free agent" });
+    }
+  });
+
+  // Delete a free agent (commissioner or super admin only)
+  app.delete("/api/free-agents/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Commissioner or super admin access required" });
+      }
+
+      const agentId = parseInt(req.params.id);
+      const agent = await storage.getFreeAgent(agentId);
+      
+      if (!agent) {
+        return res.status(404).json({ message: "Free agent not found" });
+      }
+
+      await storage.deleteFreeAgent(agentId);
+      res.json({ message: "Free agent deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting free agent:", error);
+      res.status(500).json({ message: "Failed to delete free agent" });
+    }
+  });
+
   // Bids routes
   app.get("/api/free-agents/:id/bids", isAuthenticated, async (req, res) => {
     try {
