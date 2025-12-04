@@ -123,12 +123,12 @@ export default function Commissioner() {
 
   const { data: settings, isLoading: loadingSettings } = useQuery<LeagueSettings>({
     queryKey: ["/api/settings"],
-    enabled: isAuthenticated && user?.isCommissioner,
+    enabled: isAuthenticated && (user?.isCommissioner || user?.isSuperAdmin),
   });
 
   const { data: owners, isLoading: loadingOwners } = useQuery<User[]>({
     queryKey: ["/api/owners"],
-    enabled: isAuthenticated && user?.isCommissioner,
+    enabled: isAuthenticated && (user?.isCommissioner || user?.isSuperAdmin),
   });
 
   const form = useForm<SettingsFormData>({
@@ -569,7 +569,7 @@ export default function Commissioner() {
     );
   }
 
-  if (!user?.isCommissioner) {
+  if (!user?.isCommissioner && !user?.isSuperAdmin) {
     return (
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <Card>
@@ -577,7 +577,7 @@ export default function Commissioner() {
             <Settings className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <h3 className="text-lg font-medium mb-2">Commissioner Access Required</h3>
             <p className="text-muted-foreground">
-              Only the league commissioner can access these settings.
+              Only the league commissioner or super admin can access these settings.
             </p>
           </CardContent>
         </Card>

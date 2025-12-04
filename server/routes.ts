@@ -25,11 +25,11 @@ export async function registerRoutes(
 
   app.patch("/api/settings", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId!;
+      const userId = req.session.originalUserId || req.session.userId!;
       const user = await storage.getUser(userId);
       
-      if (!user?.isCommissioner) {
-        return res.status(403).json({ message: "Commissioner access required" });
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Commissioner or Super Admin access required" });
       }
 
       const settings = await storage.updateSettings(req.body);

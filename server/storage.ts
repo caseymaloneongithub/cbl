@@ -147,21 +147,30 @@ export class DatabaseStorage implements IStorage {
   }
 
   async setSoleCommissioner(userId: string | null): Promise<User | null> {
-    await db
-      .update(users)
-      .set({ isCommissioner: false, updatedAt: new Date() })
-      .where(eq(users.isCommissioner, true));
-    
-    if (userId === null) {
-      return null;
-    }
-    
-    const [user] = await db
-      .update(users)
-      .set({ isCommissioner: true, updatedAt: new Date() })
-      .where(eq(users.id, userId))
-      .returning();
-    return user || null;
+    return await db.transaction(async (tx) => {
+      if (userId !== null) {
+        const [targetUser] = await tx.select().from(users).where(eq(users.id, userId));
+        if (!targetUser) {
+          throw new Error("Target user not found");
+        }
+      }
+      
+      await tx
+        .update(users)
+        .set({ isCommissioner: false, updatedAt: new Date() })
+        .where(eq(users.isCommissioner, true));
+      
+      if (userId === null) {
+        return null;
+      }
+      
+      const [user] = await tx
+        .update(users)
+        .set({ isCommissioner: true, updatedAt: new Date() })
+        .where(eq(users.id, userId))
+        .returning();
+      return user || null;
+    });
   }
 
   async updateUserPassword(id: string, passwordHash: string, mustResetPassword: boolean): Promise<User | undefined> {
