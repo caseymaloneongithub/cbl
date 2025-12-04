@@ -174,10 +174,28 @@ Each new bid must have a total value at least 10% higher than the current highes
 ### Player Stats Display
 - Players are categorized as "hitter" or "pitcher" based on position (P, SP, RP, CL = pitcher)
 - Stats are displayed when filtering by player type in the FreeAgentsTable
-- Hitter stats: AVG, HR, RBI, R (runs), SB, OPS
+- Hitter stats: AVG, HR, RBI, R (runs), SB, OPS, PA (plate appearances)
 - Pitcher stats: W (wins), L (losses), ERA, WHIP, K (strikeouts), IP
 - All stats columns are sortable
-- Stats can be uploaded via CSV with columns: avg, hr, rbi, runs/r, sb, ops (hitters) and wins/w, losses/l, era, whip, strikeouts/k/so, ip (pitchers)
+- Stats can be uploaded via CSV with columns: avg, hr, rbi, runs/r, sb, ops, pa (hitters) and wins/w, losses/l, era, whip, strikeouts/k/so, ip (pitchers)
+
+### Team Limits System
+Each team can have configurable limits that the commissioner can adjust:
+- **Roster Limit**: Maximum number of players a team can acquire (null = unlimited)
+- **IP Limit**: Maximum total innings pitched for all pitchers on the team (null = unlimited)
+- **PA Limit**: Maximum total plate appearances for all hitters on the team (null = unlimited)
+
+Limit Management:
+- Commissioner can edit limits inline in the "League Owners & Team Limits" table on the Commissioner page
+- Limits are saved automatically when the input field loses focus
+- Empty values mean unlimited (no limit enforced)
+- API endpoint: `PATCH /api/users/:userId/limits` with body `{ rosterLimit, ipLimit, paLimit }`
+
+Limit Tracking:
+- Roster usage: Count of players won in closed auctions
+- IP usage: Sum of IP stat for all pitchers won
+- PA usage: Sum of PA stat for all hitters won
+- Usage is tracked via `storage.getUserLimitsInfo(userId)` which returns current usage vs limits
 
 ### Page Structure
 - `/` - Landing page (unauthenticated) or Home dashboard (authenticated)
