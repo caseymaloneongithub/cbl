@@ -583,9 +583,19 @@ export class DatabaseStorage implements IStorage {
     endingToday: number;
   }> {
     const now = new Date();
-    // Get midnight tonight (end of today)
-    const midnight = new Date(now);
-    midnight.setHours(23, 59, 59, 999);
+    // Get midnight tonight in Eastern Time, then convert to UTC for comparison
+    // Create a date string for today in Eastern Time, then get end of that day
+    const easternFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    const easternDateStr = easternFormatter.format(now); // "MM/DD/YYYY"
+    const [month, day, year] = easternDateStr.split('/');
+    // Midnight Eastern = 5 AM UTC (or 4 AM during DST)
+    // Create end of day in Eastern: 11:59:59 PM Eastern
+    const midnightEastern = new Date(`${year}-${month}-${day}T23:59:59-05:00`);
     
     // Total active auctions
     const activeAuctions = await db
@@ -605,7 +615,7 @@ export class DatabaseStorage implements IStorage {
       .from(freeAgents)
       .where(eq(freeAgents.winnerId, userId));
     
-    // Auctions ending today (before midnight)
+    // Auctions ending today (before midnight Eastern)
     const endingToday = await db
       .select({ count: sql<number>`count(*)` })
       .from(freeAgents)
@@ -613,7 +623,7 @@ export class DatabaseStorage implements IStorage {
         and(
           eq(freeAgents.isActive, true),
           sql`${freeAgents.auctionEndTime} > ${now}`,
-          sql`${freeAgents.auctionEndTime} <= ${midnight}`
+          sql`${freeAgents.auctionEndTime} <= ${midnightEastern}`
         )
       );
     
