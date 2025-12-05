@@ -1077,6 +1077,46 @@ export async function registerRoutes(
     }
   });
 
+  // Commissioner/Super Admin: Update user details
+  app.patch("/api/users/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminId = req.session.userId!;
+      const admin = await storage.getUser(adminId);
+      
+      if (!admin?.isCommissioner && !admin?.isSuperAdmin) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const targetUserId = req.params.id;
+      const { email, firstName, lastName, teamName, teamAbbreviation } = req.body;
+
+      const targetUser = await storage.getUser(targetUserId);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // If changing email, check it's not already taken
+      if (email && email !== targetUser.email) {
+        const existingUser = await storage.getUserByEmail(email);
+        if (existingUser) {
+          return res.status(400).json({ message: "Email already in use by another user" });
+        }
+      }
+
+      const updatedUser = await storage.updateUserDetails(targetUserId, {
+        email,
+        firstName,
+        lastName,
+        teamName,
+        teamAbbreviation,
+      });
+      res.json(updatedUser);
+    } catch (error) {
+      console.error("Error updating user details:", error);
+      res.status(500).json({ message: "Failed to update user details" });
+    }
+  });
+
   // Super Admin: Set commissioner status for a user
   app.patch("/api/users/:id/commissioner", isAuthenticated, async (req: any, res) => {
     try {

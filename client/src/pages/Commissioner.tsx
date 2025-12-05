@@ -112,6 +112,14 @@ export default function Commissioner() {
   const [deleteTeamId, setDeleteTeamId] = useState<string | null>(null);
   const [deletingTeamName, setDeletingTeamName] = useState("");
   
+  // Team editing state
+  const [editingTeam, setEditingTeam] = useState<User | null>(null);
+  const [editEmail, setEditEmail] = useState("");
+  const [editFirstName, setEditFirstName] = useState("");
+  const [editLastName, setEditLastName] = useState("");
+  const [editTeamName, setEditTeamName] = useState("");
+  const [editTeamAbbreviation, setEditTeamAbbreviation] = useState("");
+  
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -356,6 +364,21 @@ export default function Commissioner() {
         title: isCommissioner ? "Commissioner Assigned" : "Commissioner Removed", 
         description: isCommissioner ? "The team has been granted commissioner access." : "Commissioner access has been revoked."
       });
+      queryClient.invalidateQueries({ queryKey: ["/api/owners"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateTeamDetails = useMutation({
+    mutationFn: async ({ userId, details }: { userId: string; details: { email?: string; firstName?: string; lastName?: string; teamName?: string; teamAbbreviation?: string } }) => {
+      const res = await apiRequest("PATCH", `/api/users/${userId}`, details);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Team Updated", description: "Team details have been saved." });
+      setEditingTeam(null);
       queryClient.invalidateQueries({ queryKey: ["/api/owners"] });
     },
     onError: (error: Error) => {
@@ -1114,6 +1137,22 @@ export default function Commissioner() {
                                 <TableCell>{owner.teamAbbreviation || "-"}</TableCell>
                                 <TableCell className="text-right">
                                   <div className="flex items-center justify-end gap-1">
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => {
+                                        setEditingTeam(owner);
+                                        setEditEmail(owner.email);
+                                        setEditFirstName(owner.firstName || "");
+                                        setEditLastName(owner.lastName || "");
+                                        setEditTeamName(owner.teamName || "");
+                                        setEditTeamAbbreviation(owner.teamAbbreviation || "");
+                                      }}
+                                      title="Edit team details"
+                                      data-testid={`button-edit-team-${owner.id}`}
+                                    >
+                                      <Edit2 className="h-4 w-4" />
+                                    </Button>
                                     {user?.isSuperAdmin && (
                                       <Button
                                         size="sm"
@@ -1256,6 +1295,99 @@ export default function Commissioner() {
             )}
           </CardContent>
         </Card>
+
+        {/* Edit Team Dialog */}
+        <Dialog open={!!editingTeam} onOpenChange={(open) => !open && setEditingTeam(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Team Details</DialogTitle>
+              <DialogDescription>
+                Update the team's email, name, team name, and abbreviation.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-email">Email</Label>
+                <Input
+                  id="edit-email"
+                  type="email"
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  data-testid="input-edit-email"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-first-name">First Name</Label>
+                  <Input
+                    id="edit-first-name"
+                    value={editFirstName}
+                    onChange={(e) => setEditFirstName(e.target.value)}
+                    data-testid="input-edit-first-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-last-name">Last Name</Label>
+                  <Input
+                    id="edit-last-name"
+                    value={editLastName}
+                    onChange={(e) => setEditLastName(e.target.value)}
+                    data-testid="input-edit-last-name"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2 col-span-2">
+                  <Label htmlFor="edit-team-name">Team Name</Label>
+                  <Input
+                    id="edit-team-name"
+                    value={editTeamName}
+                    onChange={(e) => setEditTeamName(e.target.value)}
+                    data-testid="input-edit-team-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-team-abbreviation">Abbr</Label>
+                  <Input
+                    id="edit-team-abbreviation"
+                    value={editTeamAbbreviation}
+                    onChange={(e) => setEditTeamAbbreviation(e.target.value.toUpperCase().slice(0, 3))}
+                    maxLength={3}
+                    data-testid="input-edit-team-abbreviation"
+                  />
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditingTeam(null)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (editingTeam) {
+                    updateTeamDetails.mutate({
+                      userId: editingTeam.id,
+                      details: {
+                        email: editEmail,
+                        firstName: editFirstName,
+                        lastName: editLastName,
+                        teamName: editTeamName,
+                        teamAbbreviation: editTeamAbbreviation,
+                      },
+                    });
+                  }
+                }}
+                disabled={updateTeamDetails.isPending || !editEmail}
+                data-testid="button-save-team"
+              >
+                {updateTeamDetails.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : null}
+                Save Changes
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <Separator className="my-8" />

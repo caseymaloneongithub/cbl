@@ -37,6 +37,7 @@ export interface IStorage {
   updateUserCommissioner(id: string, isCommissioner: boolean): Promise<User | undefined>;
   setSoleCommissioner(userId: string | null): Promise<User | null>;
   updateUserPassword(id: string, passwordHash: string, mustResetPassword: boolean): Promise<User | undefined>;
+  updateUserDetails(id: string, details: { email?: string; firstName?: string; lastName?: string; teamName?: string; teamAbbreviation?: string }): Promise<User | undefined>;
   createUserWithPassword(userData: { email: string; passwordHash: string; firstName?: string; lastName?: string; teamName?: string; teamAbbreviation?: string; isCommissioner?: boolean; mustResetPassword?: boolean }): Promise<User>;
   
   // League settings
@@ -213,6 +214,22 @@ export class DatabaseStorage implements IStorage {
     const [user] = await db
       .update(users)
       .set({ passwordHash, mustResetPassword, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
+  async updateUserDetails(id: string, details: { email?: string; firstName?: string; lastName?: string; teamName?: string; teamAbbreviation?: string }): Promise<User | undefined> {
+    const updateData: any = { updatedAt: new Date() };
+    if (details.email !== undefined) updateData.email = details.email;
+    if (details.firstName !== undefined) updateData.firstName = details.firstName;
+    if (details.lastName !== undefined) updateData.lastName = details.lastName;
+    if (details.teamName !== undefined) updateData.teamName = details.teamName;
+    if (details.teamAbbreviation !== undefined) updateData.teamAbbreviation = details.teamAbbreviation?.toUpperCase().slice(0, 3);
+    
+    const [user] = await db
+      .update(users)
+      .set(updateData)
       .where(eq(users.id, id))
       .returning();
     return user;
