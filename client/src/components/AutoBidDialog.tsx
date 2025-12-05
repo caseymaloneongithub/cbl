@@ -189,7 +189,7 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.
             {currentBidInfo ? (
               <>
                 <div className="text-sm">
-                  Current high bid: <span className="font-mono font-medium">{formatCurrency(currentBidInfo.totalValue)}</span>
+                  Current high bid value: <span className="font-mono font-medium">{formatCurrency(currentBidInfo.totalValue)}</span>
                 </div>
                 <div className="text-sm">
                   Target to beat (+{Math.round(bidIncrement * 100)}%): <span className="font-mono font-medium text-primary">{formatCurrency(currentBidInfo.totalValue * (1 + bidIncrement))}</span>
