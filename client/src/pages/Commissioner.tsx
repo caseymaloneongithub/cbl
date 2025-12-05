@@ -110,17 +110,6 @@ export default function Commissioner() {
   const [deleteTeamId, setDeleteTeamId] = useState<string | null>(null);
   const [deletingTeamName, setDeletingTeamName] = useState("");
   
-  // Auction settings dialog state (for quick settings in auction list)
-  const [settingsAuctionId, setSettingsAuctionId] = useState<number | null>(null);
-  const [auctionSettings, setAuctionSettings] = useState({
-    yearFactor1: 1.0,
-    yearFactor2: 1.25,
-    yearFactor3: 1.33,
-    yearFactor4: 1.43,
-    yearFactor5: 1.55,
-    defaultBudget: 260,
-    enforceBudget: true,
-  });
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -268,18 +257,7 @@ export default function Commissioner() {
   });
 
   const updateAuction = useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: { 
-      name?: string; 
-      status?: string;
-      bidIncrement?: number;
-      yearFactor1?: number;
-      yearFactor2?: number;
-      yearFactor3?: number;
-      yearFactor4?: number;
-      yearFactor5?: number;
-      defaultBudget?: number;
-      enforceBudget?: boolean;
-    } }) => {
+    mutationFn: async ({ id, data }: { id: number; data: { name?: string; status?: string } }) => {
       const res = await apiRequest("PATCH", `/api/auctions/${id}`, data);
       return res.json();
     },
@@ -718,175 +696,14 @@ export default function Commissioner() {
                             {auction.status.charAt(0).toUpperCase() + auction.status.slice(1)}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Input
-                              type="number"
-                              min="0"
-                              max="100"
-                              step="1"
-                              className="w-16 h-8 text-right"
-                              defaultValue={Math.round((auction.bidIncrement ?? 0.10) * 100)}
-                              onBlur={(e) => {
-                                const newPercent = parseFloat(e.target.value) || 10;
-                                const newDecimal = newPercent / 100;
-                                if (newDecimal !== auction.bidIncrement) {
-                                  updateAuction.mutate({ id: auction.id, data: { bidIncrement: newDecimal } });
-                                }
-                              }}
-                              data-testid={`input-bid-increment-${auction.id}`}
-                            />
-                            <span className="text-muted-foreground text-sm">%</span>
-                          </div>
+                        <TableCell className="text-right text-muted-foreground">
+                          {Math.round((auction.bidIncrement ?? 0.10) * 100)}%
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {auction.createdAt ? new Date(auction.createdAt).toLocaleDateString() : "N/A"}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-2">
-                            {/* Settings Button */}
-                            <Dialog open={settingsAuctionId === auction.id} onOpenChange={(open) => {
-                              if (open) {
-                                setSettingsAuctionId(auction.id);
-                                setAuctionSettings({
-                                  yearFactor1: auction.yearFactor1 ?? 1.0,
-                                  yearFactor2: auction.yearFactor2 ?? 1.25,
-                                  yearFactor3: auction.yearFactor3 ?? 1.33,
-                                  yearFactor4: auction.yearFactor4 ?? 1.43,
-                                  yearFactor5: auction.yearFactor5 ?? 1.55,
-                                  defaultBudget: auction.defaultBudget ?? 260,
-                                  enforceBudget: auction.enforceBudget ?? true,
-                                });
-                              } else {
-                                setSettingsAuctionId(null);
-                              }
-                            }}>
-                              <DialogTrigger asChild>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  data-testid={`button-settings-auction-${auction.id}`}
-                                >
-                                  <Settings className="h-3 w-3 mr-1" />
-                                  Settings
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent className="max-w-md">
-                                <DialogHeader>
-                                  <DialogTitle>Auction Settings: {auction.name}</DialogTitle>
-                                  <DialogDescription>
-                                    Configure year multipliers and budget settings for this auction.
-                                  </DialogDescription>
-                                </DialogHeader>
-                                <div className="space-y-6 py-4">
-                                  {/* Year Factors */}
-                                  <div className="space-y-3">
-                                    <Label className="text-base font-medium">Year Multipliers</Label>
-                                    <p className="text-sm text-muted-foreground">
-                                      Total Value = Annual Salary × Year Factor
-                                    </p>
-                                    <div className="grid grid-cols-5 gap-2">
-                                      {([1, 2, 3, 4, 5] as const).map((year) => {
-                                        const key = `yearFactor${year}` as `yearFactor${typeof year}`;
-                                        return (
-                                          <div key={year} className="space-y-1">
-                                            <Label className="text-xs text-center block">{year}yr</Label>
-                                            <Input
-                                              type="number"
-                                              step="0.01"
-                                              min="0.1"
-                                              max="10"
-                                              value={auctionSettings[key]}
-                                              onChange={(e) => setAuctionSettings(prev => ({
-                                                ...prev,
-                                                [key]: parseFloat(e.target.value) || 1.0
-                                              }))}
-                                              className="font-mono text-center text-sm"
-                                              data-testid={`input-auction-factor-${year}`}
-                                            />
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
-                                  
-                                  <Separator />
-                                  
-                                  {/* Budget Settings */}
-                                  <div className="space-y-4">
-                                    <Label className="text-base font-medium flex items-center gap-2">
-                                      <DollarSign className="h-4 w-4" />
-                                      Budget Settings
-                                    </Label>
-                                    
-                                    <div className="space-y-2">
-                                      <Label htmlFor="default-budget">Default Budget ($)</Label>
-                                      <Input
-                                        id="default-budget"
-                                        type="number"
-                                        min="1"
-                                        max="10000"
-                                        value={auctionSettings.defaultBudget}
-                                        onChange={(e) => setAuctionSettings(prev => ({
-                                          ...prev,
-                                          defaultBudget: parseFloat(e.target.value) || 260
-                                        }))}
-                                        data-testid="input-auction-default-budget"
-                                      />
-                                      <p className="text-xs text-muted-foreground">
-                                        Starting budget for new teams in this auction
-                                      </p>
-                                    </div>
-                                    
-                                    <div className="flex items-center justify-between rounded-lg border p-3">
-                                      <div className="space-y-0.5">
-                                        <Label>Enforce Budget Limits</Label>
-                                        <p className="text-xs text-muted-foreground">
-                                          Prevent bids exceeding available budget
-                                        </p>
-                                      </div>
-                                      <Switch
-                                        checked={auctionSettings.enforceBudget}
-                                        onCheckedChange={(checked) => setAuctionSettings(prev => ({
-                                          ...prev,
-                                          enforceBudget: checked
-                                        }))}
-                                        data-testid="switch-auction-enforce-budget"
-                                      />
-                                    </div>
-                                  </div>
-                                </div>
-                                <DialogFooter>
-                                  <Button
-                                    variant="outline"
-                                    onClick={() => setSettingsAuctionId(null)}
-                                  >
-                                    Cancel
-                                  </Button>
-                                  <Button
-                                    onClick={() => {
-                                      updateAuction.mutate({
-                                        id: auction.id,
-                                        data: auctionSettings
-                                      });
-                                      setSettingsAuctionId(null);
-                                    }}
-                                    disabled={updateAuction.isPending}
-                                    data-testid="button-save-auction-settings"
-                                  >
-                                    {updateAuction.isPending ? (
-                                      <>
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Saving...
-                                      </>
-                                    ) : (
-                                      "Save Settings"
-                                    )}
-                                  </Button>
-                                </DialogFooter>
-                              </DialogContent>
-                            </Dialog>
-                            
                             {/* Manage Button - Links to per-auction page */}
                             <Link href={`/commissioner/auctions/${auction.id}`}>
                               <Button
