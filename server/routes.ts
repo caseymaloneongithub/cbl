@@ -597,7 +597,7 @@ export async function registerRoutes(
         // Calculate available budget for this bid
         // If user is already high bidder on this auction, that amount is freed up
         let availableForThisBid = budgetInfo.available;
-        if (currentHighBid?.userId === userId) {
+        if (currentHighBid && currentHighBid.userId === userId) {
           availableForThisBid += currentHighBid.amount;
         }
         
@@ -700,7 +700,7 @@ export async function registerRoutes(
             const budgetInfo = await storage.getUserBudgetInfo(userId, agent.auctionId);
             availableBudget = budgetInfo.available;
             // If already high bidder, that amount is freed
-            if (currentHighBid?.userId === userId) {
+            if (currentHighBid && currentHighBid.userId === userId) {
               availableBudget += currentHighBid.amount;
             }
           } catch (error) {
