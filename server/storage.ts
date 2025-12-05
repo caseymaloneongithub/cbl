@@ -1230,6 +1230,37 @@ export class DatabaseStorage implements IStorage {
     return allUsers.filter(u => !enrolledUserIds.has(u.id));
   }
 
+  async getUserEnrolledAuctions(userId: string): Promise<Auction[]> {
+    // Get all auction IDs where the user is enrolled
+    const enrollments = await db
+      .select({ auctionId: auctionTeams.auctionId })
+      .from(auctionTeams)
+      .where(eq(auctionTeams.userId, userId));
+    
+    if (enrollments.length === 0) {
+      return [];
+    }
+    
+    const auctionIds = enrollments.map(e => e.auctionId);
+    
+    // Get the auction details
+    const enrolledAuctions = await db
+      .select()
+      .from(auctions)
+      .where(sql`${auctions.id} IN (${sql.join(auctionIds.map(id => sql`${id}`), sql`, `)})`);
+    
+    return enrolledAuctions;
+  }
+
+  async isUserEnrolledInAuction(userId: string, auctionId: number): Promise<boolean> {
+    const [enrollment] = await db
+      .select()
+      .from(auctionTeams)
+      .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, userId)));
+    
+    return !!enrollment;
+  }
+
   // Team deletion
   async canDeleteUser(userId: string): Promise<{ canDelete: boolean; reason?: string }> {
     // Check if user is a commissioner or super admin - cannot delete them

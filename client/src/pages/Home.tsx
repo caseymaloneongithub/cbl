@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { Users, Gavel, Trophy, Clock, DollarSign } from "lucide-react";
+import { Users, Gavel, Trophy, Clock, DollarSign, AlertCircle } from "lucide-react";
 import type { FreeAgentWithBids, UserWithStats, Auction } from "@shared/schema";
 import { FreeAgentsTable } from "@/components/FreeAgentsTable";
 
@@ -15,6 +15,21 @@ export default function Home() {
   const { data: activeAuction } = useQuery<Auction | null>({
     queryKey: ["/api/auctions/active"],
   });
+
+  // Check if user is enrolled in the active auction
+  const { data: enrollmentStatus, isLoading: loadingEnrollment } = useQuery<{ enrolled: boolean }>({
+    queryKey: ["/api/auctions", activeAuction?.id, "enrolled"],
+    queryFn: async () => {
+      if (!activeAuction?.id) return { enrolled: false };
+      const res = await fetch(`/api/auctions/${activeAuction.id}/enrolled`, { credentials: "include" });
+      if (!res.ok) return { enrolled: false };
+      return res.json();
+    },
+    enabled: !!activeAuction?.id,
+  });
+
+  const isEnrolled = enrollmentStatus?.enrolled ?? false;
+  const isCommissionerOrAdmin = user?.isCommissioner || user?.isSuperAdmin;
 
   const { data: freeAgents, isLoading: loadingAgents } = useQuery<FreeAgentWithBids[]>({
     queryKey: ["/api/free-agents", activeAuction?.id],
@@ -217,7 +232,7 @@ export default function Home() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold">Active Free Agents</h2>
         </div>
-        {loadingAgents ? (
+        {loadingAgents || loadingEnrollment ? (
           <Card>
             <CardContent className="p-6">
               <div className="space-y-4">
@@ -225,6 +240,26 @@ export default function Home() {
                   <Skeleton key={i} className="h-12 w-full" />
                 ))}
               </div>
+            </CardContent>
+          </Card>
+        ) : !activeAuction ? (
+          <Card>
+            <CardContent className="p-12 text-center">
+              <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium mb-2">No Active Auction</h3>
+              <p className="text-muted-foreground">
+                There is no active auction at the moment.
+              </p>
+            </CardContent>
+          </Card>
+        ) : !isEnrolled && !isCommissionerOrAdmin ? (
+          <Card>
+            <CardContent className="p-12 text-center">
+              <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium mb-2">Not Enrolled</h3>
+              <p className="text-muted-foreground">
+                You are not enrolled in the current auction. Please contact the commissioner to be added.
+              </p>
             </CardContent>
           </Card>
         ) : activeAgents.length === 0 ? (

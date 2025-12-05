@@ -1216,6 +1216,29 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/auctions/enrolled", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const enrolledAuctions = await storage.getUserEnrolledAuctions(userId);
+      res.json(enrolledAuctions);
+    } catch (error) {
+      console.error("Error fetching enrolled auctions:", error);
+      res.status(500).json({ message: "Failed to fetch enrolled auctions" });
+    }
+  });
+
+  app.get("/api/auctions/:id/enrolled", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const auctionId = parseInt(req.params.id);
+      const isEnrolled = await storage.isUserEnrolledInAuction(userId, auctionId);
+      res.json({ enrolled: isEnrolled });
+    } catch (error) {
+      console.error("Error checking enrollment:", error);
+      res.status(500).json({ message: "Failed to check enrollment" });
+    }
+  });
+
   app.get("/api/auctions/:id", isAuthenticated, async (req: any, res) => {
     try {
       const auctionId = parseInt(req.params.id);
