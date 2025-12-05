@@ -49,7 +49,7 @@ interface AutoBidDialogProps {
 export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.10 }: AutoBidDialogProps) {
   const { toast } = useToast();
   const [selectedYears, setSelectedYears] = useState(1);
-  const prevOpenRef = useRef(false);
+  const initializedForRef = useRef<number | null>(null);
 
   const { data: settings } = useQuery<LeagueSettings>({
     queryKey: ["/api/settings"],
@@ -87,12 +87,22 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.
     },
   });
 
-  // Only reset form when dialog opens (transition from closed to open)
+  // Reset form when dialog opens for a player, or when existingAutoBid loads for first time
   useEffect(() => {
-    const justOpened = open && !prevOpenRef.current;
-    prevOpenRef.current = open;
+    // Clear initialization tracking when dialog closes
+    if (!open) {
+      initializedForRef.current = null;
+      return;
+    }
     
-    if (justOpened && freeAgent) {
+    if (!freeAgent) return;
+    
+    // Check if we need to initialize: either new player or existingAutoBid just loaded
+    const needsInit = initializedForRef.current !== freeAgent.id;
+    const autoBidJustLoaded = initializedForRef.current === freeAgent.id && existingAutoBid && 
+      form.getValues("maxAmount") !== existingAutoBid.maxAmount;
+    
+    if (needsInit || autoBidJustLoaded) {
       const validYears = existingAutoBid 
         ? Math.max(existingAutoBid.years, playerMinimumYears)
         : playerMinimumYears;
@@ -119,6 +129,7 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.
         isActive: existingAutoBid?.isActive ?? true,
       });
       setSelectedYears(validYears);
+      initializedForRef.current = freeAgent.id;
     }
   }, [open, existingAutoBid, playerMinimumYears, freeAgent, form, bidIncrement, yearFactors]);
 
