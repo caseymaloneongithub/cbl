@@ -48,7 +48,7 @@ export default function Home() {
     totalActive: number;
     myActiveBids: number;
     myWins: number;
-    endingSoon: number;
+    endingToday: number;
   }>({
     queryKey: ["/api/stats"],
   });
@@ -154,7 +154,7 @@ export default function Home() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Ending Soon
+              Ending Today
             </CardTitle>
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -162,8 +162,8 @@ export default function Home() {
             {loadingStats ? (
               <Skeleton className="h-8 w-16" />
             ) : (
-              <div className="text-2xl font-bold font-mono text-destructive" data-testid="text-ending-soon">
-                {stats?.endingSoon || 0}
+              <div className="text-2xl font-bold font-mono text-destructive" data-testid="text-ending-today">
+                {stats?.endingToday || 0}
               </div>
             )}
           </CardContent>

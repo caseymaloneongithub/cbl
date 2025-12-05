@@ -76,7 +76,7 @@ export interface IStorage {
     totalActive: number;
     myActiveBids: number;
     myWins: number;
-    endingSoon: number;
+    endingToday: number;
   }>;
   
   // Budget management (per-auction only - budgets are stored in auctionTeams)
@@ -577,10 +577,12 @@ export class DatabaseStorage implements IStorage {
     totalActive: number;
     myActiveBids: number;
     myWins: number;
-    endingSoon: number;
+    endingToday: number;
   }> {
     const now = new Date();
-    const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
+    // Get midnight tonight (end of today)
+    const midnight = new Date(now);
+    midnight.setHours(23, 59, 59, 999);
     
     // Total active auctions
     const activeAuctions = await db
@@ -600,15 +602,15 @@ export class DatabaseStorage implements IStorage {
       .from(freeAgents)
       .where(eq(freeAgents.winnerId, userId));
     
-    // Auctions ending within 1 hour
-    const endingSoon = await db
+    // Auctions ending today (before midnight)
+    const endingToday = await db
       .select({ count: sql<number>`count(*)` })
       .from(freeAgents)
       .where(
         and(
           eq(freeAgents.isActive, true),
           sql`${freeAgents.auctionEndTime} > ${now}`,
-          sql`${freeAgents.auctionEndTime} <= ${oneHourFromNow}`
+          sql`${freeAgents.auctionEndTime} <= ${midnight}`
         )
       );
     
@@ -616,7 +618,7 @@ export class DatabaseStorage implements IStorage {
       totalActive: Number(activeAuctions[0]?.count || 0),
       myActiveBids: activeWinningBids.length,
       myWins: Number(wonPlayers[0]?.count || 0),
-      endingSoon: Number(endingSoon[0]?.count || 0),
+      endingToday: Number(endingToday[0]?.count || 0),
     };
   }
 
