@@ -269,8 +269,14 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
                             <Input
                               type="number"
-                              {...field}
-                              onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                              value={field.value ?? ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                field.onChange(val === "" ? 0 : parseInt(val, 10));
+                              }}
+                              onBlur={field.onBlur}
+                              name={field.name}
+                              ref={field.ref}
                               className="pl-7 font-mono text-lg"
                               min={1}
                               data-testid="input-max-bid"
