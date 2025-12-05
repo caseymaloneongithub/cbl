@@ -1020,6 +1020,112 @@ export default function Commissioner() {
             )}
           </CardContent>
         </Card>
+
+        {/* Existing Teams Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Existing Teams
+            </CardTitle>
+            <CardDescription>
+              View and manage team accounts. Teams enrolled in auctions cannot be deleted.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loadingOwners ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : owners && owners.filter(o => !o.isCommissioner && !o.isSuperAdmin).length > 0 ? (
+              <div className="border rounded-lg overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Team</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {owners
+                      .filter(o => !o.isCommissioner && !o.isSuperAdmin)
+                      .map((owner) => (
+                        <TableRow key={owner.id}>
+                          <TableCell className="font-medium">{owner.email}</TableCell>
+                          <TableCell>{owner.firstName || ""} {owner.lastName || ""}</TableCell>
+                          <TableCell>{owner.teamName || "-"}</TableCell>
+                          <TableCell className="text-right">
+                            <Dialog open={deleteTeamId === owner.id} onOpenChange={(open) => {
+                              if (!open) {
+                                setDeleteTeamId(null);
+                                setDeletingTeamName("");
+                              }
+                            }}>
+                              <DialogTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setDeleteTeamId(owner.id);
+                                    setDeletingTeamName(owner.teamName || owner.email);
+                                  }}
+                                  data-testid={`button-delete-team-${owner.id}`}
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Delete Team</DialogTitle>
+                                  <DialogDescription>
+                                    Are you sure you want to delete "{deletingTeamName}"? This action cannot be undone.
+                                    Teams that are enrolled in auctions or have bid history cannot be deleted.
+                                  </DialogDescription>
+                                </DialogHeader>
+                                <DialogFooter>
+                                  <Button
+                                    variant="outline"
+                                    onClick={() => {
+                                      setDeleteTeamId(null);
+                                      setDeletingTeamName("");
+                                    }}
+                                  >
+                                    Cancel
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    onClick={() => deleteTeam.mutate(owner.id)}
+                                    disabled={deleteTeam.isPending}
+                                    data-testid="button-confirm-delete-team"
+                                  >
+                                    {deleteTeam.isPending ? (
+                                      <>
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        Deleting...
+                                      </>
+                                    ) : (
+                                      "Delete Team"
+                                    )}
+                                  </Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No teams yet. Upload a CSV file above to create team accounts.</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       <Separator className="my-8" />
