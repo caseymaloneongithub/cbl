@@ -76,19 +76,23 @@ export interface IStorage {
     endingSoon: number;
   }>;
   
-  // Budget management
-  getUserBudgetInfo(userId: string): Promise<{
+  // Budget management (per-auction)
+  getUserBudgetInfo(userId: string, auctionId?: number): Promise<{
     budget: number;
     spent: number;
     committed: number;
     available: number;
   }>;
+  getAuctionTeamBudget(auctionId: number, userId: string): Promise<number>;
+  updateAuctionTeamBudget(auctionId: number, userId: string, budget: number): Promise<AuctionTeam>;
   updateUserBudget(userId: string, budget: number): Promise<User>;
   resetAllBudgets(amount: number): Promise<void>;
+  resetAuctionBudgets(auctionId: number, amount: number): Promise<void>;
   
-  // Team limits management
+  // Team limits management (per-auction)
+  updateAuctionTeamLimits(auctionId: number, userId: string, limits: { rosterLimit?: number | null; ipLimit?: number | null; paLimit?: number | null }): Promise<AuctionTeam>;
   updateUserLimits(userId: string, limits: { rosterLimit?: number | null; ipLimit?: number | null; paLimit?: number | null }): Promise<User>;
-  getUserLimitsInfo(userId: string): Promise<{
+  getUserLimitsInfo(userId: string, auctionId?: number): Promise<{
     rosterLimit: number | null;
     rosterUsed: number;
     rosterAvailable: number | null;
@@ -550,8 +554,8 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  // Budget management
-  async getUserBudgetInfo(userId: string): Promise<{
+  // Budget management (per-auction)
+  async getUserBudgetInfo(userId: string, auctionId?: number): Promise<{
     budget: number;
     spent: number;
     committed: number;
@@ -562,7 +566,22 @@ export class DatabaseStorage implements IStorage {
       throw new Error("User not found");
     }
 
-    const allAgents = await this.getAllFreeAgents();
+    // Get budget from auction team settings if auctionId provided, otherwise use user default
+    let budget = user.budget;
+    if (auctionId) {
+      const [auctionTeam] = await db
+        .select()
+        .from(auctionTeams)
+        .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, userId)));
+      if (auctionTeam?.budget !== null && auctionTeam?.budget !== undefined) {
+        budget = auctionTeam.budget;
+      }
+    }
+
+    // Get agents filtered by auction if provided
+    const allAgents = auctionId 
+      ? await this.getFreeAgentsByAuction(auctionId)
+      : await this.getAllFreeAgents();
     const now = new Date();
     
     // Calculate spent (won auctions) - tracks bid AMOUNT, not total value
@@ -583,14 +602,51 @@ export class DatabaseStorage implements IStorage {
       }
     }
     
-    const available = user.budget - spent - committed;
+    const available = budget - spent - committed;
     
     return {
-      budget: user.budget,
+      budget,
       spent,
       committed,
       available,
     };
+  }
+
+  async getAuctionTeamBudget(auctionId: number, userId: string): Promise<number> {
+    const [auctionTeam] = await db
+      .select()
+      .from(auctionTeams)
+      .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, userId)));
+    
+    if (auctionTeam?.budget !== null && auctionTeam?.budget !== undefined) {
+      return auctionTeam.budget;
+    }
+    
+    // Fall back to user's default budget
+    const user = await this.getUser(userId);
+    return user?.budget ?? 260;
+  }
+
+  async updateAuctionTeamBudget(auctionId: number, userId: string, budget: number): Promise<AuctionTeam> {
+    const [existing] = await db
+      .select()
+      .from(auctionTeams)
+      .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, userId)));
+    
+    if (existing) {
+      const [updated] = await db
+        .update(auctionTeams)
+        .set({ budget, updatedAt: new Date() })
+        .where(eq(auctionTeams.id, existing.id))
+        .returning();
+      return updated;
+    } else {
+      const [created] = await db
+        .insert(auctionTeams)
+        .values({ auctionId, userId, budget, isActive: true })
+        .returning();
+      return created;
+    }
   }
 
   async updateUserBudget(userId: string, budget: number): Promise<User> {
@@ -608,7 +664,48 @@ export class DatabaseStorage implements IStorage {
       .set({ budget: amount, updatedAt: new Date() });
   }
 
-  // Team limits management
+  async resetAuctionBudgets(auctionId: number, amount: number): Promise<void> {
+    await db
+      .update(auctionTeams)
+      .set({ budget: amount, updatedAt: new Date() })
+      .where(eq(auctionTeams.auctionId, auctionId));
+  }
+
+  // Team limits management (per-auction)
+  async updateAuctionTeamLimits(auctionId: number, userId: string, limits: { rosterLimit?: number | null; ipLimit?: number | null; paLimit?: number | null }): Promise<AuctionTeam> {
+    const [existing] = await db
+      .select()
+      .from(auctionTeams)
+      .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, userId)));
+    
+    if (existing) {
+      const [updated] = await db
+        .update(auctionTeams)
+        .set({ 
+          rosterLimit: limits.rosterLimit,
+          ipLimit: limits.ipLimit,
+          paLimit: limits.paLimit,
+          updatedAt: new Date() 
+        })
+        .where(eq(auctionTeams.id, existing.id))
+        .returning();
+      return updated;
+    } else {
+      const [created] = await db
+        .insert(auctionTeams)
+        .values({ 
+          auctionId, 
+          userId, 
+          rosterLimit: limits.rosterLimit,
+          ipLimit: limits.ipLimit,
+          paLimit: limits.paLimit,
+          isActive: true 
+        })
+        .returning();
+      return created;
+    }
+  }
+
   async updateUserLimits(userId: string, limits: { rosterLimit?: number | null; ipLimit?: number | null; paLimit?: number | null }): Promise<User> {
     const [updated] = await db
       .update(users)
@@ -623,7 +720,7 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async getUserLimitsInfo(userId: string): Promise<{
+  async getUserLimitsInfo(userId: string, auctionId?: number): Promise<{
     rosterLimit: number | null;
     rosterUsed: number;
     rosterAvailable: number | null;
@@ -639,16 +736,36 @@ export class DatabaseStorage implements IStorage {
       throw new Error("User not found");
     }
 
+    // Get limits from auction team settings if auctionId provided, otherwise use user default
+    let rosterLimit = user.rosterLimit;
+    let ipLimit = user.ipLimit;
+    let paLimit = user.paLimit;
+    
+    if (auctionId) {
+      const [auctionTeam] = await db
+        .select()
+        .from(auctionTeams)
+        .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, userId)));
+      if (auctionTeam) {
+        if (auctionTeam.rosterLimit !== null) rosterLimit = auctionTeam.rosterLimit;
+        if (auctionTeam.ipLimit !== null) ipLimit = auctionTeam.ipLimit;
+        if (auctionTeam.paLimit !== null) paLimit = auctionTeam.paLimit;
+      }
+    }
+
     const now = new Date();
     
-    // Get all closed auctions won by this user
-    const wonAgents = await db
+    // Get closed auctions won by this user (filtered by auction if provided)
+    let wonAgentsQuery = db
       .select()
       .from(freeAgents)
       .where(and(
         eq(freeAgents.winnerId, userId),
-        sql`${freeAgents.auctionEndTime} <= ${now}`
+        sql`${freeAgents.auctionEndTime} <= ${now}`,
+        auctionId ? eq(freeAgents.auctionId, auctionId) : sql`1=1`
       ));
+    
+    const wonAgents = await wonAgentsQuery;
     
     // Calculate roster used (number of players won)
     const rosterUsed = wonAgents.length;
@@ -670,15 +787,15 @@ export class DatabaseStorage implements IStorage {
     }
     
     return {
-      rosterLimit: user.rosterLimit,
+      rosterLimit,
       rosterUsed,
-      rosterAvailable: user.rosterLimit !== null ? user.rosterLimit - rosterUsed : null,
-      ipLimit: user.ipLimit,
+      rosterAvailable: rosterLimit !== null ? rosterLimit - rosterUsed : null,
+      ipLimit,
       ipUsed,
-      ipAvailable: user.ipLimit !== null ? user.ipLimit - ipUsed : null,
-      paLimit: user.paLimit,
+      ipAvailable: ipLimit !== null ? ipLimit - ipUsed : null,
+      paLimit,
       paUsed,
-      paAvailable: user.paLimit !== null ? user.paLimit - paUsed : null,
+      paAvailable: paLimit !== null ? paLimit - paUsed : null,
     };
   }
 

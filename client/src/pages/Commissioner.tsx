@@ -143,6 +143,8 @@ export default function Commissioner() {
   const [passwordForAction, setPasswordForAction] = useState("");
   const [editingAuctionId, setEditingAuctionId] = useState<number | null>(null);
   const [editingAuctionName, setEditingAuctionName] = useState("");
+  const [selectedAuctionForUpload, setSelectedAuctionForUpload] = useState<string>("");
+  const [selectedAuctionForSingleAdd, setSelectedAuctionForSingleAdd] = useState<string>("");
   
   // Team management state
   const [deleteTeamId, setDeleteTeamId] = useState<string | null>(null);
@@ -228,8 +230,8 @@ export default function Commissioner() {
   });
 
   const uploadPlayers = useMutation({
-    mutationFn: async (players: ParsedPlayer[]) => {
-      await apiRequest("POST", "/api/free-agents/bulk", { players });
+    mutationFn: async ({ players, auctionId }: { players: ParsedPlayer[]; auctionId?: number }) => {
+      await apiRequest("POST", "/api/free-agents/bulk", { players, auctionId });
     },
     onSuccess: () => {
       toast({
@@ -237,6 +239,7 @@ export default function Commissioner() {
         description: `${parsedPlayers.length} free agents have been added.`,
       });
       setParsedPlayers([]);
+      setSelectedAuctionForUpload("");
       queryClient.invalidateQueries({ queryKey: ["/api/free-agents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
     },
@@ -269,7 +272,7 @@ export default function Commissioner() {
   });
 
   const addPlayer = useMutation({
-    mutationFn: async (data: AddPlayerFormData) => {
+    mutationFn: async ({ data, auctionId }: { data: AddPlayerFormData; auctionId?: number }) => {
       await apiRequest("POST", "/api/free-agents", {
         name: data.name,
         playerType: data.playerType,
@@ -277,6 +280,7 @@ export default function Commissioner() {
         minimumBid: data.minimumBid,
         minimumYears: data.minimumYears,
         auctionEndTime: data.auctionEndTime,
+        auctionId,
       });
     },
     onSuccess: () => {
@@ -1670,7 +1674,40 @@ export default function Commissioner() {
         </CardHeader>
         <CardContent>
           <Form {...addPlayerForm}>
-            <form onSubmit={addPlayerForm.handleSubmit((data) => addPlayer.mutate(data))} className="space-y-4">
+            <form onSubmit={addPlayerForm.handleSubmit((data) => addPlayer.mutate({ 
+              data, 
+              auctionId: selectedAuctionForSingleAdd ? parseInt(selectedAuctionForSingleAdd) : undefined 
+            }))} className="space-y-4">
+              {/* Auction Selection */}
+              <div className="flex items-center gap-4 p-3 bg-muted/50 rounded-lg">
+                <Label className="text-sm font-medium whitespace-nowrap">Target Auction:</Label>
+                <Select
+                  value={selectedAuctionForSingleAdd}
+                  onValueChange={setSelectedAuctionForSingleAdd}
+                >
+                  <SelectTrigger className="flex-1" data-testid="select-single-add-auction">
+                    <SelectValue placeholder="Select an auction (or create one first)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allAuctions && allAuctions.length > 0 ? (
+                      allAuctions.map((auction) => (
+                        <SelectItem key={auction.id} value={String(auction.id)}>
+                          {auction.name} {auction.status === "active" && "(Active)"}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="none" disabled>No auctions - create one first</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {(!allAuctions || allAuctions.length === 0) && (
+                <div className="text-sm text-amber-600 dark:text-amber-400 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
+                  Please create an auction in the Auction Management section above before adding players.
+                </div>
+              )}
+              
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <FormField
                   control={addPlayerForm.control}
@@ -1776,7 +1813,11 @@ export default function Commissioner() {
                   )}
                 />
               </div>
-              <Button type="submit" disabled={addPlayer.isPending} data-testid="button-add-player">
+              <Button 
+                type="submit" 
+                disabled={addPlayer.isPending || !allAuctions || allAuctions.length === 0 || !selectedAuctionForSingleAdd} 
+                data-testid="button-add-player"
+              >
                 {addPlayer.isPending ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1891,9 +1932,43 @@ export default function Commissioner() {
                 </Table>
               </div>
 
+              {/* Auction Selection for Upload */}
+              <div className="flex items-center gap-4 p-3 bg-muted/50 rounded-lg">
+                <Label className="text-sm font-medium whitespace-nowrap">Target Auction:</Label>
+                <Select
+                  value={selectedAuctionForUpload}
+                  onValueChange={setSelectedAuctionForUpload}
+                >
+                  <SelectTrigger className="flex-1" data-testid="select-upload-auction">
+                    <SelectValue placeholder="Select an auction (or create one first)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allAuctions && allAuctions.length > 0 ? (
+                      allAuctions.map((auction) => (
+                        <SelectItem key={auction.id} value={String(auction.id)}>
+                          {auction.name} {auction.status === "active" && "(Active)"}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="none" disabled>No auctions - create one first</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {(!allAuctions || allAuctions.length === 0) && (
+                <div className="text-sm text-amber-600 dark:text-amber-400 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
+                  Please create an auction in the Auction Management section above before uploading players.
+                </div>
+              )}
+
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button className="w-full" data-testid="button-upload-players">
+                  <Button 
+                    className="w-full" 
+                    data-testid="button-upload-players"
+                    disabled={!allAuctions || allAuctions.length === 0 || !selectedAuctionForUpload}
+                  >
                     <Upload className="h-4 w-4 mr-2" />
                     Upload {parsedPlayers.length} Free Agents
                   </Button>
@@ -1902,14 +1977,18 @@ export default function Commissioner() {
                   <AlertDialogHeader>
                     <AlertDialogTitle>Confirm Upload</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This will add {parsedPlayers.length} new free agents to the auction pool.
+                      This will add {parsedPlayers.length} new free agents to the 
+                      "{allAuctions?.find(a => a.id === parseInt(selectedAuctionForUpload))?.name}" auction.
                       Players without an end time will be set to expire in 7 days.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction
-                      onClick={() => uploadPlayers.mutate(parsedPlayers)}
+                      onClick={() => uploadPlayers.mutate({ 
+                        players: parsedPlayers, 
+                        auctionId: selectedAuctionForUpload ? parseInt(selectedAuctionForUpload) : undefined 
+                      })}
                       disabled={uploadPlayers.isPending}
                     >
                       {uploadPlayers.isPending ? (
