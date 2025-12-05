@@ -431,7 +431,7 @@ export default function CommissionerAuction() {
     const nameIdx = headers.findIndex(h => h === "name" || h === "player");
     const firstNameIdx = headers.findIndex(h => h === "firstname" || h === "first_name");
     const lastNameIdx = headers.findIndex(h => h === "lastname" || h === "last_name");
-    const typeIdx = headers.findIndex(h => h === "type" || h === "playertype" || h === "position" || h === "h" || h === "p");
+    const typeIdx = headers.findIndex(h => h === "type" || h === "playertype" || h === "player_type" || h === "position" || h === "h/p" || h === "h" || h === "p");
     const teamIdx = headers.findIndex(h => h === "team" || h === "mlbteam");
     const minBidIdx = headers.findIndex(h => h === "minimum_bid" || h === "minbid" || h === "bidmindollars");
     const minYearsIdx = headers.findIndex(h => h === "minimum_years" || h === "minyears" || h === "bidminyears");

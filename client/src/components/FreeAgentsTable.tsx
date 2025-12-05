@@ -432,7 +432,7 @@ export function FreeAgentsTable({ freeAgents, bidIncrement = 0.10 }: FreeAgentsT
                           {agent.highBidder ? (
                             <div className="flex items-center gap-2">
                               <span className={isHighBidder ? "text-primary font-medium" : ""}>
-                                {agent.highBidder.firstName} {agent.highBidder.lastName?.[0]}.
+                                {agent.highBidder.teamAbbreviation || agent.highBidder.teamName || `${agent.highBidder.firstName} ${agent.highBidder.lastName?.[0]}.`}
                               </span>
                               {isHighBidder && (
                                 <Badge variant="default" className="text-xs">You</Badge>
