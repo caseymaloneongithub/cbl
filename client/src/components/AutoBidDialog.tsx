@@ -82,15 +82,15 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange }: AutoBidDialogPr
         isActive: existingAutoBid.isActive,
       });
       setSelectedYears(validYears);
-    } else if (open) {
+    } else if (open && freeAgent) {
       form.reset({
-        maxAmount: 100,
+        maxAmount: freeAgent.minimumBid,
         years: playerMinimumYears,
         isActive: true,
       });
       setSelectedYears(playerMinimumYears);
     }
-  }, [open, existingAutoBid, playerMinimumYears, form]);
+  }, [open, existingAutoBid, playerMinimumYears, freeAgent, form]);
 
   const watchMaxAmount = form.watch("maxAmount");
   const watchIsActive = form.watch("isActive");
