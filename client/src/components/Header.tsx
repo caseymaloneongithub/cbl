@@ -96,7 +96,7 @@ export function Header() {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 hover-elevate active-elevate-2 rounded-md px-2 py-1">
             <Diamond className="h-6 w-6 text-primary" />
-            <span className="font-bold text-lg hidden sm:inline">Strat League</span>
+            <span className="font-bold text-lg hidden sm:inline">CBL Auctions</span>
           </Link>
 
           {/* Desktop Navigation */}

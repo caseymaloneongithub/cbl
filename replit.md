@@ -1,7 +1,7 @@
-# Strat League Auction Platform
+# CBL Auctions Platform
 
 ## Overview
-The Strat League Auction Platform is a fantasy baseball league management system focused on free agent auctions. It enables automated bidding, supports multi-year contracts with configurable multipliers, and provides real-time updates. The platform is designed to allow team owners to bid on free agents, with features for both manual and automated bidding, and offers extensive commissioner controls for league management. Its primary purpose is to streamline the free agent acquisition process in fantasy baseball leagues.
+The CBL Auctions Platform is a fantasy baseball league management system focused on free agent auctions. It enables automated bidding, supports multi-year contracts with configurable multipliers, and provides real-time updates. The platform is designed to allow team owners to bid on free agents, with features for both manual and automated bidding, and offers extensive commissioner controls for league management. Its primary purpose is to streamline the free agent acquisition process in fantasy baseball leagues.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.

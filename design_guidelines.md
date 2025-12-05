@@ -1,4 +1,4 @@
-# Design Guidelines: Strat League Auction Platform
+# Design Guidelines: CBL Auctions Platform
 
 ## Design Approach: Material Design System
 **Rationale**: Information-dense application requiring clear data hierarchy, real-time feedback, and robust form patterns. Material Design provides excellent structure for tables, forms, and interactive elements with strong visual feedback.

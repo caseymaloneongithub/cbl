@@ -89,11 +89,11 @@ export async function sendPasswordResetEmail(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Password Reset - Strat League</title>
+  <title>Password Reset - CBL Auctions</title>
 </head>
 <body style="font-family: 'Roboto', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
   <div style="background: linear-gradient(135deg, #1a5f2a 0%, #2d8f4a 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
-    <h1 style="color: white; margin: 0; font-size: 24px;">Strat League Auction</h1>
+    <h1 style="color: white; margin: 0; font-size: 24px;">CBL Auctions</h1>
   </div>
   
   <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px;">
@@ -101,7 +101,7 @@ export async function sendPasswordResetEmail(
     
     <p>Hi ${firstName},</p>
     
-    <p>We received a request to reset your password for your Strat League account. Click the button below to set a new password:</p>
+    <p>We received a request to reset your password for your CBL Auctions account. Click the button below to set a new password:</p>
     
     <div style="text-align: center; margin: 30px 0;">
       <a href="${resetLink}" style="background-color: #1a5f2a; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Reset Password</a>
@@ -123,11 +123,11 @@ export async function sendPasswordResetEmail(
   `;
 
   const text = `
-Password Reset Request - Strat League
+Password Reset Request - CBL Auctions
 
 Hi ${firstName},
 
-We received a request to reset your password for your Strat League account.
+We received a request to reset your password for your CBL Auctions account.
 
 Click the following link to reset your password:
 ${resetLink}
@@ -139,7 +139,7 @@ If you didn't request this password reset, you can safely ignore this email. You
 
   return sendEmail({
     to,
-    subject: 'Password Reset - Strat League Auction',
+    subject: 'Password Reset - CBL Auctions',
     html,
     text,
   });
@@ -157,19 +157,19 @@ export async function sendNewUserCredentialsEmail(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Welcome to Strat League</title>
+  <title>Welcome to CBL Auctions</title>
 </head>
 <body style="font-family: 'Roboto', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
   <div style="background: linear-gradient(135deg, #1a5f2a 0%, #2d8f4a 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
-    <h1 style="color: white; margin: 0; font-size: 24px;">Strat League Auction</h1>
+    <h1 style="color: white; margin: 0; font-size: 24px;">CBL Auctions</h1>
   </div>
   
   <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px;">
-    <h2 style="color: #1a5f2a; margin-top: 0;">Welcome to Strat League!</h2>
+    <h2 style="color: #1a5f2a; margin-top: 0;">Welcome to CBL Auctions!</h2>
     
     <p>Hi ${firstName},</p>
     
-    <p>Your account has been created for the Strat League Auction platform. Here are your login credentials:</p>
+    <p>Your account has been created for the CBL Auctions platform. Here are your login credentials:</p>
     
     <div style="background: white; border: 1px solid #ddd; border-radius: 6px; padding: 20px; margin: 20px 0;">
       <p style="margin: 0 0 10px 0;"><strong>Email:</strong> ${to}</p>
@@ -193,11 +193,11 @@ export async function sendNewUserCredentialsEmail(
   `;
 
   const text = `
-Welcome to Strat League!
+Welcome to CBL Auctions!
 
 Hi ${firstName},
 
-Your account has been created for the Strat League Auction platform. Here are your login credentials:
+Your account has been created for the CBL Auctions platform. Here are your login credentials:
 
 Email: ${to}
 Temporary Password: ${temporaryPassword}
@@ -211,7 +211,7 @@ If you have any questions, please contact your league commissioner.
 
   return sendEmail({
     to,
-    subject: 'Welcome to Strat League Auction - Your Login Credentials',
+    subject: 'Welcome to CBL Auctions - Your Login Credentials',
     html,
     text,
   });
