@@ -1106,15 +1106,15 @@ export default function Commissioner() {
               <Tabs defaultValue="active" className="w-full">
                 <TabsList className="mb-4">
                   <TabsTrigger value="active" data-testid="tab-active-teams">
-                    Active ({owners?.filter(o => !o.isCommissioner && !o.isArchived).length || 0})
+                    Active ({owners?.filter(o => !o.isArchived).length || 0})
                   </TabsTrigger>
                   <TabsTrigger value="archived" data-testid="tab-archived-teams">
-                    Archived ({owners?.filter(o => !o.isCommissioner && o.isArchived).length || 0})
+                    Archived ({owners?.filter(o => o.isArchived).length || 0})
                   </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="active">
-                  {owners && owners.filter(o => !o.isCommissioner && !o.isArchived).length > 0 ? (
+                  {owners && owners.filter(o => !o.isArchived).length > 0 ? (
                     <div className="border rounded-lg overflow-hidden">
                       <Table>
                         <TableHeader>
@@ -1123,18 +1123,28 @@ export default function Commissioner() {
                             <TableHead>Name</TableHead>
                             <TableHead>Team</TableHead>
                             <TableHead>Abbr</TableHead>
+                            <TableHead>Role</TableHead>
                             <TableHead className="text-right">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {owners
-                            .filter(o => !o.isCommissioner && !o.isArchived)
+                            .filter(o => !o.isArchived)
                             .map((owner) => (
                               <TableRow key={owner.id}>
                                 <TableCell className="font-medium">{owner.email}</TableCell>
                                 <TableCell>{owner.firstName || ""} {owner.lastName || ""}</TableCell>
                                 <TableCell>{owner.teamName || "-"}</TableCell>
                                 <TableCell>{owner.teamAbbreviation || "-"}</TableCell>
+                                <TableCell>
+                                  {owner.isSuperAdmin ? (
+                                    <Badge variant="default" className="bg-purple-600">Super Admin</Badge>
+                                  ) : owner.isCommissioner ? (
+                                    <Badge variant="default" className="bg-amber-600">Commissioner</Badge>
+                                  ) : (
+                                    <span className="text-muted-foreground text-sm">Owner</span>
+                                  )}
+                                </TableCell>
                                 <TableCell className="text-right">
                                   <div className="flex items-center justify-end gap-1">
                                     <Button
@@ -1153,17 +1163,30 @@ export default function Commissioner() {
                                     >
                                       <Edit2 className="h-4 w-4" />
                                     </Button>
-                                    {user?.isSuperAdmin && (
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        onClick={() => setCommissioner.mutate({ userId: owner.id, isCommissioner: true })}
-                                        disabled={setCommissioner.isPending}
-                                        title="Make Commissioner"
-                                        data-testid={`button-make-commissioner-${owner.id}`}
-                                      >
-                                        <Crown className="h-4 w-4" />
-                                      </Button>
+                                    {user?.isSuperAdmin && !owner.isSuperAdmin && (
+                                      owner.isCommissioner ? (
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={() => setCommissioner.mutate({ userId: owner.id, isCommissioner: false })}
+                                          disabled={setCommissioner.isPending}
+                                          title="Revoke Commissioner"
+                                          data-testid={`button-revoke-commissioner-${owner.id}`}
+                                        >
+                                          <Crown className="h-4 w-4 text-amber-600" />
+                                        </Button>
+                                      ) : (
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={() => setCommissioner.mutate({ userId: owner.id, isCommissioner: true })}
+                                          disabled={setCommissioner.isPending}
+                                          title="Make Commissioner"
+                                          data-testid={`button-make-commissioner-${owner.id}`}
+                                        >
+                                          <Crown className="h-4 w-4" />
+                                        </Button>
+                                      )
                                     )}
                                     <Button
                                       size="sm"
@@ -1246,7 +1269,7 @@ export default function Commissioner() {
                 </TabsContent>
 
                 <TabsContent value="archived">
-                  {owners && owners.filter(o => !o.isCommissioner && o.isArchived).length > 0 ? (
+                  {owners && owners.filter(o => o.isArchived).length > 0 ? (
                     <div className="border rounded-lg overflow-hidden">
                       <Table>
                         <TableHeader>
@@ -1255,18 +1278,28 @@ export default function Commissioner() {
                             <TableHead>Name</TableHead>
                             <TableHead>Team</TableHead>
                             <TableHead>Abbr</TableHead>
+                            <TableHead>Role</TableHead>
                             <TableHead className="text-right">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {owners
-                            .filter(o => !o.isCommissioner && o.isArchived)
+                            .filter(o => o.isArchived)
                             .map((owner) => (
                               <TableRow key={owner.id}>
                                 <TableCell className="font-medium">{owner.email}</TableCell>
                                 <TableCell>{owner.firstName || ""} {owner.lastName || ""}</TableCell>
                                 <TableCell>{owner.teamName || "-"}</TableCell>
                                 <TableCell>{owner.teamAbbreviation || "-"}</TableCell>
+                                <TableCell>
+                                  {owner.isSuperAdmin ? (
+                                    <Badge variant="default" className="bg-purple-600">Super Admin</Badge>
+                                  ) : owner.isCommissioner ? (
+                                    <Badge variant="default" className="bg-amber-600">Commissioner</Badge>
+                                  ) : (
+                                    <span className="text-muted-foreground text-sm">Owner</span>
+                                  )}
+                                </TableCell>
                                 <TableCell className="text-right">
                                   <Button
                                     size="sm"
