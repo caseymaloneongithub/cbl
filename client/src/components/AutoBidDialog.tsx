@@ -79,14 +79,26 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.
       const validYears = existingAutoBid 
         ? Math.max(existingAutoBid.years, playerMinimumYears)
         : playerMinimumYears;
+      
+      // Calculate suggested amount to beat current high bid
+      let suggestedAmount = freeAgent.minimumBid;
+      const currentFactor = yearFactors[validYears - 1] || 1;
+      
+      if (freeAgent.currentBid) {
+        // Target total value = current high bid × (1 + increment)
+        const targetTotalValue = freeAgent.currentBid.totalValue * (1 + bidIncrement);
+        // Suggested amount = target total / year factor (rounded up to nearest dollar)
+        suggestedAmount = Math.ceil(targetTotalValue / currentFactor);
+      }
+      
       form.reset({
-        maxAmount: freeAgent.minimumBid,
+        maxAmount: suggestedAmount,
         years: validYears,
         isActive: existingAutoBid?.isActive ?? true,
       });
       setSelectedYears(validYears);
     }
-  }, [open, existingAutoBid, playerMinimumYears, freeAgent, form]);
+  }, [open, existingAutoBid, playerMinimumYears, freeAgent, form, bidIncrement, yearFactors]);
 
   const watchMaxAmount = form.watch("maxAmount");
   const watchIsActive = form.watch("isActive");
@@ -155,17 +167,22 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.
 
         <div className="space-y-6 overflow-y-auto flex-1">
           {/* Current Status */}
-          <div className="rounded-lg bg-muted/50 p-4">
+          <div className="rounded-lg bg-muted/50 p-4 space-y-2">
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Auction ends</span>
               <CountdownTimer endTime={freeAgent.auctionEndTime} />
             </div>
             {freeAgent.currentBid ? (
-              <div className="mt-2 text-sm">
-                Current high bid: <span className="font-mono font-medium">{formatCurrency(freeAgent.currentBid.totalValue)}</span>
-              </div>
+              <>
+                <div className="text-sm">
+                  Current high bid: <span className="font-mono font-medium">{formatCurrency(freeAgent.currentBid.totalValue)}</span>
+                </div>
+                <div className="text-sm">
+                  Target to beat (+{Math.round(bidIncrement * 100)}%): <span className="font-mono font-medium text-primary">{formatCurrency(freeAgent.currentBid.totalValue * (1 + bidIncrement))}</span>
+                </div>
+              </>
             ) : (
-              <div className="mt-2 text-sm">
+              <div className="text-sm">
                 Minimum opening bid: <span className="font-mono font-medium">{formatCurrency(freeAgent.minimumBid)}</span>
               </div>
             )}
