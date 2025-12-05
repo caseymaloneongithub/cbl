@@ -5,6 +5,8 @@ import {
   bids,
   autoBids,
   passwordResetTokens,
+  auctions,
+  auctionTeams,
   type User,
   type UpsertUser,
   type LeagueSettings,
@@ -18,9 +20,13 @@ import {
   type FreeAgentWithBids,
   type BidWithUser,
   type PasswordResetToken,
+  type Auction,
+  type InsertAuction,
+  type AuctionTeam,
+  type InsertAuctionTeam,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, lt, sql } from "drizzle-orm";
+import { eq, and, desc, lt, sql, isNull } from "drizzle-orm";
 
 export interface IStorage {
   // User operations
@@ -102,6 +108,20 @@ export interface IStorage {
   getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined>;
   markPasswordResetTokenUsed(id: number): Promise<void>;
   deleteExpiredPasswordResetTokens(): Promise<void>;
+  
+  // Auctions
+  getAuction(id: number): Promise<Auction | undefined>;
+  getAllAuctions(): Promise<Auction[]>;
+  getActiveAuction(): Promise<Auction | undefined>;
+  createAuction(auction: InsertAuction): Promise<Auction>;
+  updateAuction(id: number, data: Partial<InsertAuction>): Promise<Auction>;
+  deleteAuction(id: number): Promise<void>;
+  resetAuction(id: number): Promise<void>;
+  
+  // Auction teams
+  getAuctionTeams(auctionId: number): Promise<(AuctionTeam & { user: User })[]>;
+  setAuctionTeamActive(auctionId: number, userId: string, isActive: boolean): Promise<AuctionTeam>;
+  enrollAllTeamsInAuction(auctionId: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -744,6 +764,174 @@ export class DatabaseStorage implements IStorage {
     await db
       .delete(passwordResetTokens)
       .where(lt(passwordResetTokens.expiresAt, now));
+  }
+
+  // Auctions
+  async getAuction(id: number): Promise<Auction | undefined> {
+    const [auction] = await db
+      .select()
+      .from(auctions)
+      .where(and(eq(auctions.id, id), eq(auctions.isDeleted, false)));
+    return auction;
+  }
+
+  async getAllAuctions(): Promise<Auction[]> {
+    return db
+      .select()
+      .from(auctions)
+      .where(eq(auctions.isDeleted, false))
+      .orderBy(desc(auctions.createdAt));
+  }
+
+  async getActiveAuction(): Promise<Auction | undefined> {
+    const [auction] = await db
+      .select()
+      .from(auctions)
+      .where(and(eq(auctions.status, "active"), eq(auctions.isDeleted, false)))
+      .limit(1);
+    return auction;
+  }
+
+  async createAuction(auctionData: InsertAuction): Promise<Auction> {
+    const [auction] = await db
+      .insert(auctions)
+      .values(auctionData)
+      .returning();
+    return auction;
+  }
+
+  async updateAuction(id: number, data: Partial<InsertAuction>): Promise<Auction> {
+    const [auction] = await db
+      .update(auctions)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(auctions.id, id))
+      .returning();
+    return auction;
+  }
+
+  async deleteAuction(id: number): Promise<void> {
+    await db.transaction(async (tx) => {
+      // Get all free agents for this auction
+      const agents = await tx
+        .select({ id: freeAgents.id })
+        .from(freeAgents)
+        .where(eq(freeAgents.auctionId, id));
+      
+      const agentIds = agents.map(a => a.id);
+      
+      if (agentIds.length > 0) {
+        // Delete all bids for these agents
+        for (const agentId of agentIds) {
+          await tx.delete(bids).where(eq(bids.freeAgentId, agentId));
+          await tx.delete(autoBids).where(eq(autoBids.freeAgentId, agentId));
+        }
+        
+        // Delete all free agents for this auction
+        await tx.delete(freeAgents).where(eq(freeAgents.auctionId, id));
+      }
+      
+      // Delete auction teams
+      await tx.delete(auctionTeams).where(eq(auctionTeams.auctionId, id));
+      
+      // Soft delete the auction
+      await tx
+        .update(auctions)
+        .set({ isDeleted: true, updatedAt: new Date() })
+        .where(eq(auctions.id, id));
+    });
+  }
+
+  async resetAuction(id: number): Promise<void> {
+    await db.transaction(async (tx) => {
+      // Get all free agents for this auction
+      const agents = await tx
+        .select({ id: freeAgents.id })
+        .from(freeAgents)
+        .where(eq(freeAgents.auctionId, id));
+      
+      const agentIds = agents.map(a => a.id);
+      
+      if (agentIds.length > 0) {
+        // Delete all bids for these agents
+        for (const agentId of agentIds) {
+          await tx.delete(bids).where(eq(bids.freeAgentId, agentId));
+          await tx.delete(autoBids).where(eq(autoBids.freeAgentId, agentId));
+        }
+        
+        // Reset all free agents - clear winners and reactivate
+        await tx
+          .update(freeAgents)
+          .set({ 
+            winnerId: null, 
+            winningBidId: null, 
+            isActive: true 
+          })
+          .where(eq(freeAgents.auctionId, id));
+      }
+    });
+  }
+
+  // Auction teams
+  async getAuctionTeams(auctionId: number): Promise<(AuctionTeam & { user: User })[]> {
+    const teams = await db
+      .select()
+      .from(auctionTeams)
+      .where(eq(auctionTeams.auctionId, auctionId));
+    
+    const result: (AuctionTeam & { user: User })[] = [];
+    for (const team of teams) {
+      const [user] = await db.select().from(users).where(eq(users.id, team.userId));
+      if (user) {
+        result.push({ ...team, user });
+      }
+    }
+    return result;
+  }
+
+  async setAuctionTeamActive(auctionId: number, userId: string, isActive: boolean): Promise<AuctionTeam> {
+    // Check if team exists for this auction
+    const [existing] = await db
+      .select()
+      .from(auctionTeams)
+      .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, userId)));
+    
+    if (existing) {
+      const [updated] = await db
+        .update(auctionTeams)
+        .set({ isActive, updatedAt: new Date() })
+        .where(eq(auctionTeams.id, existing.id))
+        .returning();
+      return updated;
+    } else {
+      // Create new enrollment
+      const [team] = await db
+        .insert(auctionTeams)
+        .values({ auctionId, userId, isActive })
+        .returning();
+      return team;
+    }
+  }
+
+  async enrollAllTeamsInAuction(auctionId: number): Promise<void> {
+    // Get all non-commissioner, non-super-admin users
+    const allUsers = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.isCommissioner, false), eq(users.isSuperAdmin, false)));
+    
+    for (const user of allUsers) {
+      // Check if already enrolled
+      const [existing] = await db
+        .select()
+        .from(auctionTeams)
+        .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, user.id)));
+      
+      if (!existing) {
+        await db
+          .insert(auctionTeams)
+          .values({ auctionId, userId: user.id, isActive: true });
+      }
+    }
   }
 }
 
