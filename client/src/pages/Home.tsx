@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Users, Gavel, Trophy, Clock, DollarSign, AlertCircle } from "lucide-react";
 import type { FreeAgentWithBids, UserWithStats, Auction } from "@shared/schema";
 import { FreeAgentsTable } from "@/components/FreeAgentsTable";
+import { formatCurrency } from "@/lib/utils";
 
 export default function Home() {
   const { user } = useAuth();
@@ -190,13 +191,13 @@ export default function Home() {
                   <div>
                     <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Spent</div>
                     <div className="text-lg font-bold font-mono" data-testid="text-budget-spent">
-                      ${Math.floor(budget.spent)}
+                      {formatCurrency(Math.floor(budget.spent))}
                     </div>
                   </div>
                   <div>
                     <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Committed</div>
                     <div className="text-lg font-bold font-mono" data-testid="text-budget-committed">
-                      ${Math.floor(budget.committed)}
+                      {formatCurrency(Math.floor(budget.committed))}
                     </div>
                   </div>
                   <div>
@@ -205,14 +206,14 @@ export default function Home() {
                       className={`text-lg font-bold font-mono ${budget.available < 20 ? 'text-destructive' : ''}`}
                       data-testid="text-budget-available"
                     >
-                      ${Math.floor(budget.available)}
+                      {formatCurrency(Math.floor(budget.available))}
                     </div>
                   </div>
                 </div>
                 <div className="space-y-1">
                   <div className="flex justify-between text-xs text-muted-foreground">
                     <span>Budget Usage</span>
-                    <span>${Math.floor(budget.spent + budget.committed)} / ${budget.budget}</span>
+                    <span>{formatCurrency(Math.floor(budget.spent + budget.committed))} / {formatCurrency(budget.budget)}</span>
                   </div>
                   <Progress 
                     value={((budget.spent + budget.committed) / budget.budget) * 100} 

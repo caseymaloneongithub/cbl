@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
+import { formatCurrency } from "@/lib/utils";
 import type { Auction, User } from "@shared/schema";
 import { 
   Settings, Users, Loader2, FileSpreadsheet, Trash2, DollarSign, Plus, UserPlus, 
@@ -982,7 +983,7 @@ export default function CommissionerAuction() {
                         </>
                       ) : (
                         <>
-                          <TableCell className="text-right">${team.budget}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(team.budget)}</TableCell>
                           <TableCell className="text-right">{team.rosterLimit ?? "None"}</TableCell>
                           <TableCell className="text-right">{team.ipLimit ?? "None"}</TableCell>
                           <TableCell className="text-right">{team.paLimit ?? "None"}</TableCell>
@@ -1303,7 +1304,7 @@ export default function CommissionerAuction() {
                           <Badge variant="outline">{player.playerType === "pitcher" ? "Pitcher" : "Hitter"}</Badge>
                         </TableCell>
                         <TableCell>{player.team || "-"}</TableCell>
-                        <TableCell>${player.minimumBid}</TableCell>
+                        <TableCell>{formatCurrency(player.minimumBid)}</TableCell>
                         <TableCell>{player.minimumYears}yr</TableCell>
                         <TableCell className="text-muted-foreground">
                           {player.auctionEndTime || "Default"}
@@ -1484,7 +1485,7 @@ export default function CommissionerAuction() {
                               <span className="text-muted-foreground text-sm">{enrollment.error}</span>
                             )}
                           </TableCell>
-                          <TableCell>${enrollment.budget.toLocaleString()}</TableCell>
+                          <TableCell>{formatCurrency(enrollment.budget)}</TableCell>
                           <TableCell>{enrollment.rosterLimit ?? "-"}</TableCell>
                           <TableCell>{enrollment.ipLimit ?? "-"}</TableCell>
                           <TableCell>{enrollment.paLimit ?? "-"}</TableCell>
