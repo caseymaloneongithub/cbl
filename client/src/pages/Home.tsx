@@ -74,6 +74,32 @@ export default function Home() {
     enabled: !!activeAuction?.id,
   });
 
+  const { data: limits, isLoading: loadingLimits } = useQuery<{
+    rosterLimit: number | null;
+    rosterUsed: number;
+    rosterAvailable: number | null;
+    ipLimit: number | null;
+    ipUsed: number;
+    ipAvailable: number | null;
+    paLimit: number | null;
+    paUsed: number;
+    paAvailable: number | null;
+  }>({
+    queryKey: ["/api/limits", activeAuction?.id],
+    queryFn: async () => {
+      if (!activeAuction?.id) return null;
+      const res = await fetch(`/api/limits?auctionId=${activeAuction.id}`, { credentials: "include" });
+      if (!res.ok) {
+        if (res.status === 404) {
+          return null;
+        }
+        throw new Error("Failed to fetch limits");
+      }
+      return res.json();
+    },
+    enabled: !!activeAuction?.id,
+  });
+
   const activeAgents = freeAgents?.filter(a => a.isActive) || [];
 
   return (
@@ -170,17 +196,17 @@ export default function Home() {
         </Card>
       </div>
 
-      {/* Budget Summary - only show when there's an active auction */}
+      {/* Budget & Limits Summary - only show when there's an active auction */}
       {activeAuction && (
         <Card className="mb-8">
           <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
             <CardTitle className="flex items-center gap-2">
               <DollarSign className="h-5 w-5" />
-              Budget
+              Budget & Limits
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {loadingBudget ? (
+            {loadingBudget || loadingLimits ? (
               <div className="space-y-3">
                 <Skeleton className="h-4 w-full" />
                 <Skeleton className="h-8 w-full" />
@@ -220,6 +246,42 @@ export default function Home() {
                     className="h-2"
                   />
                 </div>
+                
+                {/* IP and PA Limits */}
+                {limits && (limits.ipLimit !== null || limits.paLimit !== null) && (
+                  <div className="pt-3 border-t">
+                    <div className="grid grid-cols-2 gap-4 text-center">
+                      {limits.ipLimit !== null && (
+                        <div>
+                          <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">IP Limit</div>
+                          <div 
+                            className={`text-lg font-bold font-mono ${limits.ipAvailable !== null && limits.ipAvailable < 50 ? 'text-destructive' : ''}`}
+                            data-testid="text-ip-limit"
+                          >
+                            {limits.ipUsed} / {limits.ipLimit}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {limits.ipAvailable !== null ? `${limits.ipAvailable} remaining` : ''}
+                          </div>
+                        </div>
+                      )}
+                      {limits.paLimit !== null && (
+                        <div>
+                          <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">PA Limit</div>
+                          <div 
+                            className={`text-lg font-bold font-mono ${limits.paAvailable !== null && limits.paAvailable < 100 ? 'text-destructive' : ''}`}
+                            data-testid="text-pa-limit"
+                          >
+                            {limits.paUsed} / {limits.paLimit}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {limits.paAvailable !== null ? `${limits.paAvailable} remaining` : ''}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <p className="text-muted-foreground">Budget information unavailable</p>
