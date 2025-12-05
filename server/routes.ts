@@ -191,21 +191,16 @@ export async function registerRoutes(
         return res.status(400).json({ message: "No players provided" });
       }
 
-      // Validate auction exists if provided
-      let targetAuctionId: number | null = null;
-      if (auctionId) {
-        const auction = await storage.getAuction(auctionId);
-        if (!auction) {
-          return res.status(400).json({ message: "Invalid auction ID" });
-        }
-        targetAuctionId = auctionId;
-      } else {
-        // Try to use the active auction if no auctionId provided
-        const activeAuction = await storage.getActiveAuction();
-        if (activeAuction) {
-          targetAuctionId = activeAuction.id;
-        }
+      // Require auction ID - players must be tied to a specific auction
+      if (!auctionId) {
+        return res.status(400).json({ message: "Auction ID is required - please select an auction for these players" });
       }
+      
+      const auction = await storage.getAuction(auctionId);
+      if (!auction) {
+        return res.status(400).json({ message: "Invalid auction ID" });
+      }
+      const targetAuctionId = auctionId;
 
       const defaultEndTime = new Date();
       defaultEndTime.setDate(defaultEndTime.getDate() + 7);
