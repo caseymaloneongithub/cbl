@@ -1212,11 +1212,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTeamsNotInAuction(auctionId: number): Promise<User[]> {
-    // Get all non-commissioner, non-super-admin users
+    // Get all non-archived users (including commissioners and super admins)
     const allUsers = await db
       .select()
       .from(users)
-      .where(and(eq(users.isCommissioner, false), eq(users.isSuperAdmin, false)));
+      .where(eq(users.isArchived, false));
     
     // Get users already enrolled in this auction
     const enrolledTeams = await db
