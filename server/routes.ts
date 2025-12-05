@@ -564,8 +564,8 @@ export async function registerRoutes(
         auction.yearFactor5,
       ] : [1.0, 1.25, 1.33, 1.43, 1.55]; // Fallback defaults
       
-      // Total Value = amount × years × factor
-      const totalValue = amount * years * yearFactors[years - 1];
+      // Total Value = amount × factor (year factor already accounts for contract length)
+      const totalValue = amount * yearFactors[years - 1];
 
       // Check if bid meets minimum bid requirement (always enforce the player's minimum)
       if (amount < agent.minimumBid) {
@@ -722,16 +722,16 @@ export async function registerRoutes(
           const bidIncrement = auction?.bidIncrement ?? 0.10;
           
           // Try to beat the current bid
-          // Total Value = amount × years × factor
-          const maxTotalValue = maxAmount * years * factor;
+          // Total Value = amount × factor
+          const maxTotalValue = maxAmount * factor;
           const requiredTotalValue = currentHighBid.totalValue * (1 + bidIncrement);
           
           if (maxTotalValue >= requiredTotalValue) {
             // Calculate bid amount, ensuring it meets the player's minimum bid
-            // bidAmount = requiredTotalValue / (years × factor)
-            let bidAmount = Math.ceil(requiredTotalValue / (years * factor));
+            // bidAmount = requiredTotalValue / factor
+            let bidAmount = Math.ceil(requiredTotalValue / factor);
             bidAmount = Math.max(bidAmount, agent.minimumBid);
-            const bidTotalValue = bidAmount * years * factor;
+            const bidTotalValue = bidAmount * factor;
             
             // Check max amount and budget before placing bid
             if (bidAmount <= maxAmount && bidAmount <= availableBudget) {
@@ -756,7 +756,7 @@ export async function registerRoutes(
               userId,
               amount: startingBid,
               years,
-              totalValue: startingBid * years * factor,
+              totalValue: startingBid * factor,
               isAutoBid: true,
             });
           }
@@ -1721,16 +1721,16 @@ async function processAutoBids(
     if (autoBid.userId === excludeUserId || !autoBid.isActive) continue;
 
     const factor = yearFactors[autoBid.years - 1];
-    // Total Value = amount × years × factor
-    const maxTotalValue = autoBid.maxAmount * autoBid.years * factor;
+    // Total Value = amount × factor
+    const maxTotalValue = autoBid.maxAmount * factor;
     const requiredTotalValue = currentTotalValue * (1 + bidIncrement);
 
     if (maxTotalValue >= requiredTotalValue) {
       // Calculate bid amount, ensuring it meets the player's minimum bid
-      // bidAmount = requiredTotalValue / (years × factor)
-      let bidAmount = Math.ceil(requiredTotalValue / (autoBid.years * factor));
+      // bidAmount = requiredTotalValue / factor
+      let bidAmount = Math.ceil(requiredTotalValue / factor);
       bidAmount = Math.max(bidAmount, agent.minimumBid);
-      const bidTotalValue = bidAmount * autoBid.years * factor;
+      const bidTotalValue = bidAmount * factor;
       
       // Check if bid still fits within max amount after enforcing minimum
       if (bidAmount > autoBid.maxAmount) {
