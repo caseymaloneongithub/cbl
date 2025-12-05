@@ -46,6 +46,7 @@ export interface IStorage {
   
   // Free agents
   getFreeAgent(id: number): Promise<FreeAgent | undefined>;
+  getFreeAgentWithBids(id: number): Promise<FreeAgentWithBids | undefined>;
   getAllFreeAgents(): Promise<FreeAgentWithBids[]>;
   getActiveFreeAgents(auctionId?: number): Promise<FreeAgentWithBids[]>;
   getClosedFreeAgents(auctionId?: number): Promise<FreeAgentWithBids[]>;
@@ -289,6 +290,13 @@ export class DatabaseStorage implements IStorage {
   async getFreeAgent(id: number): Promise<FreeAgent | undefined> {
     const [agent] = await db.select().from(freeAgents).where(eq(freeAgents.id, id));
     return agent;
+  }
+
+  async getFreeAgentWithBids(id: number): Promise<FreeAgentWithBids | undefined> {
+    const [agent] = await db.select().from(freeAgents).where(eq(freeAgents.id, id));
+    if (!agent) return undefined;
+    const [enriched] = await this.enrichFreeAgentsWithBids([agent]);
+    return enriched;
   }
 
   async getAllFreeAgents(): Promise<FreeAgentWithBids[]> {

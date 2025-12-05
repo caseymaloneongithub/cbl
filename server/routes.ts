@@ -176,6 +176,24 @@ export async function registerRoutes(
     }
   });
 
+  // Get a single free agent with current bid info
+  app.get("/api/free-agents/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid free agent ID" });
+      }
+      const agent = await storage.getFreeAgentWithBids(id);
+      if (!agent) {
+        return res.status(404).json({ message: "Free agent not found" });
+      }
+      res.json(agent);
+    } catch (error) {
+      console.error("Error fetching free agent:", error);
+      res.status(500).json({ message: "Failed to fetch free agent" });
+    }
+  });
+
   app.get("/api/results", isAuthenticated, async (req: any, res) => {
     try {
       let auctionId: number | undefined = undefined;

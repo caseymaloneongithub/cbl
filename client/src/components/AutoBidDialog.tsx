@@ -59,6 +59,15 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.
     enabled: !!freeAgent?.id,
   });
 
+  // Fetch fresh free agent data to get current bid info (needed when editing from MyBids)
+  const { data: freshFreeAgent } = useQuery<FreeAgentWithBids>({
+    queryKey: ["/api/free-agents", freeAgent?.id],
+    enabled: !!freeAgent?.id && open,
+  });
+
+  // Use fresh data if available, otherwise fall back to passed prop
+  const currentBidInfo = freshFreeAgent?.currentBid ?? freeAgent?.currentBid;
+
   const yearFactors = settings
     ? [settings.yearFactor1, settings.yearFactor2, settings.yearFactor3, settings.yearFactor4, settings.yearFactor5]
     : [1, 1.25, 1.33, 1.43, 1.55];
@@ -80,19 +89,24 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.
         ? Math.max(existingAutoBid.years, playerMinimumYears)
         : playerMinimumYears;
       
-      // Calculate suggested amount to beat current high bid
-      let suggestedAmount = freeAgent.minimumBid;
-      const currentFactor = yearFactors[validYears - 1] || 1;
+      let amount: number;
       
-      if (freeAgent.currentBid) {
-        // Target total value = current high bid × (1 + increment)
-        const targetTotalValue = freeAgent.currentBid.totalValue * (1 + bidIncrement);
-        // Suggested amount = target total / year factor (rounded up to nearest dollar)
-        suggestedAmount = Math.ceil(targetTotalValue / currentFactor);
+      if (existingAutoBid) {
+        // Editing existing auto-bid: use the saved values
+        amount = existingAutoBid.maxAmount;
+      } else {
+        // Creating new auto-bid: calculate suggested amount to beat current high bid
+        const currentFactor = yearFactors[validYears - 1] || 1;
+        if (freeAgent.currentBid) {
+          const targetTotalValue = freeAgent.currentBid.totalValue * (1 + bidIncrement);
+          amount = Math.ceil(targetTotalValue / currentFactor);
+        } else {
+          amount = freeAgent.minimumBid;
+        }
       }
       
       form.reset({
-        maxAmount: suggestedAmount,
+        maxAmount: amount,
         years: validYears,
         isActive: existingAutoBid?.isActive ?? true,
       });
@@ -172,13 +186,13 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.
               <span className="text-sm text-muted-foreground">Auction ends</span>
               <CountdownTimer endTime={freeAgent.auctionEndTime} />
             </div>
-            {freeAgent.currentBid ? (
+            {currentBidInfo ? (
               <>
                 <div className="text-sm">
-                  Current high bid: <span className="font-mono font-medium">{formatCurrency(freeAgent.currentBid.totalValue)}</span>
+                  Current high bid: <span className="font-mono font-medium">{formatCurrency(currentBidInfo.totalValue)}</span>
                 </div>
                 <div className="text-sm">
-                  Target to beat (+{Math.round(bidIncrement * 100)}%): <span className="font-mono font-medium text-primary">{formatCurrency(freeAgent.currentBid.totalValue * (1 + bidIncrement))}</span>
+                  Target to beat (+{Math.round(bidIncrement * 100)}%): <span className="font-mono font-medium text-primary">{formatCurrency(currentBidInfo.totalValue * (1 + bidIncrement))}</span>
                 </div>
               </>
             ) : (
