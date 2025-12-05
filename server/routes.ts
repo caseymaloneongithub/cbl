@@ -129,6 +129,27 @@ export async function registerRoutes(
     }
   });
 
+  // Archive/unarchive a team
+  app.patch("/api/owners/:id/archive", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Commissioner or Super Admin access required" });
+      }
+
+      const { id } = req.params;
+      const { isArchived } = req.body;
+      
+      const updated = await storage.setUserArchived(id, isArchived);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error archiving team:", error);
+      res.status(500).json({ message: error.message || "Failed to update team archive status" });
+    }
+  });
+
   // Free agents routes
   app.get("/api/free-agents", isAuthenticated, async (req: any, res) => {
     try {

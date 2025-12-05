@@ -1180,6 +1180,20 @@ export class DatabaseStorage implements IStorage {
     // Delete the user
     await db.delete(users).where(eq(users.id, userId));
   }
+
+  async setUserArchived(userId: string, isArchived: boolean): Promise<User> {
+    const [updated] = await db
+      .update(users)
+      .set({ isArchived, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+    
+    if (!updated) {
+      throw new Error("User not found");
+    }
+    
+    return updated;
+  }
 }
 
 export const storage = new DatabaseStorage();

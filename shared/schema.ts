@@ -37,6 +37,7 @@ export const users = pgTable("users", {
   isSuperAdmin: boolean("is_super_admin").default(false).notNull(),
   teamName: varchar("team_name"),
   mustResetPassword: boolean("must_reset_password").default(false).notNull(),
+  isArchived: boolean("is_archived").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

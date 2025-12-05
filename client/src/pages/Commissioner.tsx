@@ -43,7 +43,7 @@ import {
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { LeagueSettings, User, Auction } from "@shared/schema";
-import { Upload, Settings, Users, Loader2, FileSpreadsheet, Trash2, Crown, Download, DollarSign, Plus, UserPlus, Trophy, RotateCcw, Play, Eye, Edit2, Check, X } from "lucide-react";
+import { Upload, Settings, Users, Loader2, FileSpreadsheet, Trash2, Crown, Download, DollarSign, Plus, UserPlus, Trophy, RotateCcw, Play, Eye, Edit2, Check, X, Archive, ArchiveRestore } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -63,6 +63,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const settingsSchema = z.object({
   yearFactor1: z.number().min(0.1).max(10),
@@ -323,6 +324,24 @@ export default function Commissioner() {
       toast({ title: "Cannot Delete", description: error.message, variant: "destructive" });
       setDeleteTeamId(null);
       setDeletingTeamName("");
+    },
+  });
+
+  // Team archive/unarchive mutation
+  const archiveTeam = useMutation({
+    mutationFn: async ({ userId, isArchived }: { userId: string; isArchived: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/owners/${userId}/archive`, { isArchived });
+      return res.json();
+    },
+    onSuccess: (_, { isArchived }) => {
+      toast({ 
+        title: isArchived ? "Team Archived" : "Team Restored", 
+        description: isArchived ? "The team has been moved to the archive." : "The team has been restored to active."
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/owners"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
 
@@ -1021,7 +1040,7 @@ export default function Commissioner() {
           </CardContent>
         </Card>
 
-        {/* Existing Teams Card */}
+        {/* Existing Teams Card with Tabs */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -1029,7 +1048,7 @@ export default function Commissioner() {
               Existing Teams
             </CardTitle>
             <CardDescription>
-              View and manage team accounts. Teams enrolled in auctions cannot be deleted.
+              View and manage team accounts. Teams enrolled in auctions can be archived instead of deleted.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -1037,92 +1056,164 @@ export default function Commissioner() {
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
-            ) : owners && owners.filter(o => !o.isCommissioner && !o.isSuperAdmin).length > 0 ? (
-              <div className="border rounded-lg overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Email</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Team</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {owners
-                      .filter(o => !o.isCommissioner && !o.isSuperAdmin)
-                      .map((owner) => (
-                        <TableRow key={owner.id}>
-                          <TableCell className="font-medium">{owner.email}</TableCell>
-                          <TableCell>{owner.firstName || ""} {owner.lastName || ""}</TableCell>
-                          <TableCell>{owner.teamName || "-"}</TableCell>
-                          <TableCell className="text-right">
-                            <Dialog open={deleteTeamId === owner.id} onOpenChange={(open) => {
-                              if (!open) {
-                                setDeleteTeamId(null);
-                                setDeletingTeamName("");
-                              }
-                            }}>
-                              <DialogTrigger asChild>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    setDeleteTeamId(owner.id);
-                                    setDeletingTeamName(owner.teamName || owner.email);
-                                  }}
-                                  data-testid={`button-delete-team-${owner.id}`}
-                                >
-                                  <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent>
-                                <DialogHeader>
-                                  <DialogTitle>Delete Team</DialogTitle>
-                                  <DialogDescription>
-                                    Are you sure you want to delete "{deletingTeamName}"? This action cannot be undone.
-                                    Teams that are enrolled in auctions or have bid history cannot be deleted.
-                                  </DialogDescription>
-                                </DialogHeader>
-                                <DialogFooter>
-                                  <Button
-                                    variant="outline"
-                                    onClick={() => {
-                                      setDeleteTeamId(null);
-                                      setDeletingTeamName("");
-                                    }}
-                                  >
-                                    Cancel
-                                  </Button>
-                                  <Button
-                                    variant="destructive"
-                                    onClick={() => deleteTeam.mutate(owner.id)}
-                                    disabled={deleteTeam.isPending}
-                                    data-testid="button-confirm-delete-team"
-                                  >
-                                    {deleteTeam.isPending ? (
-                                      <>
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Deleting...
-                                      </>
-                                    ) : (
-                                      "Delete Team"
-                                    )}
-                                  </Button>
-                                </DialogFooter>
-                              </DialogContent>
-                            </Dialog>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                  </TableBody>
-                </Table>
-              </div>
             ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>No teams yet. Upload a CSV file above to create team accounts.</p>
-              </div>
+              <Tabs defaultValue="active" className="w-full">
+                <TabsList className="mb-4">
+                  <TabsTrigger value="active" data-testid="tab-active-teams">
+                    Active ({owners?.filter(o => !o.isCommissioner && !o.isSuperAdmin && !o.isArchived).length || 0})
+                  </TabsTrigger>
+                  <TabsTrigger value="archived" data-testid="tab-archived-teams">
+                    Archived ({owners?.filter(o => !o.isCommissioner && !o.isSuperAdmin && o.isArchived).length || 0})
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="active">
+                  {owners && owners.filter(o => !o.isCommissioner && !o.isSuperAdmin && !o.isArchived).length > 0 ? (
+                    <div className="border rounded-lg overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Email</TableHead>
+                            <TableHead>Name</TableHead>
+                            <TableHead>Team</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {owners
+                            .filter(o => !o.isCommissioner && !o.isSuperAdmin && !o.isArchived)
+                            .map((owner) => (
+                              <TableRow key={owner.id}>
+                                <TableCell className="font-medium">{owner.email}</TableCell>
+                                <TableCell>{owner.firstName || ""} {owner.lastName || ""}</TableCell>
+                                <TableCell>{owner.teamName || "-"}</TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex items-center justify-end gap-1">
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => archiveTeam.mutate({ userId: owner.id, isArchived: true })}
+                                      disabled={archiveTeam.isPending}
+                                      title="Archive team"
+                                      data-testid={`button-archive-team-${owner.id}`}
+                                    >
+                                      <Archive className="h-4 w-4" />
+                                    </Button>
+                                    <Dialog open={deleteTeamId === owner.id} onOpenChange={(open) => {
+                                      if (!open) {
+                                        setDeleteTeamId(null);
+                                        setDeletingTeamName("");
+                                      }
+                                    }}>
+                                      <DialogTrigger asChild>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={() => {
+                                            setDeleteTeamId(owner.id);
+                                            setDeletingTeamName(owner.teamName || owner.email);
+                                          }}
+                                          data-testid={`button-delete-team-${owner.id}`}
+                                        >
+                                          <Trash2 className="h-4 w-4 text-destructive" />
+                                        </Button>
+                                      </DialogTrigger>
+                                      <DialogContent>
+                                        <DialogHeader>
+                                          <DialogTitle>Delete Team</DialogTitle>
+                                          <DialogDescription>
+                                            Are you sure you want to delete "{deletingTeamName}"? This action cannot be undone.
+                                            Teams that are enrolled in auctions or have bid history cannot be deleted - consider archiving instead.
+                                          </DialogDescription>
+                                        </DialogHeader>
+                                        <DialogFooter>
+                                          <Button
+                                            variant="outline"
+                                            onClick={() => {
+                                              setDeleteTeamId(null);
+                                              setDeletingTeamName("");
+                                            }}
+                                          >
+                                            Cancel
+                                          </Button>
+                                          <Button
+                                            variant="destructive"
+                                            onClick={() => deleteTeam.mutate(owner.id)}
+                                            disabled={deleteTeam.isPending}
+                                            data-testid="button-confirm-delete-team"
+                                          >
+                                            {deleteTeam.isPending ? (
+                                              <>
+                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                Deleting...
+                                              </>
+                                            ) : (
+                                              "Delete Team"
+                                            )}
+                                          </Button>
+                                        </DialogFooter>
+                                      </DialogContent>
+                                    </Dialog>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p>No active teams. Upload a CSV file above to create team accounts.</p>
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="archived">
+                  {owners && owners.filter(o => !o.isCommissioner && !o.isSuperAdmin && o.isArchived).length > 0 ? (
+                    <div className="border rounded-lg overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Email</TableHead>
+                            <TableHead>Name</TableHead>
+                            <TableHead>Team</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {owners
+                            .filter(o => !o.isCommissioner && !o.isSuperAdmin && o.isArchived)
+                            .map((owner) => (
+                              <TableRow key={owner.id}>
+                                <TableCell className="font-medium">{owner.email}</TableCell>
+                                <TableCell>{owner.firstName || ""} {owner.lastName || ""}</TableCell>
+                                <TableCell>{owner.teamName || "-"}</TableCell>
+                                <TableCell className="text-right">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => archiveTeam.mutate({ userId: owner.id, isArchived: false })}
+                                    disabled={archiveTeam.isPending}
+                                    title="Restore team"
+                                    data-testid={`button-restore-team-${owner.id}`}
+                                  >
+                                    <ArchiveRestore className="h-4 w-4" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Archive className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p>No archived teams.</p>
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
             )}
           </CardContent>
         </Card>
