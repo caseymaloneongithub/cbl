@@ -534,13 +534,20 @@ export async function registerRoutes(
         });
       }
       
+      // Get the auction's bid increment (default 10%)
+      const auction = agent.auctionId ? await storage.getAuction(agent.auctionId) : null;
+      const bidIncrement = auction?.bidIncrement ?? 0.10;
+      
       const currentHighBid = await storage.getHighestBidForAgent(agentId);
       if (currentHighBid) {
-        // Subsequent bid - must beat current high bid by 10% total value
-        const minRequired = currentHighBid.totalValue * 1.1;
+        const incrementMultiplier = 1 + bidIncrement;
+        
+        // Subsequent bid - must beat current high bid by the auction's increment percentage
+        const minRequired = currentHighBid.totalValue * incrementMultiplier;
         if (totalValue < minRequired) {
+          const incrementPercent = Math.round(bidIncrement * 100);
           return res.status(400).json({ 
-            message: `Bid must be at least 10% higher than current bid. Minimum total value: $${Math.ceil(minRequired)}` 
+            message: `Bid must be at least ${incrementPercent}% higher than current bid. Minimum total value: $${Math.ceil(minRequired)}` 
           });
         }
       }
@@ -580,7 +587,7 @@ export async function registerRoutes(
       });
 
       // Process auto-bids from other users
-      await processAutoBids(agentId, userId, totalValue, settings);
+      await processAutoBids(agentId, userId, totalValue, settings, bidIncrement);
 
       res.json(bid);
     } catch (error) {
@@ -659,9 +666,13 @@ export async function registerRoutes(
         }
         
         if (currentHighBid && currentHighBid.userId !== userId) {
+          // Get the auction's bid increment (default 10%)
+          const auction = agent.auctionId ? await storage.getAuction(agent.auctionId) : null;
+          const bidIncrement = auction?.bidIncrement ?? 0.10;
+          
           // Try to beat the current bid
           const maxTotalValue = maxAmount * factor;
-          const requiredTotalValue = currentHighBid.totalValue * 1.1;
+          const requiredTotalValue = currentHighBid.totalValue * (1 + bidIncrement);
           
           if (maxTotalValue >= requiredTotalValue) {
             // Calculate bid amount, ensuring it meets the player's minimum bid
@@ -1443,7 +1454,8 @@ async function processAutoBids(
   agentId: number,
   excludeUserId: string,
   currentTotalValue: number,
-  settings: any
+  settings: any,
+  bidIncrement: number = 0.10
 ): Promise<void> {
   const autoBids = await storage.getAutoBidsForAgent(agentId);
   const agent = await storage.getFreeAgent(agentId);
@@ -1463,7 +1475,7 @@ async function processAutoBids(
 
     const factor = yearFactors[autoBid.years - 1];
     const maxTotalValue = autoBid.maxAmount * factor;
-    const requiredTotalValue = currentTotalValue * 1.1;
+    const requiredTotalValue = currentTotalValue * (1 + bidIncrement);
 
     if (maxTotalValue >= requiredTotalValue) {
       // Calculate bid amount, ensuring it meets the player's minimum bid
@@ -1504,7 +1516,7 @@ async function processAutoBids(
       });
 
       // Recursively process auto-bids (including original bidder's auto-bid if they have one)
-      await processAutoBids(agentId, autoBid.userId, bidTotalValue, settings);
+      await processAutoBids(agentId, autoBid.userId, bidTotalValue, settings, bidIncrement);
       break; // Only one auto-bid can win per cycle
     }
   }

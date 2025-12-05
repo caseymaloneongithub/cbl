@@ -920,6 +920,7 @@ export default function Commissioner() {
                     <TableRow>
                       <TableHead>Name</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Bid Increment</TableHead>
                       <TableHead>Created</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
@@ -986,6 +987,27 @@ export default function Commissioner() {
                             {auction.status === "active" && <Play className="h-3 w-3 mr-1" />}
                             {auction.status.charAt(0).toUpperCase() + auction.status.slice(1)}
                           </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Input
+                              type="number"
+                              min="0"
+                              max="100"
+                              step="1"
+                              className="w-16 h-8 text-right"
+                              defaultValue={Math.round((auction.bidIncrement ?? 0.10) * 100)}
+                              onBlur={(e) => {
+                                const newPercent = parseFloat(e.target.value) || 10;
+                                const newDecimal = newPercent / 100;
+                                if (newDecimal !== auction.bidIncrement) {
+                                  updateAuction.mutate({ id: auction.id, data: { bidIncrement: newDecimal } });
+                                }
+                              }}
+                              data-testid={`input-bid-increment-${auction.id}`}
+                            />
+                            <span className="text-muted-foreground text-sm">%</span>
+                          </div>
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {new Date(auction.createdAt).toLocaleDateString()}
