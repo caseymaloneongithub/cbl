@@ -14,6 +14,7 @@ import Home from "@/pages/Home";
 import MyBids from "@/pages/MyBids";
 import Results from "@/pages/Results";
 import Commissioner from "@/pages/Commissioner";
+import CommissionerAuction from "@/pages/CommissionerAuction";
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -37,6 +38,7 @@ function Router() {
           <Route path="/my-bids" component={MyBids} />
           <Route path="/results" component={Results} />
           <Route path="/commissioner" component={Commissioner} />
+          <Route path="/commissioner/auctions/:auctionId" component={CommissionerAuction} />
         </>
       )}
       <Route component={NotFound} />
