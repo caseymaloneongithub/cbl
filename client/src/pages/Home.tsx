@@ -3,12 +3,18 @@ import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
 import { Users, Gavel, Trophy, Clock, DollarSign } from "lucide-react";
-import type { FreeAgentWithBids, UserWithStats } from "@shared/schema";
+import type { FreeAgentWithBids, UserWithStats, Auction } from "@shared/schema";
 import { FreeAgentsTable } from "@/components/FreeAgentsTable";
 
 export default function Home() {
   const { user } = useAuth();
+
+  // Fetch the active auction
+  const { data: activeAuction } = useQuery<Auction | null>({
+    queryKey: ["/api/auctions/active"],
+  });
 
   const { data: freeAgents, isLoading: loadingAgents } = useQuery<FreeAgentWithBids[]>({
     queryKey: ["/api/free-agents"],
@@ -38,9 +44,16 @@ export default function Home() {
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       {/* Welcome Section */}
       <div className="mb-8">
-        <h1 className="text-2xl font-bold" data-testid="text-welcome">
-          Welcome back, {user?.firstName || "Owner"}
-        </h1>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-bold" data-testid="text-welcome">
+            Welcome back, {user?.firstName || "Owner"}
+          </h1>
+          {activeAuction && (
+            <Badge variant="default" className="text-sm" data-testid="badge-active-auction">
+              {activeAuction.name}
+            </Badge>
+          )}
+        </div>
         <p className="text-muted-foreground">
           {user?.teamName ? `Managing ${user.teamName}` : "Ready to build your championship team"}
         </p>
