@@ -510,15 +510,15 @@ export async function registerRoutes(
         });
       }
 
-      // Get settings for year factors
-      const settings = await storage.getSettings();
-      const yearFactors = [
-        settings.yearFactor1,
-        settings.yearFactor2,
-        settings.yearFactor3,
-        settings.yearFactor4,
-        settings.yearFactor5,
-      ];
+      // Get auction for per-auction settings (year factors, bid increment, budget enforcement)
+      const auction = agent.auctionId ? await storage.getAuction(agent.auctionId) : null;
+      const yearFactors = auction ? [
+        auction.yearFactor1,
+        auction.yearFactor2,
+        auction.yearFactor3,
+        auction.yearFactor4,
+        auction.yearFactor5,
+      ] : [1.0, 1.25, 1.33, 1.43, 1.55]; // Fallback defaults
       
       const totalValue = amount * yearFactors[years - 1];
 
@@ -530,7 +530,6 @@ export async function registerRoutes(
       }
       
       // Get the auction's bid increment (default 10%)
-      const auction = agent.auctionId ? await storage.getAuction(agent.auctionId) : null;
       const bidIncrement = auction?.bidIncrement ?? 0.10;
       
       const currentHighBid = await storage.getHighestBidForAgent(agentId);
@@ -547,10 +546,11 @@ export async function registerRoutes(
         }
       }
 
-      // Check budget if enforcement is enabled
+      // Check budget if enforcement is enabled (per-auction setting)
       // Budget tracks bid AMOUNT, not total value
-      if (settings.enforceBudget) {
-        const budgetInfo = await storage.getUserBudgetInfo(userId);
+      const enforceBudget = auction?.enforceBudget ?? true;
+      if (enforceBudget) {
+        const budgetInfo = await storage.getUserBudgetInfo(userId, agent.auctionId ?? undefined);
         
         // Calculate available budget for this bid
         // If user is already high bidder on this auction, that amount is freed up
@@ -582,7 +582,7 @@ export async function registerRoutes(
       });
 
       // Process auto-bids from other users
-      await processAutoBids(agentId, userId, totalValue, settings, bidIncrement);
+      await processAutoBids(agentId, userId, totalValue, auction, bidIncrement);
 
       res.json(bid);
     } catch (error) {
@@ -638,21 +638,23 @@ export async function registerRoutes(
 
       // If auto-bid is active, try to place an auto-bid immediately
       if (isActive) {
-        const settings = await storage.getSettings();
+        // Get auction for per-auction settings
+        const auction = agent.auctionId ? await storage.getAuction(agent.auctionId) : null;
         const currentHighBid = await storage.getHighestBidForAgent(agentId);
-        const yearFactors = [
-          settings.yearFactor1,
-          settings.yearFactor2,
-          settings.yearFactor3,
-          settings.yearFactor4,
-          settings.yearFactor5,
-        ];
+        const yearFactors = auction ? [
+          auction.yearFactor1,
+          auction.yearFactor2,
+          auction.yearFactor3,
+          auction.yearFactor4,
+          auction.yearFactor5,
+        ] : [1.0, 1.25, 1.33, 1.43, 1.55]; // Fallback defaults
         const factor = yearFactors[years - 1];
         
-        // Check budget if enforcement is enabled
+        // Check budget if enforcement is enabled (per-auction setting)
         let availableBudget = Infinity;
-        if (settings.enforceBudget) {
-          const budgetInfo = await storage.getUserBudgetInfo(userId);
+        const enforceBudget = auction?.enforceBudget ?? true;
+        if (enforceBudget) {
+          const budgetInfo = await storage.getUserBudgetInfo(userId, agent.auctionId ?? undefined);
           availableBudget = budgetInfo.available;
           // If already high bidder, that amount is freed
           if (currentHighBid?.userId === userId) {
@@ -662,7 +664,6 @@ export async function registerRoutes(
         
         if (currentHighBid && currentHighBid.userId !== userId) {
           // Get the auction's bid increment (default 10%)
-          const auction = agent.auctionId ? await storage.getAuction(agent.auctionId) : null;
           const bidIncrement = auction?.bidIncrement ?? 0.10;
           
           // Try to beat the current bid
@@ -1230,7 +1231,11 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Auction not found" });
       }
 
-      const { name, status } = req.body;
+      const { 
+        name, status, bidIncrement,
+        yearFactor1, yearFactor2, yearFactor3, yearFactor4, yearFactor5,
+        defaultBudget, enforceBudget
+      } = req.body;
       const updateData: any = {};
       
       if (name !== undefined) updateData.name = name.trim();
@@ -1251,6 +1256,16 @@ export async function registerRoutes(
         
         updateData.status = status;
       }
+      
+      // Auction-level settings
+      if (bidIncrement !== undefined) updateData.bidIncrement = bidIncrement;
+      if (yearFactor1 !== undefined) updateData.yearFactor1 = yearFactor1;
+      if (yearFactor2 !== undefined) updateData.yearFactor2 = yearFactor2;
+      if (yearFactor3 !== undefined) updateData.yearFactor3 = yearFactor3;
+      if (yearFactor4 !== undefined) updateData.yearFactor4 = yearFactor4;
+      if (yearFactor5 !== undefined) updateData.yearFactor5 = yearFactor5;
+      if (defaultBudget !== undefined) updateData.defaultBudget = defaultBudget;
+      if (enforceBudget !== undefined) updateData.enforceBudget = enforceBudget;
 
       const updatedAuction = await storage.updateAuction(auctionId, updateData);
       res.json(updatedAuction);
@@ -1463,7 +1478,7 @@ async function processAutoBids(
   agentId: number,
   excludeUserId: string,
   currentTotalValue: number,
-  settings: any,
+  auction: any,
   bidIncrement: number = 0.10
 ): Promise<void> {
   const autoBids = await storage.getAutoBidsForAgent(agentId);
@@ -1471,13 +1486,14 @@ async function processAutoBids(
   
   if (!agent) return;
   
-  const yearFactors = [
-    settings.yearFactor1,
-    settings.yearFactor2,
-    settings.yearFactor3,
-    settings.yearFactor4,
-    settings.yearFactor5,
-  ];
+  // Use per-auction year factors
+  const yearFactors = auction ? [
+    auction.yearFactor1,
+    auction.yearFactor2,
+    auction.yearFactor3,
+    auction.yearFactor4,
+    auction.yearFactor5,
+  ] : [1.0, 1.25, 1.33, 1.43, 1.55]; // Fallback defaults
 
   for (const autoBid of autoBids) {
     if (autoBid.userId === excludeUserId || !autoBid.isActive) continue;
@@ -1497,12 +1513,13 @@ async function processAutoBids(
         continue; // Skip if minimum bid exceeds user's max amount
       }
 
-      // Check budget if enforcement is enabled
+      // Check budget if enforcement is enabled (per-auction setting)
       // Budget tracks bid AMOUNT, not total value
-      if (settings.enforceBudget) {
+      const enforceBudget = auction?.enforceBudget ?? true;
+      if (enforceBudget) {
         try {
           // Recalculate budget before each auto-bid placement
-          const budgetInfo = await storage.getUserBudgetInfo(autoBid.userId);
+          const budgetInfo = await storage.getUserBudgetInfo(autoBid.userId, agent.auctionId ?? undefined);
           
           // For auto-bids, check if user has enough available budget for the AMOUNT
           if (bidAmount > budgetInfo.available) {
@@ -1525,7 +1542,7 @@ async function processAutoBids(
       });
 
       // Recursively process auto-bids (including original bidder's auto-bid if they have one)
-      await processAutoBids(agentId, autoBid.userId, bidTotalValue, settings, bidIncrement);
+      await processAutoBids(agentId, autoBid.userId, bidTotalValue, auction, bidIncrement);
       break; // Only one auto-bid can win per cycle
     }
   }
