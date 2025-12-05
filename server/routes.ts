@@ -132,7 +132,13 @@ export async function registerRoutes(
   // Free agents routes
   app.get("/api/free-agents", isAuthenticated, async (req: any, res) => {
     try {
-      const auctionId = req.query.auctionId ? parseInt(req.query.auctionId) : undefined;
+      let auctionId: number | undefined = undefined;
+      if (req.query.auctionId) {
+        const parsed = parseInt(req.query.auctionId);
+        if (!isNaN(parsed)) {
+          auctionId = parsed;
+        }
+      }
       const agents = await storage.getActiveFreeAgents(auctionId);
       res.json(agents);
     } catch (error) {
@@ -143,7 +149,13 @@ export async function registerRoutes(
 
   app.get("/api/results", isAuthenticated, async (req: any, res) => {
     try {
-      const auctionId = req.query.auctionId ? parseInt(req.query.auctionId) : undefined;
+      let auctionId: number | undefined = undefined;
+      if (req.query.auctionId) {
+        const parsed = parseInt(req.query.auctionId);
+        if (!isNaN(parsed)) {
+          auctionId = parsed;
+        }
+      }
       const agents = await storage.getClosedFreeAgents(auctionId);
       res.json(agents);
     } catch (error) {

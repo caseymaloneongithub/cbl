@@ -48,7 +48,11 @@ Preferred communication style: Simple, everyday language.
 - **Super Admin & Impersonation**: Super admin can impersonate any user, with UI indicators and dedicated API endpoints.
 - **Commissioner Role Management**: Super admin-only assignment, one active commissioner at a time, transactional updates.
 - **Team Deletion**: Allows deletion of inactive teams (no bids, no won players, etc.).
-- **Multi-Auction Support**: Allows creation and management of multiple distinct auctions with their own players and teams.
+- **Multi-Auction Support**: Only one auction can be active at a time for bidding; commissioners and users can review archived/completed auctions.
+  - Results page has auction selector to filter by specific auction
+  - Home page shows the currently active auction name
+  - Commissioners can create, rename, activate, reset (with password), and delete (with password) auctions
+  - API supports `?auctionId=X` query parameter for filtering free agents and results
 
 ## External Dependencies
 

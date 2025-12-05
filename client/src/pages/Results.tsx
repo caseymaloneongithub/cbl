@@ -95,6 +95,7 @@ export default function Results() {
         title: "Player Relisted",
         description: `${selectedAgent?.name} has been relisted for auction.`,
       });
+      // Invalidate all results queries (both base and filtered)
       queryClient.invalidateQueries({ queryKey: ["/api/results"] });
       queryClient.invalidateQueries({ queryKey: ["/api/free-agents"] });
       setRelistDialogOpen(false);

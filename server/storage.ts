@@ -46,8 +46,9 @@ export interface IStorage {
   // Free agents
   getFreeAgent(id: number): Promise<FreeAgent | undefined>;
   getAllFreeAgents(): Promise<FreeAgentWithBids[]>;
-  getActiveFreeAgents(): Promise<FreeAgentWithBids[]>;
-  getClosedFreeAgents(): Promise<FreeAgentWithBids[]>;
+  getActiveFreeAgents(auctionId?: number): Promise<FreeAgentWithBids[]>;
+  getClosedFreeAgents(auctionId?: number): Promise<FreeAgentWithBids[]>;
+  getFreeAgentsByAuction(auctionId: number): Promise<FreeAgentWithBids[]>;
   createFreeAgent(agent: InsertFreeAgent): Promise<FreeAgent>;
   createFreeAgentsBulk(agents: InsertFreeAgent[]): Promise<FreeAgent[]>;
   updateFreeAgentWinner(id: number, winnerId: string, winningBidId: number): Promise<void>;
