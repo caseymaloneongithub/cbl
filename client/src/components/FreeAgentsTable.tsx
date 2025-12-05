@@ -33,9 +33,10 @@ import {
 import { CountdownTimer } from "./CountdownTimer";
 import { BidDialog } from "./BidDialog";
 import { AutoBidDialog } from "./AutoBidDialog";
+import { BidHistoryModal } from "./BidHistoryModal";
 import { formatCurrency, isAuctionClosed } from "@/lib/utils";
 import type { FreeAgentWithBids } from "@shared/schema";
-import { Gavel, Zap, Search, ArrowUpDown, ArrowUp, ArrowDown, X, Trash2 } from "lucide-react";
+import { Gavel, Zap, Search, ArrowUpDown, ArrowUp, ArrowDown, X, Trash2, History } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -57,6 +58,8 @@ export function FreeAgentsTable({ freeAgents, bidIncrement = 0.10 }: FreeAgentsT
   const [selectedAgent, setSelectedAgent] = useState<FreeAgentWithBids | null>(null);
   const [bidDialogOpen, setBidDialogOpen] = useState(false);
   const [autoBidDialogOpen, setAutoBidDialogOpen] = useState(false);
+  const [bidHistoryAgent, setBidHistoryAgent] = useState<FreeAgentWithBids | null>(null);
+  const [bidHistoryOpen, setBidHistoryOpen] = useState(false);
   
   const [searchTerm, setSearchTerm] = useState("");
   const [teamFilter, setTeamFilter] = useState<string>("all");
@@ -385,9 +388,21 @@ export function FreeAgentsTable({ freeAgents, bidIncrement = 0.10 }: FreeAgentsT
                         data-testid={`row-player-${agent.id}`}
                       >
                         <TableCell>
-                          <span className="font-medium" data-testid={`text-player-name-${agent.id}`}>
+                          <button
+                            className="font-medium hover:underline cursor-pointer text-left flex items-center gap-1"
+                            onClick={() => {
+                              setBidHistoryAgent(agent);
+                              setBidHistoryOpen(true);
+                            }}
+                            data-testid={`text-player-name-${agent.id}`}
+                          >
                             {agent.name}
-                          </span>
+                            {agent.bidCount > 0 && (
+                              <Badge variant="secondary" className="text-xs ml-1">
+                                {agent.bidCount}
+                              </Badge>
+                            )}
+                          </button>
                           {agent.team && (
                             <span className="text-muted-foreground text-sm ml-2">
                               ({agent.team})
@@ -550,6 +565,12 @@ export function FreeAgentsTable({ freeAgents, bidIncrement = 0.10 }: FreeAgentsT
         open={autoBidDialogOpen}
         onOpenChange={setAutoBidDialogOpen}
         bidIncrement={bidIncrement}
+      />
+
+      <BidHistoryModal
+        agent={bidHistoryAgent}
+        open={bidHistoryOpen}
+        onOpenChange={setBidHistoryOpen}
       />
     </>
   );
