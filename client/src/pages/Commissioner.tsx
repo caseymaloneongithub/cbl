@@ -54,6 +54,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -150,6 +151,14 @@ export default function Commissioner() {
   const [deleteTeamId, setDeleteTeamId] = useState<string | null>(null);
   const [deletingTeamName, setDeletingTeamName] = useState("");
   
+  // Team enrollment state
+  const [enrollDialogOpen, setEnrollDialogOpen] = useState(false);
+  const [selectedTeamsToEnroll, setSelectedTeamsToEnroll] = useState<string[]>([]);
+  const [enrollBudget, setEnrollBudget] = useState<number>(260);
+  const [enrollRosterLimit, setEnrollRosterLimit] = useState<string>("");
+  const [enrollIpLimit, setEnrollIpLimit] = useState<string>("");
+  const [enrollPaLimit, setEnrollPaLimit] = useState<string>("");
+  
   // Auction settings dialog state
   const [settingsAuctionId, setSettingsAuctionId] = useState<number | null>(null);
   const [auctionSettings, setAuctionSettings] = useState({
@@ -210,6 +219,12 @@ export default function Commissioner() {
 
   const { data: auctionTeams, isLoading: loadingAuctionTeams } = useQuery<AuctionTeamWithUser[]>({
     queryKey: ["/api/auctions", activeAuction?.id, "teams"],
+    enabled: isAuthenticated && (user?.isCommissioner || user?.isSuperAdmin) && !!activeAuction?.id,
+  });
+
+  // Query available teams (not enrolled in the active auction)
+  const { data: availableTeams, isLoading: loadingAvailableTeams } = useQuery<User[]>({
+    queryKey: ["/api/auctions", activeAuction?.id, "available-teams"],
     enabled: isAuthenticated && (user?.isCommissioner || user?.isSuperAdmin) && !!activeAuction?.id,
   });
 
@@ -363,6 +378,41 @@ export default function Commissioner() {
     onSuccess: () => {
       toast({ title: "Limits Updated", description: "Team limits have been saved." });
       queryClient.invalidateQueries({ queryKey: ["/api/auctions", activeAuction?.id, "teams"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const enrollTeams = useMutation({
+    mutationFn: async ({ auctionId, userIds, budget, rosterLimit, ipLimit, paLimit }: { 
+      auctionId: number; 
+      userIds: string[]; 
+      budget: number;
+      rosterLimit?: number | null;
+      ipLimit?: number | null;
+      paLimit?: number | null;
+    }) => {
+      await apiRequest("POST", `/api/auctions/${auctionId}/teams/enroll`, { userIds, budget, rosterLimit, ipLimit, paLimit });
+    },
+    onSuccess: () => {
+      toast({ title: "Teams Enrolled", description: "Teams have been added to the auction." });
+      queryClient.invalidateQueries({ queryKey: ["/api/auctions", activeAuction?.id, "teams"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auctions", activeAuction?.id, "available-teams"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const removeTeamFromAuction = useMutation({
+    mutationFn: async ({ auctionId, userId }: { auctionId: number; userId: string }) => {
+      await apiRequest("DELETE", `/api/auctions/${auctionId}/teams/${userId}`);
+    },
+    onSuccess: () => {
+      toast({ title: "Team Removed", description: "Team has been removed from the auction." });
+      queryClient.invalidateQueries({ queryKey: ["/api/auctions", activeAuction?.id, "teams"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auctions", activeAuction?.id, "available-teams"] });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -1380,14 +1430,33 @@ export default function Commissioner() {
         {/* League Owners - Only show when there's an active auction */}
         {activeAuction ? (
           <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                Auction Teams &amp; Limits
-              </CardTitle>
-              <CardDescription>
-                View and manage team budgets and limits for "{activeAuction.name}". Leave blank for unlimited.
-              </CardDescription>
+            <CardHeader className="flex flex-row items-start justify-between gap-4">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  Auction Teams &amp; Limits
+                </CardTitle>
+                <CardDescription>
+                  View and manage team budgets and limits for "{activeAuction.name}". Leave blank for unlimited.
+                </CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setEnrollDialogOpen(true);
+                  setSelectedTeamsToEnroll([]);
+                  setEnrollBudget(activeAuction.defaultBudget ?? 260);
+                  setEnrollRosterLimit("");
+                  setEnrollIpLimit("");
+                  setEnrollPaLimit("");
+                }}
+                disabled={!availableTeams || availableTeams.length === 0}
+                data-testid="button-enroll-teams"
+              >
+                <UserPlus className="h-4 w-4 mr-2" />
+                Enroll Teams
+              </Button>
             </CardHeader>
             <CardContent>
               {loadingAuctionTeams ? (
@@ -1510,18 +1579,18 @@ export default function Commissioner() {
                                         setDeleteTeamId(team.userId);
                                         setDeletingTeamName(`${team.user.firstName || ""} ${team.user.lastName || ""}`.trim() || team.user.email);
                                       }}
-                                      title="Delete Team"
-                                      data-testid={`button-delete-team-${team.userId}`}
+                                      title="Remove from Auction"
+                                      data-testid={`button-remove-team-${team.userId}`}
                                     >
                                       <Trash2 className="h-4 w-4 text-destructive" />
                                     </Button>
                                   </DialogTrigger>
                                   <DialogContent>
                                     <DialogHeader>
-                                      <DialogTitle>Delete Team</DialogTitle>
+                                      <DialogTitle>Remove Team from Auction</DialogTitle>
                                       <DialogDescription>
-                                        Are you sure you want to delete "{deletingTeamName}"? This action cannot be undone.
-                                        Teams can only be deleted if they have no bids or won players in any auction.
+                                        Are you sure you want to remove "{deletingTeamName}" from this auction? 
+                                        They can be re-enrolled later. This only removes them from the current auction.
                                       </DialogDescription>
                                     </DialogHeader>
                                     <DialogFooter>
@@ -1536,17 +1605,23 @@ export default function Commissioner() {
                                       </Button>
                                       <Button
                                         variant="destructive"
-                                        onClick={() => deleteTeam.mutate(team.userId)}
-                                        disabled={deleteTeam.isPending}
-                                        data-testid="button-confirm-delete-team"
+                                        onClick={() => {
+                                          if (activeAuction) {
+                                            removeTeamFromAuction.mutate({ auctionId: activeAuction.id, userId: team.userId });
+                                            setDeleteTeamId(null);
+                                            setDeletingTeamName("");
+                                          }
+                                        }}
+                                        disabled={removeTeamFromAuction.isPending}
+                                        data-testid="button-confirm-remove-team"
                                       >
-                                        {deleteTeam.isPending ? (
+                                        {removeTeamFromAuction.isPending ? (
                                           <>
                                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                            Deleting...
+                                            Removing...
                                           </>
                                         ) : (
-                                          "Delete Team"
+                                          "Remove from Auction"
                                         )}
                                       </Button>
                                     </DialogFooter>
@@ -2154,6 +2229,161 @@ export default function Commissioner() {
           )}
         </CardContent>
       </Card>
+
+      {/* Team Enrollment Dialog */}
+      <Dialog open={enrollDialogOpen} onOpenChange={(open) => {
+        setEnrollDialogOpen(open);
+        if (!open) {
+          setSelectedTeamsToEnroll([]);
+          setEnrollRosterLimit("");
+          setEnrollIpLimit("");
+          setEnrollPaLimit("");
+        }
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Enroll Teams in Auction</DialogTitle>
+            <DialogDescription>
+              Select teams to enroll in "{activeAuction?.name}". Set their starting budget and optional limits.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {/* Team Selection */}
+            <div className="space-y-2">
+              <Label>Select Teams</Label>
+              {loadingAvailableTeams ? (
+                <div className="space-y-2">
+                  {[...Array(3)].map((_, i) => (
+                    <Skeleton key={i} className="h-8 w-full" />
+                  ))}
+                </div>
+              ) : availableTeams && availableTeams.length > 0 ? (
+                <div className="max-h-48 overflow-y-auto border rounded-lg p-2 space-y-1">
+                  {availableTeams.map((team) => (
+                    <label
+                      key={team.id}
+                      className="flex items-center gap-3 p-2 rounded hover-elevate cursor-pointer"
+                    >
+                      <Checkbox
+                        checked={selectedTeamsToEnroll.includes(team.id)}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedTeamsToEnroll([...selectedTeamsToEnroll, team.id]);
+                          } else {
+                            setSelectedTeamsToEnroll(selectedTeamsToEnroll.filter(id => id !== team.id));
+                          }
+                        }}
+                        data-testid={`checkbox-enroll-${team.id}`}
+                      />
+                      <div className="flex-1">
+                        <span className="font-medium">
+                          {team.firstName} {team.lastName}
+                        </span>
+                        <span className="text-muted-foreground ml-2">
+                          ({team.teamName || "No team"})
+                        </span>
+                        <p className="text-xs text-muted-foreground">{team.email}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-sm p-4 border rounded-lg">
+                  All teams are already enrolled in this auction.
+                </p>
+              )}
+            </div>
+
+            {/* Budget */}
+            <div className="space-y-2">
+              <Label htmlFor="enrollBudget">Starting Budget ($)</Label>
+              <Input
+                id="enrollBudget"
+                type="number"
+                min="0"
+                value={enrollBudget}
+                onChange={(e) => setEnrollBudget(parseFloat(e.target.value) || 0)}
+                data-testid="input-enroll-budget"
+              />
+            </div>
+
+            {/* Limits */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="enrollRosterLimit">Roster Limit</Label>
+                <Input
+                  id="enrollRosterLimit"
+                  type="number"
+                  min="0"
+                  placeholder="Unlimited"
+                  value={enrollRosterLimit}
+                  onChange={(e) => setEnrollRosterLimit(e.target.value)}
+                  data-testid="input-enroll-roster-limit"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="enrollIpLimit">IP Limit</Label>
+                <Input
+                  id="enrollIpLimit"
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  placeholder="Unlimited"
+                  value={enrollIpLimit}
+                  onChange={(e) => setEnrollIpLimit(e.target.value)}
+                  data-testid="input-enroll-ip-limit"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="enrollPaLimit">PA Limit</Label>
+                <Input
+                  id="enrollPaLimit"
+                  type="number"
+                  min="0"
+                  placeholder="Unlimited"
+                  value={enrollPaLimit}
+                  onChange={(e) => setEnrollPaLimit(e.target.value)}
+                  data-testid="input-enroll-pa-limit"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEnrollDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (activeAuction && selectedTeamsToEnroll.length > 0) {
+                  enrollTeams.mutate({
+                    auctionId: activeAuction.id,
+                    userIds: selectedTeamsToEnroll,
+                    budget: enrollBudget,
+                    rosterLimit: enrollRosterLimit ? parseInt(enrollRosterLimit) : null,
+                    ipLimit: enrollIpLimit ? parseFloat(enrollIpLimit) : null,
+                    paLimit: enrollPaLimit ? parseInt(enrollPaLimit) : null,
+                  });
+                  setEnrollDialogOpen(false);
+                }
+              }}
+              disabled={selectedTeamsToEnroll.length === 0 || enrollTeams.isPending}
+              data-testid="button-confirm-enroll"
+            >
+              {enrollTeams.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Enrolling...
+                </>
+              ) : (
+                `Enroll ${selectedTeamsToEnroll.length} Team${selectedTeamsToEnroll.length !== 1 ? 's' : ''}`
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
