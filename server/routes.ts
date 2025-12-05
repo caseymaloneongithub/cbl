@@ -556,7 +556,8 @@ export async function registerRoutes(
         auction.yearFactor5,
       ] : [1.0, 1.25, 1.33, 1.43, 1.55]; // Fallback defaults
       
-      const totalValue = amount * yearFactors[years - 1];
+      // Total Value = amount × years × factor
+      const totalValue = amount * years * yearFactors[years - 1];
 
       // Check if bid meets minimum bid requirement (always enforce the player's minimum)
       if (amount < agent.minimumBid) {
@@ -585,8 +586,13 @@ export async function registerRoutes(
       // Check budget if enforcement is enabled (per-auction setting)
       // Budget tracks bid AMOUNT, not total value
       const enforceBudget = auction?.enforceBudget ?? true;
-      if (enforceBudget) {
-        const budgetInfo = await storage.getUserBudgetInfo(userId, agent.auctionId ?? undefined);
+      if (enforceBudget && agent.auctionId) {
+        let budgetInfo;
+        try {
+          budgetInfo = await storage.getUserBudgetInfo(userId, agent.auctionId);
+        } catch (error) {
+          return res.status(400).json({ message: "You are not enrolled in this auction. Please contact the commissioner." });
+        }
         
         // Calculate available budget for this bid
         // If user is already high bidder on this auction, that amount is freed up
@@ -673,9 +679,9 @@ export async function registerRoutes(
       });
 
       // If auto-bid is active, try to place an auto-bid immediately
-      if (isActive) {
+      if (isActive && agent.auctionId) {
         // Get auction for per-auction settings
-        const auction = agent.auctionId ? await storage.getAuction(agent.auctionId) : null;
+        const auction = await storage.getAuction(agent.auctionId);
         const currentHighBid = await storage.getHighestBidForAgent(agentId);
         const yearFactors = auction ? [
           auction.yearFactor1,
@@ -690,11 +696,16 @@ export async function registerRoutes(
         let availableBudget = Infinity;
         const enforceBudget = auction?.enforceBudget ?? true;
         if (enforceBudget) {
-          const budgetInfo = await storage.getUserBudgetInfo(userId, agent.auctionId ?? undefined);
-          availableBudget = budgetInfo.available;
-          // If already high bidder, that amount is freed
-          if (currentHighBid?.userId === userId) {
-            availableBudget += currentHighBid.amount;
+          try {
+            const budgetInfo = await storage.getUserBudgetInfo(userId, agent.auctionId);
+            availableBudget = budgetInfo.available;
+            // If already high bidder, that amount is freed
+            if (currentHighBid?.userId === userId) {
+              availableBudget += currentHighBid.amount;
+            }
+          } catch (error) {
+            // User not enrolled in this auction - skip budget check
+            return res.status(400).json({ message: "You are not enrolled in this auction. Please contact the commissioner." });
           }
         }
         
@@ -703,14 +714,16 @@ export async function registerRoutes(
           const bidIncrement = auction?.bidIncrement ?? 0.10;
           
           // Try to beat the current bid
-          const maxTotalValue = maxAmount * factor;
+          // Total Value = amount × years × factor
+          const maxTotalValue = maxAmount * years * factor;
           const requiredTotalValue = currentHighBid.totalValue * (1 + bidIncrement);
           
           if (maxTotalValue >= requiredTotalValue) {
             // Calculate bid amount, ensuring it meets the player's minimum bid
-            let bidAmount = Math.ceil(requiredTotalValue / factor);
+            // bidAmount = requiredTotalValue / (years × factor)
+            let bidAmount = Math.ceil(requiredTotalValue / (years * factor));
             bidAmount = Math.max(bidAmount, agent.minimumBid);
-            const bidTotalValue = bidAmount * factor;
+            const bidTotalValue = bidAmount * years * factor;
             
             // Check max amount and budget before placing bid
             if (bidAmount <= maxAmount && bidAmount <= availableBudget) {
@@ -735,7 +748,7 @@ export async function registerRoutes(
               userId,
               amount: startingBid,
               years,
-              totalValue: startingBid * factor,
+              totalValue: startingBid * years * factor,
               isAutoBid: true,
             });
           }
@@ -1677,14 +1690,16 @@ async function processAutoBids(
     if (autoBid.userId === excludeUserId || !autoBid.isActive) continue;
 
     const factor = yearFactors[autoBid.years - 1];
-    const maxTotalValue = autoBid.maxAmount * factor;
+    // Total Value = amount × years × factor
+    const maxTotalValue = autoBid.maxAmount * autoBid.years * factor;
     const requiredTotalValue = currentTotalValue * (1 + bidIncrement);
 
     if (maxTotalValue >= requiredTotalValue) {
       // Calculate bid amount, ensuring it meets the player's minimum bid
-      let bidAmount = Math.ceil(requiredTotalValue / factor);
+      // bidAmount = requiredTotalValue / (years × factor)
+      let bidAmount = Math.ceil(requiredTotalValue / (autoBid.years * factor));
       bidAmount = Math.max(bidAmount, agent.minimumBid);
-      const bidTotalValue = bidAmount * factor;
+      const bidTotalValue = bidAmount * autoBid.years * factor;
       
       // Check if bid still fits within max amount after enforcing minimum
       if (bidAmount > autoBid.maxAmount) {
@@ -1694,10 +1709,10 @@ async function processAutoBids(
       // Check budget if enforcement is enabled (per-auction setting)
       // Budget tracks bid AMOUNT, not total value
       const enforceBudget = auction?.enforceBudget ?? true;
-      if (enforceBudget) {
+      if (enforceBudget && agent.auctionId) {
         try {
           // Recalculate budget before each auto-bid placement
-          const budgetInfo = await storage.getUserBudgetInfo(autoBid.userId, agent.auctionId ?? undefined);
+          const budgetInfo = await storage.getUserBudgetInfo(autoBid.userId, agent.auctionId);
           
           // For auto-bids, check if user has enough available budget for the AMOUNT
           if (bidAmount > budgetInfo.available) {
