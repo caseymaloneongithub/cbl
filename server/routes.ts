@@ -884,11 +884,18 @@ export async function registerRoutes(
       const userId = req.session.userId!;
       const user = await storage.getUser(userId);
       
-      if (!user?.isCommissioner) {
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
-      const results = await storage.getClosedFreeAgents();
+      // Support optional auction filtering
+      let results = await storage.getClosedFreeAgents();
+      if (req.query.auctionId) {
+        const auctionId = parseInt(req.query.auctionId);
+        if (!isNaN(auctionId)) {
+          results = results.filter(agent => agent.auctionId === auctionId);
+        }
+      }
       
       const headers = [
         "Player ID",
@@ -935,11 +942,18 @@ export async function registerRoutes(
       const userId = req.session.userId!;
       const user = await storage.getUser(userId);
       
-      if (!user?.isCommissioner) {
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
-      const results = await storage.getClosedFreeAgents();
+      // Support optional auction filtering
+      let results = await storage.getClosedFreeAgents();
+      if (req.query.auctionId) {
+        const auctionId = parseInt(req.query.auctionId);
+        if (!isNaN(auctionId)) {
+          results = results.filter(agent => agent.auctionId === auctionId);
+        }
+      }
       const allUsers = await storage.getAllUsers();
       
       const headers = [
