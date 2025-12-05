@@ -42,6 +42,7 @@ import { useToast } from "@/hooks/use-toast";
 
 interface FreeAgentsTableProps {
   freeAgents: FreeAgentWithBids[];
+  bidIncrement?: number;
 }
 
 type SortField = "name" | "playerType" | "currentBid" | "totalValue" | "endTime" | 
@@ -50,7 +51,7 @@ type SortField = "name" | "playerType" | "currentBid" | "totalValue" | "endTime"
 type SortDirection = "asc" | "desc";
 type PlayerTypeFilter = "all" | "hitter" | "pitcher";
 
-export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
+export function FreeAgentsTable({ freeAgents, bidIncrement = 0.10 }: FreeAgentsTableProps) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [selectedAgent, setSelectedAgent] = useState<FreeAgentWithBids | null>(null);
@@ -541,12 +542,14 @@ export function FreeAgentsTable({ freeAgents }: FreeAgentsTableProps) {
         freeAgent={selectedAgent}
         open={bidDialogOpen}
         onOpenChange={setBidDialogOpen}
+        bidIncrement={bidIncrement}
       />
       
       <AutoBidDialog
         freeAgent={selectedAgent}
         open={autoBidDialogOpen}
         onOpenChange={setAutoBidDialogOpen}
+        bidIncrement={bidIncrement}
       />
     </>
   );

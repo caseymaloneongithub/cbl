@@ -40,9 +40,10 @@ interface BidDialogProps {
   freeAgent: FreeAgentWithBids | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  bidIncrement?: number;
 }
 
-export function BidDialog({ freeAgent, open, onOpenChange }: BidDialogProps) {
+export function BidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.10 }: BidDialogProps) {
   const { toast } = useToast();
   const [selectedYears, setSelectedYears] = useState(1);
 
@@ -63,9 +64,9 @@ export function BidDialog({ freeAgent, open, onOpenChange }: BidDialogProps) {
   const playerMinimumBid = freeAgent?.minimumBid || 1;
   const playerMinimumYears = freeAgent?.minimumYears || 1;
   // Minimum bid is always at least the player's minimum bid (dollar amount)
-  // When there's a current bid, also ensure it beats the total value by 10%
+  // When there's a current bid, also ensure it beats the total value by the required increment
   const minimumBid = currentTotalValue > 0
-    ? Math.max(calculateMinimumBid(currentTotalValue, selectedYears, yearFactors), playerMinimumBid)
+    ? Math.max(calculateMinimumBid(currentTotalValue, selectedYears, yearFactors, bidIncrement), playerMinimumBid)
     : playerMinimumBid;
 
   const form = useForm<BidFormData>({
@@ -92,7 +93,8 @@ export function BidDialog({ freeAgent, open, onOpenChange }: BidDialogProps) {
 
   const watchAmount = form.watch("amount");
   const totalValue = calculateTotalValue(watchAmount || 0, selectedYears, yearFactors);
-  const isValidBid = totalValue >= currentTotalValue * 1.1 || currentTotalValue === 0;
+  const isValidBid = totalValue >= currentTotalValue * (1 + bidIncrement) || currentTotalValue === 0;
+  const bidIncrementPercent = Math.round(bidIncrement * 100);
 
   const submitBid = useMutation({
     mutationFn: async (data: BidFormData) => {
@@ -236,7 +238,7 @@ export function BidDialog({ freeAgent, open, onOpenChange }: BidDialogProps) {
                     <FormMessage />
                     <p className="text-xs text-muted-foreground">
                       {currentTotalValue > 0 
-                        ? `Minimum bid: ${formatCurrency(minimumBid)}/yr (10% increase in total value)`
+                        ? `Minimum bid: ${formatCurrency(minimumBid)}/yr (${bidIncrementPercent}% increase in total value)`
                         : `Minimum opening bid: ${formatCurrency(playerMinimumBid)}/yr`
                       }
                     </p>
@@ -259,7 +261,7 @@ export function BidDialog({ freeAgent, open, onOpenChange }: BidDialogProps) {
                 </div>
                 {!isValidBid && currentTotalValue > 0 && (
                   <p className="text-xs text-destructive mt-2">
-                    Must be at least {formatCurrency(Math.ceil(currentTotalValue * 1.1))} (10% above current)
+                    Must be at least {formatCurrency(Math.ceil(currentTotalValue * (1 + bidIncrement)))} ({bidIncrementPercent}% above current)
                   </p>
                 )}
               </div>

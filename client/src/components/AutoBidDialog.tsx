@@ -43,9 +43,10 @@ interface AutoBidDialogProps {
   freeAgent: FreeAgentWithBids | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  bidIncrement?: number;
 }
 
-export function AutoBidDialog({ freeAgent, open, onOpenChange }: AutoBidDialogProps) {
+export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.10 }: AutoBidDialogProps) {
   const { toast } = useToast();
   const [selectedYears, setSelectedYears] = useState(1);
 
@@ -91,6 +92,7 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange }: AutoBidDialogPr
   const watchIsActive = form.watch("isActive");
   const factor = yearFactors[selectedYears - 1] || 1;
   const maxTotalValue = (watchMaxAmount || 0) * factor;
+  const bidIncrementPercent = Math.round(bidIncrement * 100);
 
   const saveAutoBid = useMutation({
     mutationFn: async (data: AutoBidFormData) => {
@@ -266,7 +268,7 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange }: AutoBidDialogPr
                   <div className="flex items-start gap-3 rounded-lg bg-muted/50 p-3 text-sm">
                     <AlertTriangle className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
                     <span className="text-muted-foreground">
-                      Auto-bid will place bids in 10% increments until your maximum is reached or you win the auction.
+                      Auto-bid will place bids in {bidIncrementPercent}% increments until your maximum is reached or you win the auction.
                     </span>
                   </div>
                 </>

@@ -273,7 +273,7 @@ export default function Home() {
             </CardContent>
           </Card>
         ) : (
-          <FreeAgentsTable freeAgents={activeAgents} />
+          <FreeAgentsTable freeAgents={activeAgents} bidIncrement={activeAuction?.bidIncrement ?? 0.10} />
         )}
       </div>
     </div>

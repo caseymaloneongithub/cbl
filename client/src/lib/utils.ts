@@ -73,8 +73,8 @@ export function calculateTotalValue(amount: number, years: number, yearFactors: 
   return amount * factor;
 }
 
-export function calculateMinimumBid(currentTotalValue: number, years: number, yearFactors: number[]): number {
+export function calculateMinimumBid(currentTotalValue: number, years: number, yearFactors: number[], bidIncrement: number = 0.10): number {
   const factor = yearFactors[years - 1] || 1;
-  const minTotalValue = currentTotalValue * 1.1;
+  const minTotalValue = currentTotalValue * (1 + bidIncrement);
   return Math.ceil(minTotalValue / factor);
 }

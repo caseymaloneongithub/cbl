@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CountdownTimer } from "@/components/CountdownTimer";
 import { AutoBidDialog } from "@/components/AutoBidDialog";
 import { formatCurrency, isAuctionClosed } from "@/lib/utils";
-import type { FreeAgentWithBids, AutoBid, FreeAgent } from "@shared/schema";
+import type { FreeAgentWithBids, AutoBid, FreeAgent, Auction } from "@shared/schema";
 import { Gavel, Zap, Trophy, AlertCircle, Pencil } from "lucide-react";
 
 type AutoBidWithAgent = AutoBid & { freeAgent: FreeAgent };
@@ -44,6 +44,10 @@ export default function MyBids() {
     setEditingAutoBid(freeAgentWithBids);
     setAutoBidDialogOpen(true);
   };
+
+  const { data: activeAuction } = useQuery<Auction | null>({
+    queryKey: ["/api/auctions/active"],
+  });
 
   const { data: myBids, isLoading: loadingBids } = useQuery<FreeAgentWithBids[]>({
     queryKey: ["/api/my-bids"],
@@ -274,6 +278,7 @@ export default function MyBids() {
         freeAgent={editingAutoBid}
         open={autoBidDialogOpen}
         onOpenChange={setAutoBidDialogOpen}
+        bidIncrement={activeAuction?.bidIncrement ?? 0.10}
       />
     </div>
   );
