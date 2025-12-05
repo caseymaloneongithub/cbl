@@ -653,13 +653,14 @@ export default function CommissionerAuction() {
                   name="bidIncrement"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Bid Increment ($)</FormLabel>
+                      <FormLabel>Bid Increment</FormLabel>
                       <FormControl>
                         <Input
                           type="number"
-                          min="1"
+                          min="0.01"
+                          step="0.01"
                           {...field}
-                          onChange={(e) => field.onChange(parseInt(e.target.value))}
+                          onChange={(e) => field.onChange(parseFloat(e.target.value))}
                           data-testid="input-bid-increment"
                         />
                       </FormControl>
