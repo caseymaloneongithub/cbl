@@ -800,6 +800,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Check if user can bid on a player based on limits (includes pending high bids)
+  // Uses per-auction limits when the player is associated with an auction
   async canUserBidOnPlayer(userId: string, playerId: number): Promise<{
     canBid: boolean;
     reason?: string;
@@ -815,18 +816,46 @@ export class DatabaseStorage implements IStorage {
     }
 
     const now = new Date();
+    const auctionId = player.auctionId;
+    
+    // Get limits from auction team settings if player has auctionId, otherwise use user default
+    let rosterLimit = user.rosterLimit;
+    let ipLimit = user.ipLimit;
+    let paLimit = user.paLimit;
+    
+    if (auctionId) {
+      const [auctionTeam] = await db
+        .select()
+        .from(auctionTeams)
+        .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, userId)));
+      if (auctionTeam) {
+        if (auctionTeam.rosterLimit !== null) rosterLimit = auctionTeam.rosterLimit;
+        if (auctionTeam.ipLimit !== null) ipLimit = auctionTeam.ipLimit;
+        if (auctionTeam.paLimit !== null) paLimit = auctionTeam.paLimit;
+      }
+    }
     
     // Get won players + pending high bids (excluding this player if already high bidder)
+    // Filter by auctionId if the player belongs to an auction
+    const wonAgentsCondition = auctionId 
+      ? and(
+          eq(freeAgents.winnerId, userId),
+          sql`${freeAgents.auctionEndTime} <= ${now}`,
+          eq(freeAgents.auctionId, auctionId)
+        )
+      : and(
+          eq(freeAgents.winnerId, userId),
+          sql`${freeAgents.auctionEndTime} <= ${now}`
+        );
+    
     const wonAgents = await db
       .select()
       .from(freeAgents)
-      .where(and(
-        eq(freeAgents.winnerId, userId),
-        sql`${freeAgents.auctionEndTime} <= ${now}`
-      ));
+      .where(wonAgentsCondition);
     
-    // Get active auctions where user is high bidder
-    const allAgents = await this.getActiveFreeAgents();
+    // Get active auctions where user is high bidder (within same auction if applicable)
+    // If player has no auctionId (legacy), include all active agents for pending bid counting
+    const allAgents = await this.getActiveFreeAgents(auctionId ?? undefined);
     const pendingHighBids = allAgents.filter(a => 
       a.highBidder?.id === userId && a.id !== playerId
     );
@@ -858,23 +887,23 @@ export class DatabaseStorage implements IStorage {
     }
     
     // Check roster limit
-    if (user.rosterLimit !== null) {
-      if (rosterUsed >= user.rosterLimit) {
-        return { canBid: false, reason: `Roster limit reached (${user.rosterLimit} players)` };
+    if (rosterLimit !== null) {
+      if (rosterUsed >= rosterLimit) {
+        return { canBid: false, reason: `Roster limit reached (${rosterLimit} players)` };
       }
     }
     
     // Check IP limit for pitchers
-    if (player.playerType === 'pitcher' && user.ipLimit !== null && player.ip) {
-      if (ipUsed + player.ip > user.ipLimit) {
-        return { canBid: false, reason: `Would exceed IP limit (${ipUsed + player.ip} / ${user.ipLimit})` };
+    if (player.playerType === 'pitcher' && ipLimit !== null && player.ip) {
+      if (ipUsed + player.ip > ipLimit) {
+        return { canBid: false, reason: `Would exceed IP limit (${ipUsed + player.ip} / ${ipLimit})` };
       }
     }
     
     // Check PA limit for hitters
-    if (player.playerType === 'hitter' && user.paLimit !== null && player.pa) {
-      if (paUsed + player.pa > user.paLimit) {
-        return { canBid: false, reason: `Would exceed PA limit (${paUsed + player.pa} / ${user.paLimit})` };
+    if (player.playerType === 'hitter' && paLimit !== null && player.pa) {
+      if (paUsed + player.pa > paLimit) {
+        return { canBid: false, reason: `Would exceed PA limit (${paUsed + player.pa} / ${paLimit})` };
       }
     }
     

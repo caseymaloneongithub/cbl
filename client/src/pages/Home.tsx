@@ -17,7 +17,15 @@ export default function Home() {
   });
 
   const { data: freeAgents, isLoading: loadingAgents } = useQuery<FreeAgentWithBids[]>({
-    queryKey: ["/api/free-agents"],
+    queryKey: ["/api/free-agents", activeAuction?.id],
+    queryFn: async () => {
+      const url = activeAuction?.id 
+        ? `/api/free-agents?auctionId=${activeAuction.id}` 
+        : "/api/free-agents";
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch free agents");
+      return res.json();
+    },
   });
 
   const { data: stats, isLoading: loadingStats } = useQuery<{
@@ -35,7 +43,15 @@ export default function Home() {
     committed: number;
     available: number;
   }>({
-    queryKey: ["/api/budget"],
+    queryKey: ["/api/budget", activeAuction?.id],
+    queryFn: async () => {
+      const url = activeAuction?.id 
+        ? `/api/budget?auctionId=${activeAuction.id}` 
+        : "/api/budget";
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch budget");
+      return res.json();
+    },
   });
 
   const activeAgents = freeAgents?.filter(a => a.isActive) || [];
