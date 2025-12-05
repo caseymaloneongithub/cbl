@@ -202,7 +202,7 @@ export async function registerRoutes(
       const userId = req.session.userId!;
       const user = await storage.getUser(userId);
       
-      if (!user?.isCommissioner) {
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
@@ -315,7 +315,7 @@ export async function registerRoutes(
       const userId = req.session.userId!;
       const user = await storage.getUser(userId);
       
-      if (!user?.isCommissioner) {
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
@@ -954,7 +954,7 @@ export async function registerRoutes(
       const adminId = req.session.userId!;
       const admin = await storage.getUser(adminId);
       
-      if (!admin?.isCommissioner) {
+      if (!admin?.isCommissioner && !admin?.isSuperAdmin) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
@@ -1018,7 +1018,7 @@ export async function registerRoutes(
       const adminId = req.session.userId!;
       const admin = await storage.getUser(adminId);
       
-      if (!admin?.isCommissioner) {
+      if (!admin?.isCommissioner && !admin?.isSuperAdmin) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
@@ -1126,7 +1126,7 @@ export async function registerRoutes(
       const userId = req.session.userId!;
       const user = await storage.getUser(userId);
       
-      if (!user?.isCommissioner) {
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
@@ -1154,7 +1154,7 @@ export async function registerRoutes(
       const userId = req.session.userId!;
       const user = await storage.getUser(userId);
       
-      if (!user?.isCommissioner) {
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
@@ -1215,7 +1215,7 @@ export async function registerRoutes(
       const userId = req.session.userId!;
       const user = await storage.getUser(userId);
       
-      if (!user?.isCommissioner) {
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
@@ -1254,7 +1254,7 @@ export async function registerRoutes(
       const userId = req.session.userId!;
       const user = await storage.getUser(userId);
       
-      if (!user?.isCommissioner) {
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
@@ -1331,7 +1331,7 @@ export async function registerRoutes(
       const userId = req.session.originalUserId || req.session.userId!;
       const user = await storage.getUser(userId);
       
-      if (!user?.isCommissioner) {
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
@@ -1367,7 +1367,7 @@ export async function registerRoutes(
       const sessionUserId = req.session.userId!;
       const user = await storage.getUser(sessionUserId);
       
-      if (!user?.isCommissioner) {
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
@@ -1390,7 +1390,7 @@ export async function registerRoutes(
       const sessionUserId = req.session.userId!;
       const user = await storage.getUser(sessionUserId);
       
-      if (!user?.isCommissioner) {
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
@@ -1412,7 +1412,7 @@ export async function registerRoutes(
       const sessionUserId = req.session.userId!;
       const user = await storage.getUser(sessionUserId);
       
-      if (!user?.isCommissioner) {
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
@@ -1438,7 +1438,7 @@ export async function registerRoutes(
       const sessionUserId = req.session.userId!;
       const user = await storage.getUser(sessionUserId);
       
-      if (!user?.isCommissioner) {
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
@@ -1464,7 +1464,7 @@ export async function registerRoutes(
       const sessionUserId = req.session.userId!;
       const user = await storage.getUser(sessionUserId);
       
-      if (!user?.isCommissioner) {
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 

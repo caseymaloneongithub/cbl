@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -15,6 +15,16 @@ import MyBids from "@/pages/MyBids";
 import Results from "@/pages/Results";
 import Commissioner from "@/pages/Commissioner";
 import CommissionerAuction from "@/pages/CommissionerAuction";
+
+function CommissionerRoute({ component: Component }: { component: React.ComponentType<any> }) {
+  const { user } = useAuth();
+  
+  if (!user?.isCommissioner && !user?.isSuperAdmin) {
+    return <Redirect to="/" />;
+  }
+  
+  return <Component />;
+}
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -37,8 +47,12 @@ function Router() {
           <Route path="/" component={Home} />
           <Route path="/my-bids" component={MyBids} />
           <Route path="/results" component={Results} />
-          <Route path="/commissioner" component={Commissioner} />
-          <Route path="/commissioner/auctions/:auctionId" component={CommissionerAuction} />
+          <Route path="/commissioner">
+            {() => <CommissionerRoute component={Commissioner} />}
+          </Route>
+          <Route path="/commissioner/auctions/:auctionId">
+            {() => <CommissionerRoute component={CommissionerAuction} />}
+          </Route>
         </>
       )}
       <Route component={NotFound} />
