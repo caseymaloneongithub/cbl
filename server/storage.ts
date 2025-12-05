@@ -147,6 +147,21 @@ export interface IStorage {
   
   // Auction finalization (background job)
   finalizeClosedAuctions(): Promise<{ finalized: number; errors: string[] }>;
+  
+  // Admin operations
+  getSuperAdmin(): Promise<User | undefined>;
+  getRecentlyClosedAuctions(hoursAgo: number): Promise<{
+    withBids: Array<{
+      agent: FreeAgent;
+      winningBid: Bid;
+      winner: User;
+      auctionName: string;
+    }>;
+    noBids: Array<{
+      agent: FreeAgent;
+      auctionName: string;
+    }>;
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1387,6 +1402,80 @@ export class DatabaseStorage implements IStorage {
     }
     
     return { finalized, errors };
+  }
+
+  async getSuperAdmin(): Promise<User | undefined> {
+    const [superAdmin] = await db
+      .select()
+      .from(users)
+      .where(eq(users.isSuperAdmin, true))
+      .limit(1);
+    return superAdmin;
+  }
+
+  async getRecentlyClosedAuctions(hoursAgo: number): Promise<{
+    withBids: Array<{
+      agent: FreeAgent;
+      winningBid: Bid;
+      winner: User;
+      auctionName: string;
+    }>;
+    noBids: Array<{
+      agent: FreeAgent;
+      auctionName: string;
+    }>;
+  }> {
+    const now = new Date();
+    const cutoff = new Date(now.getTime() - hoursAgo * 60 * 60 * 1000);
+    
+    // Get all auctions that closed in the time window
+    const closedAgents = await db
+      .select()
+      .from(freeAgents)
+      .where(
+        and(
+          sql`${freeAgents.auctionEndTime} <= ${now}`,
+          sql`${freeAgents.auctionEndTime} > ${cutoff}`
+        )
+      );
+    
+    const withBids: Array<{
+      agent: FreeAgent;
+      winningBid: Bid;
+      winner: User;
+      auctionName: string;
+    }> = [];
+    
+    const noBids: Array<{
+      agent: FreeAgent;
+      auctionName: string;
+    }> = [];
+    
+    for (const agent of closedAgents) {
+      // Get auction name
+      const auction = await this.getAuction(agent.auctionId);
+      const auctionName = auction?.name || "Unknown Auction";
+      
+      if (agent.winnerId && agent.winningBidId) {
+        // Has a winner
+        const winningBid = await this.getBid(agent.winningBidId);
+        const winner = await this.getUser(agent.winnerId);
+        
+        if (winningBid && winner) {
+          withBids.push({ agent, winningBid, winner, auctionName });
+        }
+      } else {
+        // No bids
+        noBids.push({ agent, auctionName });
+      }
+    }
+    
+    return { withBids, noBids };
+  }
+
+  private async getBid(bidId: number): Promise<Bid | undefined> {
+    const [bid] = await db.select().from(bids).where(eq(bids.id, bidId));
+    return bid;
   }
 }
 

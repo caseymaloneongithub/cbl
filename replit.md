@@ -65,6 +65,11 @@ Preferred communication style: Simple, everyday language.
   - Commissioners can create, rename, activate, reset (with password), and delete (with password) auctions
   - API supports `?auctionId=X` query parameter for filtering free agents, results, budget, and limits
   - Free agents are required to be associated with an auction when created (via auction selector in Commissioner page)
+- **Background Jobs**:
+  - Auction Finalization (every minute): Automatically sets winnerId and winningBidId for closed auctions based on highest bid
+  - Hourly Email Summary: Sends email to super admin with auction results (won players and no-bid players) if any auctions closed in the past hour
+  - "Ending Today" calculation uses Eastern Time for midnight boundary
+- **Email Notifications**: Resend integration for password reset, new user credentials, and hourly auction summaries
 
 ## External Dependencies
 

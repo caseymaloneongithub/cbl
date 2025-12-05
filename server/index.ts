@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { storage } from "./storage";
+import { sendAuctionResultsSummaryEmail } from "./email";
 
 const app = express();
 const httpServer = createServer(app);
@@ -97,6 +98,9 @@ app.use((req, res, next) => {
       
       // Start the auction finalization job - runs every minute
       startAuctionFinalizationJob();
+      
+      // Start the hourly email summary job
+      startHourlySummaryEmailJob();
     },
   );
 })();
@@ -125,5 +129,73 @@ async function runFinalization() {
     }
   } catch (error) {
     log(`Finalization job error: ${error}`, "auction-job");
+  }
+}
+
+// Background job to send hourly summary email to super admin
+function startHourlySummaryEmailJob() {
+  const INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+  
+  log("Hourly summary email job started", "email-job");
+  
+  // Run every hour (not immediately on startup to avoid spam during development)
+  setInterval(runHourlySummaryEmail, INTERVAL_MS);
+}
+
+async function runHourlySummaryEmail() {
+  try {
+    // Get the super admin
+    const superAdmin = await storage.getSuperAdmin();
+    if (!superAdmin) {
+      log("No super admin found, skipping hourly summary email", "email-job");
+      return;
+    }
+    
+    // Get auctions that closed in the last hour
+    const recentResults = await storage.getRecentlyClosedAuctions(1);
+    
+    const totalClosed = recentResults.withBids.length + recentResults.noBids.length;
+    
+    // Only send email if there are results
+    if (totalClosed === 0) {
+      log("No auctions closed in the last hour, skipping email", "email-job");
+      return;
+    }
+    
+    // Format results for email
+    const results = [
+      ...recentResults.withBids.map(r => ({
+        playerName: r.agent.name,
+        team: r.agent.team || "N/A",
+        auctionName: r.auctionName,
+        winnerName: `${r.winner.firstName} ${r.winner.lastName}`,
+        winnerTeam: r.winner.teamName || "Unknown",
+        amount: r.winningBid.amount,
+        years: r.winningBid.years,
+        noBids: false,
+      })),
+      ...recentResults.noBids.map(r => ({
+        playerName: r.agent.name,
+        team: r.agent.team || "N/A",
+        auctionName: r.auctionName,
+        noBids: true,
+      })),
+    ];
+    
+    // Send email
+    const adminName = superAdmin.firstName || "Admin";
+    const emailResult = await sendAuctionResultsSummaryEmail(
+      superAdmin.email,
+      adminName,
+      results
+    );
+    
+    if (emailResult.success) {
+      log(`Hourly summary email sent to ${superAdmin.email} (${totalClosed} auctions)`, "email-job");
+    } else {
+      log(`Failed to send hourly summary email: ${emailResult.error}`, "email-job");
+    }
+  } catch (error) {
+    log(`Hourly summary email job error: ${error}`, "email-job");
   }
 }
