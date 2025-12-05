@@ -37,7 +37,7 @@ export interface IStorage {
   updateUserCommissioner(id: string, isCommissioner: boolean): Promise<User | undefined>;
   setSoleCommissioner(userId: string | null): Promise<User | null>;
   updateUserPassword(id: string, passwordHash: string, mustResetPassword: boolean): Promise<User | undefined>;
-  createUserWithPassword(userData: { email: string; passwordHash: string; firstName?: string; lastName?: string; teamName?: string; isCommissioner?: boolean; mustResetPassword?: boolean }): Promise<User>;
+  createUserWithPassword(userData: { email: string; passwordHash: string; firstName?: string; lastName?: string; teamName?: string; teamAbbreviation?: string; isCommissioner?: boolean; mustResetPassword?: boolean }): Promise<User>;
   
   // League settings
   getSettings(): Promise<LeagueSettings>;
@@ -224,6 +224,7 @@ export class DatabaseStorage implements IStorage {
     firstName?: string; 
     lastName?: string; 
     teamName?: string; 
+    teamAbbreviation?: string;
     isCommissioner?: boolean; 
     mustResetPassword?: boolean;
   }): Promise<User> {
@@ -235,6 +236,7 @@ export class DatabaseStorage implements IStorage {
         firstName: userData.firstName,
         lastName: userData.lastName,
         teamName: userData.teamName,
+        teamAbbreviation: userData.teamAbbreviation,
         isCommissioner: userData.isCommissioner ?? false,
         mustResetPassword: userData.mustResetPassword ?? true,
       })

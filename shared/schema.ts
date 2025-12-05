@@ -36,6 +36,7 @@ export const users = pgTable("users", {
   isCommissioner: boolean("is_commissioner").default(false).notNull(),
   isSuperAdmin: boolean("is_super_admin").default(false).notNull(),
   teamName: varchar("team_name"),
+  teamAbbreviation: varchar("team_abbreviation", { length: 3 }),
   mustResetPassword: boolean("must_reset_password").default(false).notNull(),
   isArchived: boolean("is_archived").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow(),

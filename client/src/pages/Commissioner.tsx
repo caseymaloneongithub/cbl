@@ -82,6 +82,7 @@ interface ParsedUser {
   firstName?: string;
   lastName?: string;
   teamName?: string;
+  teamAbbreviation?: string;
 }
 
 export default function Commissioner() {
@@ -353,6 +354,7 @@ export default function Commissioner() {
     const firstNameIdx = headers.findIndex(h => h === "first_name" || h === "firstname");
     const lastNameIdx = headers.findIndex(h => h === "last_name" || h === "lastname");
     const teamNameIdx = headers.findIndex(h => h === "team_name" || h === "teamname" || h === "team");
+    const abbreviationIdx = headers.findIndex(h => h === "abbreviation" || h === "abbr" || h === "team_abbreviation" || h === "team_abbr");
 
     if (emailIdx === -1) {
       toast({
@@ -367,11 +369,13 @@ export default function Commissioner() {
     for (let i = 1; i < lines.length; i++) {
       const values = lines[i].split(",").map(v => v.trim());
       if (values[emailIdx]) {
+        const abbr = abbreviationIdx !== -1 ? values[abbreviationIdx]?.toUpperCase().slice(0, 3) : undefined;
         users.push({
           email: values[emailIdx],
           firstName: firstNameIdx !== -1 ? values[firstNameIdx] : undefined,
           lastName: lastNameIdx !== -1 ? values[lastNameIdx] : undefined,
           teamName: teamNameIdx !== -1 ? values[teamNameIdx] : undefined,
+          teamAbbreviation: abbr || undefined,
         });
       }
     }
@@ -981,6 +985,7 @@ export default function Commissioner() {
                         <TableHead>Email</TableHead>
                         <TableHead>Name</TableHead>
                         <TableHead>Team</TableHead>
+                        <TableHead>Abbr</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -989,11 +994,12 @@ export default function Commissioner() {
                           <TableCell className="font-medium">{u.email}</TableCell>
                           <TableCell>{u.firstName || ""} {u.lastName || ""}</TableCell>
                           <TableCell>{u.teamName || "-"}</TableCell>
+                          <TableCell>{u.teamAbbreviation || "-"}</TableCell>
                         </TableRow>
                       ))}
                       {parsedUsers.length > 10 && (
                         <TableRow>
-                          <TableCell colSpan={3} className="text-center text-muted-foreground">
+                          <TableCell colSpan={4} className="text-center text-muted-foreground">
                             ... and {parsedUsers.length - 10} more users
                           </TableCell>
                         </TableRow>
@@ -1076,6 +1082,7 @@ export default function Commissioner() {
                             <TableHead>Email</TableHead>
                             <TableHead>Name</TableHead>
                             <TableHead>Team</TableHead>
+                            <TableHead>Abbr</TableHead>
                             <TableHead className="text-right">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -1087,6 +1094,7 @@ export default function Commissioner() {
                                 <TableCell className="font-medium">{owner.email}</TableCell>
                                 <TableCell>{owner.firstName || ""} {owner.lastName || ""}</TableCell>
                                 <TableCell>{owner.teamName || "-"}</TableCell>
+                                <TableCell>{owner.teamAbbreviation || "-"}</TableCell>
                                 <TableCell className="text-right">
                                   <div className="flex items-center justify-end gap-1">
                                     <Button
@@ -1178,6 +1186,7 @@ export default function Commissioner() {
                             <TableHead>Email</TableHead>
                             <TableHead>Name</TableHead>
                             <TableHead>Team</TableHead>
+                            <TableHead>Abbr</TableHead>
                             <TableHead className="text-right">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -1189,6 +1198,7 @@ export default function Commissioner() {
                                 <TableCell className="font-medium">{owner.email}</TableCell>
                                 <TableCell>{owner.firstName || ""} {owner.lastName || ""}</TableCell>
                                 <TableCell>{owner.teamName || "-"}</TableCell>
+                                <TableCell>{owner.teamAbbreviation || "-"}</TableCell>
                                 <TableCell className="text-right">
                                   <Button
                                     size="sm"

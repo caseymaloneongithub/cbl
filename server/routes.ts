@@ -1008,6 +1008,7 @@ export async function registerRoutes(
       firstName: z.string().optional(),
       lastName: z.string().optional(),
       teamName: z.string().optional(),
+      teamAbbreviation: z.string().max(3).optional(),
     })).min(1, "At least one user is required").max(500, "Maximum 500 users per upload"),
   });
 
@@ -1053,6 +1054,7 @@ export async function registerRoutes(
             firstName: userData.firstName?.trim(),
             lastName: userData.lastName?.trim(),
             teamName: userData.teamName?.trim(),
+            teamAbbreviation: userData.teamAbbreviation?.trim().toUpperCase().slice(0, 3),
             isCommissioner: false,
             mustResetPassword: true,
           });
