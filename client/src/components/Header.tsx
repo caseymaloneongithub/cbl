@@ -118,7 +118,7 @@ export function Header() {
                   </Link>
                 );
               })}
-              {user?.isCommissioner && (
+              {(user?.isCommissioner || user?.isSuperAdmin) && (
                 <Link href="/commissioner">
                   <Button
                     variant={location === "/commissioner" ? "secondary" : "ghost"}
@@ -163,7 +163,7 @@ export function Header() {
                           </Link>
                         );
                       })}
-                      {user?.isCommissioner && (
+                      {(user?.isCommissioner || user?.isSuperAdmin) && (
                         <Link href="/commissioner" onClick={() => setMobileMenuOpen(false)}>
                           <Button
                             variant={location === "/commissioner" ? "secondary" : "ghost"}
