@@ -40,19 +40,25 @@ Preferred communication style: Simple, everyday language.
 ### Key Features & System Design
 - **Auction Platform**: Comprehensive bidding system with 10% minimum increment, auto-bids, real-time countdowns.
 - **Commissioner Dashboard**: CSV uploads for free agents and user management, year factor configuration, auction control (create, rename, activate, reset, delete).
-- **Budget System**: Per-team variable budgets, tracking dollar amount of bids, with enforcement toggling.
+- **Budget System**: Per-auction team budgets stored in `auctionTeams` table, tracking dollar amount of bids per auction, with enforcement toggling.
+  - Budget calculations scope to specific auctions via `?auctionId=X` parameter
+  - Home page automatically uses the active auction's ID for budget display
 - **Bid Validation**: Ensures bids meet minimum increment and respect player `minimumBid` and `minimumYears`.
+  - Limit checks (roster/IP/PA) now use per-auction settings from `auctionTeams` table
 - **Relist Feature**: Allows commissioners to relist players with no bids.
 - **Player Type System**: Classifies players as "Hitter" or "Pitcher" with specific sortable stats.
-- **Team Limits**: Configurable roster, IP, and PA limits per team, managed by commissioners.
+- **Team Limits**: Per-auction roster, IP, and PA limits stored in `auctionTeams` table.
+  - API: `GET /api/limits?auctionId=X`, `PATCH /api/auctions/:id/teams/:userId/limits`
+  - Bid validation uses player's `auctionId` to determine which limits apply
 - **Super Admin & Impersonation**: Super admin can impersonate any user, with UI indicators and dedicated API endpoints.
 - **Commissioner Role Management**: Super admin-only assignment, one active commissioner at a time, transactional updates.
 - **Team Deletion**: Allows deletion of inactive teams (no bids, no won players, etc.).
 - **Multi-Auction Support**: Only one auction can be active at a time for bidding; commissioners and users can review archived/completed auctions.
   - Results page has auction selector to filter by specific auction
-  - Home page shows the currently active auction name
+  - Home page shows the currently active auction name and filters data by active auction
   - Commissioners can create, rename, activate, reset (with password), and delete (with password) auctions
-  - API supports `?auctionId=X` query parameter for filtering free agents and results
+  - API supports `?auctionId=X` query parameter for filtering free agents, results, budget, and limits
+  - Free agents are required to be associated with an auction when created (via auction selector in Commissioner page)
 
 ## External Dependencies
 
