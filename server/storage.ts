@@ -122,6 +122,10 @@ export interface IStorage {
   getAuctionTeams(auctionId: number): Promise<(AuctionTeam & { user: User })[]>;
   setAuctionTeamActive(auctionId: number, userId: string, isActive: boolean): Promise<AuctionTeam>;
   enrollAllTeamsInAuction(auctionId: number): Promise<void>;
+  
+  // Team deletion
+  canDeleteUser(userId: string): Promise<{ canDelete: boolean; reason?: string }>;
+  deleteUser(userId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -932,6 +936,58 @@ export class DatabaseStorage implements IStorage {
           .values({ auctionId, userId: user.id, isActive: true });
       }
     }
+  }
+
+  // Team deletion
+  async canDeleteUser(userId: string): Promise<{ canDelete: boolean; reason?: string }> {
+    // Check if user is a commissioner or super admin - cannot delete them
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    if (!user) {
+      return { canDelete: false, reason: "User not found" };
+    }
+    if (user.isSuperAdmin) {
+      return { canDelete: false, reason: "Cannot delete super admin" };
+    }
+    if (user.isCommissioner) {
+      return { canDelete: false, reason: "Cannot delete commissioner. Remove commissioner role first." };
+    }
+
+    // Check if user has any bids
+    const userBids = await db.select().from(bids).where(eq(bids.userId, userId));
+    if (userBids.length > 0) {
+      return { canDelete: false, reason: "Team has bids in existing auctions" };
+    }
+
+    // Check if user has any auto-bids
+    const userAutoBids = await db.select().from(autoBids).where(eq(autoBids.userId, userId));
+    if (userAutoBids.length > 0) {
+      return { canDelete: false, reason: "Team has auto-bids in existing auctions" };
+    }
+
+    // Check if user has won any free agents
+    const wonAgents = await db.select().from(freeAgents).where(eq(freeAgents.winnerId, userId));
+    if (wonAgents.length > 0) {
+      return { canDelete: false, reason: "Team has won players in existing auctions" };
+    }
+
+    // Check if user is enrolled in any auctions
+    const enrollments = await db.select().from(auctionTeams).where(eq(auctionTeams.userId, userId));
+    if (enrollments.length > 0) {
+      return { canDelete: false, reason: "Team is enrolled in existing auctions" };
+    }
+
+    return { canDelete: true };
+  }
+
+  async deleteUser(userId: string): Promise<void> {
+    // First verify the user can be deleted
+    const { canDelete, reason } = await this.canDeleteUser(userId);
+    if (!canDelete) {
+      throw new Error(reason || "Cannot delete user");
+    }
+
+    // Delete the user
+    await db.delete(users).where(eq(users.id, userId));
   }
 }
 

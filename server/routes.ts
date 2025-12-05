@@ -84,6 +84,51 @@ export async function registerRoutes(
     }
   });
 
+  // Check if a team can be deleted
+  app.get("/api/owners/:id/can-delete", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Commissioner or Super Admin access required" });
+      }
+
+      const { id } = req.params;
+      const result = await storage.canDeleteUser(id);
+      res.json(result);
+    } catch (error) {
+      console.error("Error checking if user can be deleted:", error);
+      res.status(500).json({ message: "Failed to check delete status" });
+    }
+  });
+
+  // Delete a team (only if not in any auctions)
+  app.delete("/api/owners/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Commissioner or Super Admin access required" });
+      }
+
+      const { id } = req.params;
+      
+      // Verify the team can be deleted
+      const { canDelete, reason } = await storage.canDeleteUser(id);
+      if (!canDelete) {
+        return res.status(400).json({ message: reason || "Cannot delete team" });
+      }
+
+      await storage.deleteUser(id);
+      res.json({ success: true, message: "Team deleted successfully" });
+    } catch (error: any) {
+      console.error("Error deleting team:", error);
+      res.status(500).json({ message: error.message || "Failed to delete team" });
+    }
+  });
+
   // Free agents routes
   app.get("/api/free-agents", isAuthenticated, async (req, res) => {
     try {

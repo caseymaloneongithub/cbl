@@ -143,6 +143,10 @@ export default function Commissioner() {
   const [passwordForAction, setPasswordForAction] = useState("");
   const [editingAuctionId, setEditingAuctionId] = useState<number | null>(null);
   const [editingAuctionName, setEditingAuctionName] = useState("");
+  
+  // Team management state
+  const [deleteTeamId, setDeleteTeamId] = useState<string | null>(null);
+  const [deletingTeamName, setDeletingTeamName] = useState("");
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -427,6 +431,25 @@ export default function Commissioner() {
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // Team deletion mutation
+  const deleteTeam = useMutation({
+    mutationFn: async (userId: string) => {
+      const res = await apiRequest("DELETE", `/api/owners/${userId}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Team Deleted", description: "The team has been removed." });
+      setDeleteTeamId(null);
+      setDeletingTeamName("");
+      queryClient.invalidateQueries({ queryKey: ["/api/owners"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Cannot Delete", description: error.message, variant: "destructive" });
+      setDeleteTeamId(null);
+      setDeletingTeamName("");
     },
   });
 
@@ -1359,17 +1382,77 @@ export default function Commissioner() {
                           />
                         </TableCell>
                         <TableCell className="text-center">
-                          {user?.isSuperAdmin && !owner.isCommissioner && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => makeCommissioner.mutate(owner.id)}
-                              title="Make Commissioner"
-                              data-testid={`button-make-commissioner-${owner.id}`}
-                            >
-                              <Crown className="h-4 w-4" />
-                            </Button>
-                          )}
+                          <div className="flex items-center justify-center gap-1">
+                            {user?.isSuperAdmin && !owner.isCommissioner && !owner.isSuperAdmin && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => makeCommissioner.mutate(owner.id)}
+                                title="Make Commissioner"
+                                data-testid={`button-make-commissioner-${owner.id}`}
+                              >
+                                <Crown className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {!owner.isCommissioner && !owner.isSuperAdmin && (
+                              <Dialog open={deleteTeamId === owner.id} onOpenChange={(open) => {
+                                if (!open) {
+                                  setDeleteTeamId(null);
+                                  setDeletingTeamName("");
+                                }
+                              }}>
+                                <DialogTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => {
+                                      setDeleteTeamId(owner.id);
+                                      setDeletingTeamName(`${owner.firstName || ""} ${owner.lastName || ""}`.trim() || owner.email);
+                                    }}
+                                    title="Delete Team"
+                                    data-testid={`button-delete-team-${owner.id}`}
+                                  >
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent>
+                                  <DialogHeader>
+                                    <DialogTitle>Delete Team</DialogTitle>
+                                    <DialogDescription>
+                                      Are you sure you want to delete "{deletingTeamName}"? This action cannot be undone.
+                                      Teams can only be deleted if they have no bids or won players in any auction.
+                                    </DialogDescription>
+                                  </DialogHeader>
+                                  <DialogFooter>
+                                    <Button
+                                      variant="outline"
+                                      onClick={() => {
+                                        setDeleteTeamId(null);
+                                        setDeletingTeamName("");
+                                      }}
+                                    >
+                                      Cancel
+                                    </Button>
+                                    <Button
+                                      variant="destructive"
+                                      onClick={() => deleteTeam.mutate(owner.id)}
+                                      disabled={deleteTeam.isPending}
+                                      data-testid="button-confirm-delete-team"
+                                    >
+                                      {deleteTeam.isPending ? (
+                                        <>
+                                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                          Deleting...
+                                        </>
+                                      ) : (
+                                        "Delete Team"
+                                      )}
+                                    </Button>
+                                  </DialogFooter>
+                                </DialogContent>
+                              </Dialog>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
