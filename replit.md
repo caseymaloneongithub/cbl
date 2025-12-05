@@ -38,9 +38,13 @@ Preferred communication style: Simple, everyday language.
 - **Password Reset Flow**: Forces users with `mustResetPassword=true` to set a new password upon login.
 
 ### Key Features & System Design
-- **Auction Platform**: Comprehensive bidding system with 10% minimum increment, auto-bids, real-time countdowns.
-- **Commissioner Dashboard**: CSV uploads for free agents and user management, year factor configuration, auction control (create, rename, activate, reset, delete).
-- **Budget System**: Per-auction team budgets stored in `auctionTeams` table, tracking dollar amount of bids per auction, with enforcement toggling.
+- **Auction Platform**: Comprehensive bidding system with configurable bid increment, auto-bids, real-time countdowns.
+- **Per-Auction Settings**: Year multipliers (yearFactor1-5), defaultBudget, enforceBudget, and bidIncrement are stored per-auction in the `auctions` table.
+  - Bid calculations use per-auction year factors: Total Value = Annual Salary × yearFactor[years]
+  - Budget enforcement is per-auction: auction.enforceBudget flag controls whether budget limits are enforced
+  - Commissioner can configure each auction's settings via Settings dialog in Auction Management
+- **Commissioner Dashboard**: CSV uploads for free agents and user management, auction control (create, rename, activate, reset, delete).
+- **Budget System**: Per-auction team budgets stored in `auctionTeams` table, tracking dollar amount of bids per auction.
   - Budget calculations scope to specific auctions via `?auctionId=X` parameter
   - Home page automatically uses the active auction's ID for budget display
 - **Bid Validation**: Ensures bids meet minimum increment and respect player `minimumBid` and `minimumYears`.
