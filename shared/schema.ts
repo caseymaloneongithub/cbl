@@ -49,6 +49,51 @@ export const usersRelations = relations(users, ({ many }) => ({
   autoBids: many(autoBids),
 }));
 
+// Auctions table - stores named auctions
+export const auctions = pgTable("auctions", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  name: varchar("name", { length: 255 }).notNull(),
+  status: varchar("status", { length: 20 }).default("active").notNull(), // 'draft', 'active', 'closed'
+  createdById: varchar("created_by_id").references(() => users.id),
+  isDeleted: boolean("is_deleted").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const auctionsRelations = relations(auctions, ({ one, many }) => ({
+  createdBy: one(users, {
+    fields: [auctions.createdById],
+    references: [users.id],
+  }),
+  freeAgents: many(freeAgents),
+  auctionTeams: many(auctionTeams),
+}));
+
+// Auction teams table - tracks which teams are active in each auction
+export const auctionTeams = pgTable("auction_teams", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  auctionId: integer("auction_id").references(() => auctions.id).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  budget: real("budget"), // Override budget for this auction (null = use user default)
+  rosterLimit: integer("roster_limit"), // Override roster limit (null = use user default)
+  ipLimit: real("ip_limit"), // Override IP limit (null = use user default)
+  paLimit: integer("pa_limit"), // Override PA limit (null = use user default)
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const auctionTeamsRelations = relations(auctionTeams, ({ one }) => ({
+  auction: one(auctions, {
+    fields: [auctionTeams.auctionId],
+    references: [auctions.id],
+  }),
+  user: one(users, {
+    fields: [auctionTeams.userId],
+    references: [users.id],
+  }),
+}));
+
 // League settings table - stores year multiplier factors
 export const leagueSettings = pgTable("league_settings", {
   id: integer("id").primaryKey().default(1),
@@ -65,6 +110,7 @@ export const leagueSettings = pgTable("league_settings", {
 // Free agents table - players available for bidding
 export const freeAgents = pgTable("free_agents", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  auctionId: integer("auction_id").references(() => auctions.id),
   name: varchar("name", { length: 255 }).notNull(),
   team: varchar("team", { length: 100 }),
   playerType: varchar("player_type", { length: 20 }).default("hitter").notNull(), // 'pitcher' or 'hitter'
@@ -93,6 +139,10 @@ export const freeAgents = pgTable("free_agents", {
 });
 
 export const freeAgentsRelations = relations(freeAgents, ({ one, many }) => ({
+  auction: one(auctions, {
+    fields: [freeAgents.auctionId],
+    references: [auctions.id],
+  }),
   winner: one(users, {
     fields: [freeAgents.winnerId],
     references: [users.id],
@@ -171,6 +221,19 @@ export const insertUserSchema = createInsertSchema(users).omit({
   updatedAt: true,
 });
 
+export const insertAuctionSchema = createInsertSchema(auctions).omit({
+  id: true,
+  isDeleted: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAuctionTeamSchema = createInsertSchema(auctionTeams).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertLeagueSettingsSchema = createInsertSchema(leagueSettings).omit({
   id: true,
   updatedAt: true,
@@ -204,6 +267,12 @@ export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTo
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
+
+export type Auction = typeof auctions.$inferSelect;
+export type InsertAuction = z.infer<typeof insertAuctionSchema>;
+
+export type AuctionTeam = typeof auctionTeams.$inferSelect;
+export type InsertAuctionTeam = z.infer<typeof insertAuctionTeamSchema>;
 
 export type LeagueSettings = typeof leagueSettings.$inferSelect;
 export type InsertLeagueSettings = z.infer<typeof insertLeagueSettingsSchema>;
