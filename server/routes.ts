@@ -1280,6 +1280,47 @@ export async function registerRoutes(
     }
   });
 
+  // Update auction settings (specific endpoint for settings dialog)
+  app.patch("/api/auctions/:id/settings", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const auctionId = parseInt(req.params.id);
+      const auction = await storage.getAuction(auctionId);
+      
+      if (!auction) {
+        return res.status(404).json({ message: "Auction not found" });
+      }
+
+      const { 
+        bidIncrement,
+        yearFactor1, yearFactor2, yearFactor3, yearFactor4, yearFactor5,
+        enforceBudget
+      } = req.body;
+      
+      const updateData: any = {};
+      
+      if (bidIncrement !== undefined) updateData.bidIncrement = bidIncrement;
+      if (yearFactor1 !== undefined) updateData.yearFactor1 = yearFactor1;
+      if (yearFactor2 !== undefined) updateData.yearFactor2 = yearFactor2;
+      if (yearFactor3 !== undefined) updateData.yearFactor3 = yearFactor3;
+      if (yearFactor4 !== undefined) updateData.yearFactor4 = yearFactor4;
+      if (yearFactor5 !== undefined) updateData.yearFactor5 = yearFactor5;
+      if (enforceBudget !== undefined) updateData.enforceBudget = enforceBudget;
+
+      const updatedAuction = await storage.updateAuction(auctionId, updateData);
+      res.json(updatedAuction);
+    } catch (error) {
+      console.error("Error updating auction settings:", error);
+      res.status(500).json({ message: "Failed to update auction settings" });
+    }
+  });
+
   // Delete auction (requires password confirmation)
   app.delete("/api/auctions/:id", isAuthenticated, async (req: any, res) => {
     try {
