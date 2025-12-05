@@ -49,12 +49,21 @@ export const usersRelations = relations(users, ({ many }) => ({
   autoBids: many(autoBids),
 }));
 
-// Auctions table - stores named auctions
+// Auctions table - stores named auctions with all auction-level settings
 export const auctions = pgTable("auctions", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   name: varchar("name", { length: 255 }).notNull(),
   status: varchar("status", { length: 20 }).default("active").notNull(), // 'draft', 'active', 'closed'
   bidIncrement: real("bid_increment").default(0.10).notNull(), // Minimum bid increment as decimal (0.10 = 10%)
+  // Year multiplier factors for contract calculations
+  yearFactor1: real("year_factor_1").default(1.0).notNull(),
+  yearFactor2: real("year_factor_2").default(1.25).notNull(),
+  yearFactor3: real("year_factor_3").default(1.33).notNull(),
+  yearFactor4: real("year_factor_4").default(1.43).notNull(),
+  yearFactor5: real("year_factor_5").default(1.55).notNull(),
+  // Budget settings
+  defaultBudget: real("default_budget").default(260).notNull(),
+  enforceBudget: boolean("enforce_budget").default(true).notNull(),
   createdById: varchar("created_by_id").references(() => users.id),
   isDeleted: boolean("is_deleted").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
