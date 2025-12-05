@@ -1077,6 +1077,37 @@ export async function registerRoutes(
     }
   });
 
+  // Super Admin: Set commissioner status for a user
+  app.patch("/api/users/:id/commissioner", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminId = req.session.userId!;
+      const admin = await storage.getUser(adminId);
+      
+      if (!admin?.isSuperAdmin) {
+        return res.status(403).json({ message: "Super Admin access required" });
+      }
+
+      const targetUserId = req.params.id;
+      const { isCommissioner } = req.body;
+
+      if (typeof isCommissioner !== 'boolean') {
+        return res.status(400).json({ message: "isCommissioner must be a boolean" });
+      }
+
+      // Cannot change super admin's commissioner status
+      const targetUser = await storage.getUser(targetUserId);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const updatedUser = await storage.updateUserCommissioner(targetUserId, isCommissioner);
+      res.json(updatedUser);
+    } catch (error) {
+      console.error("Error updating commissioner status:", error);
+      res.status(500).json({ message: "Failed to update commissioner status" });
+    }
+  });
+
   // Auction routes
   app.get("/api/auctions", isAuthenticated, async (req: any, res) => {
     try {

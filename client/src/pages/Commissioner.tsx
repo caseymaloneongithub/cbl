@@ -346,6 +346,23 @@ export default function Commissioner() {
     },
   });
 
+  const setCommissioner = useMutation({
+    mutationFn: async ({ userId, isCommissioner }: { userId: string; isCommissioner: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/users/${userId}/commissioner`, { isCommissioner });
+      return res.json();
+    },
+    onSuccess: (_, { isCommissioner }) => {
+      toast({ 
+        title: isCommissioner ? "Commissioner Assigned" : "Commissioner Removed", 
+        description: isCommissioner ? "The team has been granted commissioner access." : "Commissioner access has been revoked."
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/owners"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const parseUserCSV = useCallback((text: string) => {
     const lines = text.trim().split("\n");
     const headers = lines[0].toLowerCase().split(",").map(h => h.trim());
@@ -1097,6 +1114,18 @@ export default function Commissioner() {
                                 <TableCell>{owner.teamAbbreviation || "-"}</TableCell>
                                 <TableCell className="text-right">
                                   <div className="flex items-center justify-end gap-1">
+                                    {user?.isSuperAdmin && (
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => setCommissioner.mutate({ userId: owner.id, isCommissioner: true })}
+                                        disabled={setCommissioner.isPending}
+                                        title="Make Commissioner"
+                                        data-testid={`button-make-commissioner-${owner.id}`}
+                                      >
+                                        <Crown className="h-4 w-4" />
+                                      </Button>
+                                    )}
                                     <Button
                                       size="sm"
                                       variant="ghost"
