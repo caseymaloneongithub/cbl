@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -49,6 +49,7 @@ interface AutoBidDialogProps {
 export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.10 }: AutoBidDialogProps) {
   const { toast } = useToast();
   const [selectedYears, setSelectedYears] = useState(1);
+  const prevOpenRef = useRef(false);
 
   const { data: settings } = useQuery<LeagueSettings>({
     queryKey: ["/api/settings"],
@@ -68,9 +69,12 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.
   // Use fresh data if available, otherwise fall back to passed prop
   const currentBidInfo = freshFreeAgent?.currentBid ?? freeAgent?.currentBid;
 
-  const yearFactors = settings
-    ? [settings.yearFactor1, settings.yearFactor2, settings.yearFactor3, settings.yearFactor4, settings.yearFactor5]
-    : [1, 1.25, 1.33, 1.43, 1.55];
+  const yearFactors = useMemo(() => 
+    settings
+      ? [settings.yearFactor1, settings.yearFactor2, settings.yearFactor3, settings.yearFactor4, settings.yearFactor5]
+      : [1, 1.25, 1.33, 1.43, 1.55],
+    [settings]
+  );
 
   const playerMinimumYears = freeAgent?.minimumYears || 1;
 
@@ -83,8 +87,12 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.
     },
   });
 
+  // Only reset form when dialog opens (transition from closed to open)
   useEffect(() => {
-    if (open && freeAgent) {
+    const justOpened = open && !prevOpenRef.current;
+    prevOpenRef.current = open;
+    
+    if (justOpened && freeAgent) {
       const validYears = existingAutoBid 
         ? Math.max(existingAutoBid.years, playerMinimumYears)
         : playerMinimumYears;
