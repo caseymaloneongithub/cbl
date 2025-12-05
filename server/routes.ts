@@ -4,6 +4,14 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated, hashPassword, generateRandomPassword } from "./auth";
 import { insertBidSchema, insertAutoBidSchema } from "@shared/schema";
 import { z } from "zod";
+import { fromZonedTime } from "date-fns-tz";
+
+const EASTERN_TIMEZONE = "America/New_York";
+
+function parseEasternTime(dateString: string): Date {
+  const normalizedDate = dateString.replace(" ", "T");
+  return fromZonedTime(normalizedDate, EASTERN_TIMEZONE);
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -292,7 +300,7 @@ export async function registerRoutes(
           playerType,
           minimumBid,
           minimumYears,
-          auctionEndTime: p.auctionEndTime ? new Date(p.auctionEndTime) : defaultEndTime,
+          auctionEndTime: p.auctionEndTime ? parseEasternTime(p.auctionEndTime) : defaultEndTime,
           isActive: true,
           auctionId: targetAuctionId,
           // Hitter stats
@@ -378,7 +386,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Auction end time is required" });
       }
 
-      const newEndTime = new Date(auctionEndTime);
+      const newEndTime = parseEasternTime(auctionEndTime);
       if (newEndTime <= new Date()) {
         return res.status(400).json({ message: "Auction end time must be in the future" });
       }
@@ -429,7 +437,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Auction end time is required" });
       }
       
-      const endTime = new Date(auctionEndTime);
+      const endTime = parseEasternTime(auctionEndTime);
       if (endTime <= new Date()) {
         return res.status(400).json({ message: "Auction end time must be in the future" });
       }
