@@ -145,6 +145,7 @@ export default function Commissioner() {
   const [editingAuctionName, setEditingAuctionName] = useState("");
   const [selectedAuctionForUpload, setSelectedAuctionForUpload] = useState<string>("");
   const [selectedAuctionForSingleAdd, setSelectedAuctionForSingleAdd] = useState<string>("");
+  const [selectedAuctionForExport, setSelectedAuctionForExport] = useState<string>("");
   
   // Team management state
   const [deleteTeamId, setDeleteTeamId] = useState<string | null>(null);
@@ -730,7 +731,10 @@ export default function Commissioner() {
   const handleExportResults = async () => {
     setExportingResults(true);
     try {
-      const response = await fetch("/api/exports/auction-results.csv", {
+      const url = selectedAuctionForExport && selectedAuctionForExport !== "all"
+        ? `/api/exports/auction-results.csv?auctionId=${selectedAuctionForExport}`
+        : "/api/exports/auction-results.csv";
+      const response = await fetch(url, {
         credentials: "include",
       });
       
@@ -739,13 +743,16 @@ export default function Commissioner() {
       }
       
       const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      const blobUrl = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
-      a.download = "auction-results.csv";
+      a.href = blobUrl;
+      const auctionName = selectedAuctionForExport && selectedAuctionForExport !== "all"
+        ? allAuctions?.find(a => String(a.id) === selectedAuctionForExport)?.name || "auction"
+        : "all-auctions";
+      a.download = `auction-results-${auctionName.toLowerCase().replace(/\s+/g, "-")}.csv`;
       document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(url);
+      window.URL.revokeObjectURL(blobUrl);
       document.body.removeChild(a);
       
       toast({
@@ -766,7 +773,10 @@ export default function Commissioner() {
   const handleExportRosters = async () => {
     setExportingRosters(true);
     try {
-      const response = await fetch("/api/exports/final-rosters.csv", {
+      const url = selectedAuctionForExport && selectedAuctionForExport !== "all"
+        ? `/api/exports/final-rosters.csv?auctionId=${selectedAuctionForExport}`
+        : "/api/exports/final-rosters.csv";
+      const response = await fetch(url, {
         credentials: "include",
       });
       
@@ -775,13 +785,16 @@ export default function Commissioner() {
       }
       
       const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      const blobUrl = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
-      a.download = "final-rosters.csv";
+      a.href = blobUrl;
+      const auctionName = selectedAuctionForExport && selectedAuctionForExport !== "all"
+        ? allAuctions?.find(a => String(a.id) === selectedAuctionForExport)?.name || "auction"
+        : "all-auctions";
+      a.download = `final-rosters-${auctionName.toLowerCase().replace(/\s+/g, "-")}.csv`;
       document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(url);
+      window.URL.revokeObjectURL(blobUrl);
       document.body.removeChild(a);
       
       toast({
@@ -1665,7 +1678,38 @@ export default function Commissioner() {
             Export auction data as CSV files for reporting and analysis
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-4 p-3 bg-muted/50 rounded-lg">
+            <Label className="text-sm font-medium whitespace-nowrap">Filter by Auction:</Label>
+            <Select
+              value={selectedAuctionForExport}
+              onValueChange={setSelectedAuctionForExport}
+            >
+              <SelectTrigger className="flex-1" data-testid="select-export-auction">
+                <SelectValue placeholder="All Auctions" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Auctions</SelectItem>
+                {allAuctions && allAuctions.length > 0 && (
+                  allAuctions.map((auction) => (
+                    <SelectItem key={auction.id} value={String(auction.id)}>
+                      {auction.name} {auction.status === "active" && "(Active)"}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+            {selectedAuctionForExport && selectedAuctionForExport !== "all" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedAuctionForExport("")}
+                data-testid="button-clear-export-filter"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <Button
               variant="outline"
@@ -1696,8 +1740,11 @@ export default function Commissioner() {
               Export Final Rosters
             </Button>
           </div>
-          <p className="text-sm text-muted-foreground mt-4">
+          <p className="text-sm text-muted-foreground">
             Exports include only completed auctions with winning bids.
+            {selectedAuctionForExport && selectedAuctionForExport !== "all" && (
+              <span className="font-medium"> Filtering by: {allAuctions?.find(a => String(a.id) === selectedAuctionForExport)?.name}</span>
+            )}
           </p>
         </CardContent>
       </Card>
