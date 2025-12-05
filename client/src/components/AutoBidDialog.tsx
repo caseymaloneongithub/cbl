@@ -74,21 +74,16 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange }: AutoBidDialogPr
   });
 
   useEffect(() => {
-    if (open && existingAutoBid) {
-      const validYears = Math.max(existingAutoBid.years, playerMinimumYears);
-      form.reset({
-        maxAmount: existingAutoBid.maxAmount,
-        years: validYears,
-        isActive: existingAutoBid.isActive,
-      });
-      setSelectedYears(validYears);
-    } else if (open && freeAgent) {
+    if (open && freeAgent) {
+      const validYears = existingAutoBid 
+        ? Math.max(existingAutoBid.years, playerMinimumYears)
+        : playerMinimumYears;
       form.reset({
         maxAmount: freeAgent.minimumBid,
-        years: playerMinimumYears,
-        isActive: true,
+        years: validYears,
+        isActive: existingAutoBid?.isActive ?? true,
       });
-      setSelectedYears(playerMinimumYears);
+      setSelectedYears(validYears);
     }
   }, [open, existingAutoBid, playerMinimumYears, freeAgent, form]);
 
