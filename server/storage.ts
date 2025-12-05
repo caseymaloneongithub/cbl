@@ -37,7 +37,7 @@ export interface IStorage {
   updateUserCommissioner(id: string, isCommissioner: boolean): Promise<User | undefined>;
   setSoleCommissioner(userId: string | null): Promise<User | null>;
   updateUserPassword(id: string, passwordHash: string, mustResetPassword: boolean): Promise<User | undefined>;
-  createUserWithPassword(userData: { email: string; passwordHash: string; firstName?: string; lastName?: string; teamName?: string; budget?: number; isCommissioner?: boolean; mustResetPassword?: boolean }): Promise<User>;
+  createUserWithPassword(userData: { email: string; passwordHash: string; firstName?: string; lastName?: string; teamName?: string; isCommissioner?: boolean; mustResetPassword?: boolean }): Promise<User>;
   
   // League settings
   getSettings(): Promise<LeagueSettings>;
@@ -76,8 +76,8 @@ export interface IStorage {
     endingSoon: number;
   }>;
   
-  // Budget management (per-auction)
-  getUserBudgetInfo(userId: string, auctionId?: number): Promise<{
+  // Budget management (per-auction only - budgets are stored in auctionTeams)
+  getUserBudgetInfo(userId: string, auctionId: number): Promise<{
     budget: number;
     spent: number;
     committed: number;
@@ -85,14 +85,11 @@ export interface IStorage {
   }>;
   getAuctionTeamBudget(auctionId: number, userId: string): Promise<number>;
   updateAuctionTeamBudget(auctionId: number, userId: string, budget: number): Promise<AuctionTeam>;
-  updateUserBudget(userId: string, budget: number): Promise<User>;
-  resetAllBudgets(amount: number): Promise<void>;
   resetAuctionBudgets(auctionId: number, amount: number): Promise<void>;
   
-  // Team limits management (per-auction)
+  // Team limits management (per-auction only - limits are stored in auctionTeams)
   updateAuctionTeamLimits(auctionId: number, userId: string, limits: { rosterLimit?: number | null; ipLimit?: number | null; paLimit?: number | null }): Promise<AuctionTeam>;
-  updateUserLimits(userId: string, limits: { rosterLimit?: number | null; ipLimit?: number | null; paLimit?: number | null }): Promise<User>;
-  getUserLimitsInfo(userId: string, auctionId?: number): Promise<{
+  getUserLimitsInfo(userId: string, auctionId: number): Promise<{
     rosterLimit: number | null;
     rosterUsed: number;
     rosterAvailable: number | null;
@@ -126,7 +123,16 @@ export interface IStorage {
   // Auction teams
   getAuctionTeams(auctionId: number): Promise<(AuctionTeam & { user: User })[]>;
   setAuctionTeamActive(auctionId: number, userId: string, isActive: boolean): Promise<AuctionTeam>;
-  enrollAllTeamsInAuction(auctionId: number): Promise<void>;
+  enrollTeamsInAuction(
+    auctionId: number, 
+    userIds: string[], 
+    defaultBudget: number,
+    rosterLimit?: number | null,
+    ipLimit?: number | null,
+    paLimit?: number | null
+  ): Promise<AuctionTeam[]>;
+  removeTeamFromAuction(auctionId: number, userId: string): Promise<boolean>;
+  getTeamsNotInAuction(auctionId: number): Promise<User[]>;
   
   // Team deletion
   canDeleteUser(userId: string): Promise<{ canDelete: boolean; reason?: string }>;
@@ -218,7 +224,6 @@ export class DatabaseStorage implements IStorage {
     firstName?: string; 
     lastName?: string; 
     teamName?: string; 
-    budget?: number; 
     isCommissioner?: boolean; 
     mustResetPassword?: boolean;
   }): Promise<User> {
@@ -230,7 +235,6 @@ export class DatabaseStorage implements IStorage {
         firstName: userData.firstName,
         lastName: userData.lastName,
         teamName: userData.teamName,
-        budget: userData.budget ?? 260,
         isCommissioner: userData.isCommissioner ?? false,
         mustResetPassword: userData.mustResetPassword ?? true,
       })
@@ -554,8 +558,8 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  // Budget management (per-auction)
-  async getUserBudgetInfo(userId: string, auctionId?: number): Promise<{
+  // Budget management (per-auction only)
+  async getUserBudgetInfo(userId: string, auctionId: number): Promise<{
     budget: number;
     spent: number;
     committed: number;
@@ -566,22 +570,20 @@ export class DatabaseStorage implements IStorage {
       throw new Error("User not found");
     }
 
-    // Get budget from auction team settings if auctionId provided, otherwise use user default
-    let budget = user.budget;
-    if (auctionId) {
-      const [auctionTeam] = await db
-        .select()
-        .from(auctionTeams)
-        .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, userId)));
-      if (auctionTeam?.budget !== null && auctionTeam?.budget !== undefined) {
-        budget = auctionTeam.budget;
-      }
+    // Get budget from auction team settings (required)
+    const [auctionTeam] = await db
+      .select()
+      .from(auctionTeams)
+      .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, userId)));
+    
+    if (!auctionTeam) {
+      throw new Error("Team not enrolled in this auction");
     }
+    
+    const budget = auctionTeam.budget;
 
-    // Get agents filtered by auction if provided
-    const allAgents = auctionId 
-      ? await this.getFreeAgentsByAuction(auctionId)
-      : await this.getAllFreeAgents();
+    // Get agents for this auction
+    const allAgents = await this.getFreeAgentsByAuction(auctionId);
     const now = new Date();
     
     // Calculate spent (won auctions) - tracks bid AMOUNT, not total value
@@ -618,13 +620,11 @@ export class DatabaseStorage implements IStorage {
       .from(auctionTeams)
       .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, userId)));
     
-    if (auctionTeam?.budget !== null && auctionTeam?.budget !== undefined) {
-      return auctionTeam.budget;
+    if (!auctionTeam) {
+      throw new Error("Team not enrolled in this auction");
     }
     
-    // Fall back to user's default budget
-    const user = await this.getUser(userId);
-    return user?.budget ?? 260;
+    return auctionTeam.budget;
   }
 
   async updateAuctionTeamBudget(auctionId: number, userId: string, budget: number): Promise<AuctionTeam> {
@@ -633,35 +633,16 @@ export class DatabaseStorage implements IStorage {
       .from(auctionTeams)
       .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, userId)));
     
-    if (existing) {
-      const [updated] = await db
-        .update(auctionTeams)
-        .set({ budget, updatedAt: new Date() })
-        .where(eq(auctionTeams.id, existing.id))
-        .returning();
-      return updated;
-    } else {
-      const [created] = await db
-        .insert(auctionTeams)
-        .values({ auctionId, userId, budget, isActive: true })
-        .returning();
-      return created;
+    if (!existing) {
+      throw new Error("Team not enrolled in this auction");
     }
-  }
-
-  async updateUserBudget(userId: string, budget: number): Promise<User> {
+    
     const [updated] = await db
-      .update(users)
+      .update(auctionTeams)
       .set({ budget, updatedAt: new Date() })
-      .where(eq(users.id, userId))
+      .where(eq(auctionTeams.id, existing.id))
       .returning();
     return updated;
-  }
-
-  async resetAllBudgets(amount: number): Promise<void> {
-    await db
-      .update(users)
-      .set({ budget: amount, updatedAt: new Date() });
   }
 
   async resetAuctionBudgets(auctionId: number, amount: number): Promise<void> {
@@ -671,56 +652,31 @@ export class DatabaseStorage implements IStorage {
       .where(eq(auctionTeams.auctionId, auctionId));
   }
 
-  // Team limits management (per-auction)
+  // Team limits management (per-auction only)
   async updateAuctionTeamLimits(auctionId: number, userId: string, limits: { rosterLimit?: number | null; ipLimit?: number | null; paLimit?: number | null }): Promise<AuctionTeam> {
     const [existing] = await db
       .select()
       .from(auctionTeams)
       .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, userId)));
     
-    if (existing) {
-      const [updated] = await db
-        .update(auctionTeams)
-        .set({ 
-          rosterLimit: limits.rosterLimit,
-          ipLimit: limits.ipLimit,
-          paLimit: limits.paLimit,
-          updatedAt: new Date() 
-        })
-        .where(eq(auctionTeams.id, existing.id))
-        .returning();
-      return updated;
-    } else {
-      const [created] = await db
-        .insert(auctionTeams)
-        .values({ 
-          auctionId, 
-          userId, 
-          rosterLimit: limits.rosterLimit,
-          ipLimit: limits.ipLimit,
-          paLimit: limits.paLimit,
-          isActive: true 
-        })
-        .returning();
-      return created;
+    if (!existing) {
+      throw new Error("Team not enrolled in this auction");
     }
-  }
-
-  async updateUserLimits(userId: string, limits: { rosterLimit?: number | null; ipLimit?: number | null; paLimit?: number | null }): Promise<User> {
+    
     const [updated] = await db
-      .update(users)
+      .update(auctionTeams)
       .set({ 
         rosterLimit: limits.rosterLimit,
         ipLimit: limits.ipLimit,
         paLimit: limits.paLimit,
         updatedAt: new Date() 
       })
-      .where(eq(users.id, userId))
+      .where(eq(auctionTeams.id, existing.id))
       .returning();
     return updated;
   }
 
-  async getUserLimitsInfo(userId: string, auctionId?: number): Promise<{
+  async getUserLimitsInfo(userId: string, auctionId: number): Promise<{
     rosterLimit: number | null;
     rosterUsed: number;
     rosterAvailable: number | null;
@@ -736,36 +692,31 @@ export class DatabaseStorage implements IStorage {
       throw new Error("User not found");
     }
 
-    // Get limits from auction team settings if auctionId provided, otherwise use user default
-    let rosterLimit = user.rosterLimit;
-    let ipLimit = user.ipLimit;
-    let paLimit = user.paLimit;
+    // Get limits from auction team settings (required)
+    const [auctionTeam] = await db
+      .select()
+      .from(auctionTeams)
+      .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, userId)));
     
-    if (auctionId) {
-      const [auctionTeam] = await db
-        .select()
-        .from(auctionTeams)
-        .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, userId)));
-      if (auctionTeam) {
-        if (auctionTeam.rosterLimit !== null) rosterLimit = auctionTeam.rosterLimit;
-        if (auctionTeam.ipLimit !== null) ipLimit = auctionTeam.ipLimit;
-        if (auctionTeam.paLimit !== null) paLimit = auctionTeam.paLimit;
-      }
+    if (!auctionTeam) {
+      throw new Error("Team not enrolled in this auction");
     }
+    
+    const rosterLimit = auctionTeam.rosterLimit;
+    const ipLimit = auctionTeam.ipLimit;
+    const paLimit = auctionTeam.paLimit;
 
     const now = new Date();
     
-    // Get closed auctions won by this user (filtered by auction if provided)
-    let wonAgentsQuery = db
+    // Get closed auctions won by this user in this auction
+    const wonAgents = await db
       .select()
       .from(freeAgents)
       .where(and(
         eq(freeAgents.winnerId, userId),
         sql`${freeAgents.auctionEndTime} <= ${now}`,
-        auctionId ? eq(freeAgents.auctionId, auctionId) : sql`1=1`
+        eq(freeAgents.auctionId, auctionId)
       ));
-    
-    const wonAgents = await wonAgentsQuery;
     
     // Calculate roster used (number of players won)
     const rosterUsed = wonAgents.length;
@@ -800,7 +751,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Check if user can bid on a player based on limits (includes pending high bids)
-  // Uses per-auction limits when the player is associated with an auction
+  // Uses per-auction limits - team must be enrolled in the player's auction
   async canUserBidOnPlayer(userId: string, playerId: number): Promise<{
     canBid: boolean;
     reason?: string;
@@ -815,47 +766,39 @@ export class DatabaseStorage implements IStorage {
       return { canBid: false, reason: "Player not found" };
     }
 
-    const now = new Date();
     const auctionId = player.auctionId;
+    if (!auctionId) {
+      return { canBid: false, reason: "Player not associated with an auction" };
+    }
+
+    // Get limits from auction team settings (required)
+    const [auctionTeam] = await db
+      .select()
+      .from(auctionTeams)
+      .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, userId)));
     
-    // Get limits from auction team settings if player has auctionId, otherwise use user default
-    let rosterLimit = user.rosterLimit;
-    let ipLimit = user.ipLimit;
-    let paLimit = user.paLimit;
-    
-    if (auctionId) {
-      const [auctionTeam] = await db
-        .select()
-        .from(auctionTeams)
-        .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, userId)));
-      if (auctionTeam) {
-        if (auctionTeam.rosterLimit !== null) rosterLimit = auctionTeam.rosterLimit;
-        if (auctionTeam.ipLimit !== null) ipLimit = auctionTeam.ipLimit;
-        if (auctionTeam.paLimit !== null) paLimit = auctionTeam.paLimit;
-      }
+    if (!auctionTeam) {
+      return { canBid: false, reason: "Team not enrolled in this auction" };
     }
     
-    // Get won players + pending high bids (excluding this player if already high bidder)
-    // Filter by auctionId if the player belongs to an auction
-    const wonAgentsCondition = auctionId 
-      ? and(
-          eq(freeAgents.winnerId, userId),
-          sql`${freeAgents.auctionEndTime} <= ${now}`,
-          eq(freeAgents.auctionId, auctionId)
-        )
-      : and(
-          eq(freeAgents.winnerId, userId),
-          sql`${freeAgents.auctionEndTime} <= ${now}`
-        );
+    const rosterLimit = auctionTeam.rosterLimit;
+    const ipLimit = auctionTeam.ipLimit;
+    const paLimit = auctionTeam.paLimit;
+
+    const now = new Date();
     
+    // Get won players in this auction
     const wonAgents = await db
       .select()
       .from(freeAgents)
-      .where(wonAgentsCondition);
+      .where(and(
+        eq(freeAgents.winnerId, userId),
+        sql`${freeAgents.auctionEndTime} <= ${now}`,
+        eq(freeAgents.auctionId, auctionId)
+      ));
     
-    // Get active auctions where user is high bidder (within same auction if applicable)
-    // If player has no auctionId (legacy), include all active agents for pending bid counting
-    const allAgents = await this.getActiveFreeAgents(auctionId ?? undefined);
+    // Get active auctions where user is high bidder in this auction
+    const allAgents = await this.getActiveFreeAgents(auctionId);
     const pendingHighBids = allAgents.filter(a => 
       a.highBidder?.id === userId && a.id !== playerId
     );
@@ -1064,49 +1007,126 @@ export class DatabaseStorage implements IStorage {
   }
 
   async setAuctionTeamActive(auctionId: number, userId: string, isActive: boolean): Promise<AuctionTeam> {
-    // Check if team exists for this auction
     const [existing] = await db
       .select()
       .from(auctionTeams)
       .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, userId)));
     
-    if (existing) {
-      const [updated] = await db
-        .update(auctionTeams)
-        .set({ isActive, updatedAt: new Date() })
-        .where(eq(auctionTeams.id, existing.id))
-        .returning();
-      return updated;
-    } else {
-      // Create new enrollment
-      const [team] = await db
-        .insert(auctionTeams)
-        .values({ auctionId, userId, isActive })
-        .returning();
-      return team;
+    if (!existing) {
+      throw new Error("Team not enrolled in this auction");
     }
+    
+    const [updated] = await db
+      .update(auctionTeams)
+      .set({ isActive, updatedAt: new Date() })
+      .where(eq(auctionTeams.id, existing.id))
+      .returning();
+    return updated;
   }
 
-  async enrollAllTeamsInAuction(auctionId: number): Promise<void> {
+  async enrollTeamsInAuction(
+    auctionId: number, 
+    userIds: string[], 
+    defaultBudget: number,
+    rosterLimit?: number | null,
+    ipLimit?: number | null,
+    paLimit?: number | null
+  ): Promise<AuctionTeam[]> {
+    const enrolledTeams: AuctionTeam[] = [];
+    
+    for (const userId of userIds) {
+      // Check if already enrolled
+      const [existing] = await db
+        .select()
+        .from(auctionTeams)
+        .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, userId)));
+      
+      if (!existing) {
+        const [team] = await db
+          .insert(auctionTeams)
+          .values({ 
+            auctionId, 
+            userId, 
+            budget: defaultBudget,
+            rosterLimit: rosterLimit ?? null,
+            ipLimit: ipLimit ?? null,
+            paLimit: paLimit ?? null,
+            isActive: true 
+          })
+          .returning();
+        enrolledTeams.push(team);
+      } else {
+        enrolledTeams.push(existing);
+      }
+    }
+    
+    return enrolledTeams;
+  }
+
+  async removeTeamFromAuction(auctionId: number, userId: string): Promise<boolean> {
+    // Check if team exists in this auction
+    const [existing] = await db
+      .select()
+      .from(auctionTeams)
+      .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, userId)));
+    
+    if (!existing) {
+      return false;
+    }
+    
+    // Check if team has any bids in this auction
+    const auctionAgents = await db
+      .select()
+      .from(freeAgents)
+      .where(eq(freeAgents.auctionId, auctionId));
+    
+    const agentIds = auctionAgents.map(a => a.id);
+    
+    if (agentIds.length > 0) {
+      const teamBids = await db
+        .select()
+        .from(bids)
+        .where(and(
+          eq(bids.userId, userId),
+          sql`${bids.freeAgentId} IN (${sql.join(agentIds.map(id => sql`${id}`), sql`, `)})`
+        ));
+      
+      if (teamBids.length > 0) {
+        throw new Error("Cannot remove team - they have bids in this auction");
+      }
+      
+      // Check for won players
+      const wonPlayers = auctionAgents.filter(a => a.winnerId === userId);
+      if (wonPlayers.length > 0) {
+        throw new Error("Cannot remove team - they have won players in this auction");
+      }
+    }
+    
+    // Remove the team from this auction
+    await db
+      .delete(auctionTeams)
+      .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, userId)));
+    
+    return true;
+  }
+
+  async getTeamsNotInAuction(auctionId: number): Promise<User[]> {
     // Get all non-commissioner, non-super-admin users
     const allUsers = await db
       .select()
       .from(users)
       .where(and(eq(users.isCommissioner, false), eq(users.isSuperAdmin, false)));
     
-    for (const user of allUsers) {
-      // Check if already enrolled
-      const [existing] = await db
-        .select()
-        .from(auctionTeams)
-        .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, user.id)));
-      
-      if (!existing) {
-        await db
-          .insert(auctionTeams)
-          .values({ auctionId, userId: user.id, isActive: true });
-      }
-    }
+    // Get users already enrolled in this auction
+    const enrolledTeams = await db
+      .select()
+      .from(auctionTeams)
+      .where(eq(auctionTeams.auctionId, auctionId));
+    
+    const enrolledUserIds = new Set(enrolledTeams.map(t => t.userId));
+    
+    // Return users not enrolled
+    return allUsers.filter(u => !enrolledUserIds.has(u.id));
   }
 
   // Team deletion

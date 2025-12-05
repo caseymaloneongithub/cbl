@@ -25,6 +25,7 @@ export const sessions = pgTable(
 );
 
 // Users table - supports owners, commissioners, and super admins
+// Note: Budget and limits are per-auction, stored in auctionTeams table
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   email: varchar("email").unique().notNull(),
@@ -35,10 +36,6 @@ export const users = pgTable("users", {
   isCommissioner: boolean("is_commissioner").default(false).notNull(),
   isSuperAdmin: boolean("is_super_admin").default(false).notNull(),
   teamName: varchar("team_name"),
-  budget: real("budget").default(260).notNull(),
-  rosterLimit: integer("roster_limit"),  // Max players team can have (null = unlimited)
-  ipLimit: real("ip_limit"),              // Max pitcher innings pitched limit (null = unlimited)
-  paLimit: integer("pa_limit"),           // Max hitter plate appearances limit (null = unlimited)
   mustResetPassword: boolean("must_reset_password").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -79,16 +76,17 @@ export const auctionsRelations = relations(auctions, ({ one, many }) => ({
   auctionTeams: many(auctionTeams),
 }));
 
-// Auction teams table - tracks which teams are active in each auction
+// Auction teams table - tracks which teams participate in each auction with their budget/limits
+// This is the source of truth for all per-auction team settings
 export const auctionTeams = pgTable("auction_teams", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   auctionId: integer("auction_id").references(() => auctions.id).notNull(),
   userId: varchar("user_id").references(() => users.id).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
-  budget: real("budget"), // Override budget for this auction (null = use user default)
-  rosterLimit: integer("roster_limit"), // Override roster limit (null = use user default)
-  ipLimit: real("ip_limit"), // Override IP limit (null = use user default)
-  paLimit: integer("pa_limit"), // Override PA limit (null = use user default)
+  budget: real("budget").notNull(), // Team's budget for this auction
+  rosterLimit: integer("roster_limit"), // Max players team can have (null = unlimited)
+  ipLimit: real("ip_limit"), // Max pitcher innings pitched limit (null = unlimited)
+  paLimit: integer("pa_limit"), // Max hitter plate appearances limit (null = unlimited)
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

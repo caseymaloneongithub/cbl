@@ -121,7 +121,6 @@ interface ParsedUser {
   firstName?: string;
   lastName?: string;
   teamName?: string;
-  budget?: number;
 }
 
 export default function Commissioner() {
@@ -189,6 +188,29 @@ export default function Commissioner() {
   const { data: allAuctions, isLoading: loadingAuctions } = useQuery<Auction[]>({
     queryKey: ["/api/auctions"],
     enabled: isAuthenticated && (user?.isCommissioner || user?.isSuperAdmin),
+  });
+
+  // Get the active auction ID
+  const activeAuction = allAuctions?.find(a => a.status === "active");
+
+  // Query auction teams for the active auction
+  interface AuctionTeamWithUser {
+    id: number;
+    auctionId: number;
+    userId: string;
+    isActive: boolean;
+    budget: number;
+    rosterLimit: number | null;
+    ipLimit: number | null;
+    paLimit: number | null;
+    createdAt: string | null;
+    updatedAt: string | null;
+    user: User;
+  }
+
+  const { data: auctionTeams, isLoading: loadingAuctionTeams } = useQuery<AuctionTeamWithUser[]>({
+    queryKey: ["/api/auctions", activeAuction?.id, "teams"],
+    enabled: isAuthenticated && (user?.isCommissioner || user?.isSuperAdmin) && !!activeAuction?.id,
   });
 
   const form = useForm<SettingsFormData>({
@@ -334,13 +356,13 @@ export default function Commissioner() {
     },
   });
 
-  const updateUserLimits = useMutation({
-    mutationFn: async ({ userId, limits }: { userId: string; limits: { rosterLimit?: number | null; ipLimit?: number | null; paLimit?: number | null } }) => {
-      await apiRequest("PATCH", `/api/users/${userId}/limits`, limits);
+  const updateAuctionTeamLimits = useMutation({
+    mutationFn: async ({ auctionId, userId, limits }: { auctionId: number; userId: string; limits: { rosterLimit?: number | null; ipLimit?: number | null; paLimit?: number | null } }) => {
+      await apiRequest("PATCH", `/api/auctions/${auctionId}/teams/${userId}/limits`, limits);
     },
     onSuccess: () => {
       toast({ title: "Limits Updated", description: "Team limits have been saved." });
-      queryClient.invalidateQueries({ queryKey: ["/api/owners"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auctions", activeAuction?.id, "teams"] });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -624,7 +646,6 @@ export default function Commissioner() {
     const firstNameIdx = headers.findIndex(h => h === "first_name" || h === "firstname");
     const lastNameIdx = headers.findIndex(h => h === "last_name" || h === "lastname");
     const teamNameIdx = headers.findIndex(h => h === "team_name" || h === "teamname" || h === "team");
-    const budgetIdx = headers.findIndex(h => h === "budget");
 
     if (emailIdx === -1) {
       toast({
@@ -644,7 +665,6 @@ export default function Commissioner() {
           firstName: firstNameIdx !== -1 ? values[firstNameIdx] : undefined,
           lastName: lastNameIdx !== -1 ? values[lastNameIdx] : undefined,
           teamName: teamNameIdx !== -1 ? values[teamNameIdx] : undefined,
-          budget: budgetIdx !== -1 && values[budgetIdx] ? parseFloat(values[budgetIdx]) : undefined,
         });
       }
     }
@@ -1358,27 +1378,27 @@ export default function Commissioner() {
 
       <div className="grid gap-6 lg:grid-cols-1">
         {/* League Owners - Only show when there's an active auction */}
-        {allAuctions?.some(a => a.status === "active") ? (
+        {activeAuction ? (
           <Card className="lg:col-span-2">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5" />
-                League Owners & Team Limits
+                Auction Teams &amp; Limits
               </CardTitle>
               <CardDescription>
-                View and manage team owners, budgets, and team limits for the active auction. Leave blank for unlimited.
+                View and manage team budgets and limits for "{activeAuction.name}". Leave blank for unlimited.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {loadingOwners ? (
+              {loadingAuctionTeams ? (
                 <div className="space-y-2">
                   {[...Array(4)].map((_, i) => (
                     <Skeleton key={i} className="h-12 w-full" />
                   ))}
                 </div>
-              ) : !owners || owners.length === 0 ? (
+              ) : !auctionTeams || auctionTeams.length === 0 ? (
                 <p className="text-muted-foreground text-center py-8">
-                  No owners have joined yet.
+                  No teams enrolled in this auction yet. Enroll teams using the team management options.
                 </p>
               ) : (
                 <div className="border rounded-lg overflow-hidden">
@@ -1395,38 +1415,38 @@ export default function Commissioner() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {owners.map((owner) => (
-                        <TableRow key={owner.id} data-testid={`owner-row-${owner.id}`}>
+                      {auctionTeams.map((team) => (
+                        <TableRow key={team.id} data-testid={`team-row-${team.userId}`}>
                           <TableCell>
                             <div>
                               <span className="font-medium">
-                                {owner.firstName} {owner.lastName}
+                                {team.user.firstName} {team.user.lastName}
                               </span>
-                              {owner.isCommissioner && (
+                              {team.user.isCommissioner && (
                                 <Badge variant="secondary" className="ml-2">
                                   <Crown className="h-3 w-3 mr-1" />
                                   Comm
                                 </Badge>
                               )}
-                              <p className="text-xs text-muted-foreground">{owner.email}</p>
+                              <p className="text-xs text-muted-foreground">{team.user.email}</p>
                             </div>
                           </TableCell>
-                          <TableCell>{owner.teamName || "-"}</TableCell>
-                          <TableCell className="text-right">${owner.budget}</TableCell>
+                          <TableCell>{team.user.teamName || "-"}</TableCell>
+                          <TableCell className="text-right">${team.budget}</TableCell>
                           <TableCell className="text-right">
                             <Input
                               type="number"
                               min="0"
                               className="w-20 h-8 text-right"
                               placeholder="--"
-                              defaultValue={owner.rosterLimit ?? ""}
+                              defaultValue={team.rosterLimit ?? ""}
                               onBlur={(e) => {
                                 const val = e.target.value === "" ? null : parseInt(e.target.value);
-                                if (val !== owner.rosterLimit) {
-                                  updateUserLimits.mutate({ userId: owner.id, limits: { rosterLimit: val } });
+                                if (val !== team.rosterLimit) {
+                                  updateAuctionTeamLimits.mutate({ auctionId: activeAuction.id, userId: team.userId, limits: { rosterLimit: val } });
                                 }
                               }}
-                              data-testid={`input-roster-limit-${owner.id}`}
+                              data-testid={`input-roster-limit-${team.userId}`}
                             />
                           </TableCell>
                           <TableCell className="text-right">
@@ -1436,14 +1456,14 @@ export default function Commissioner() {
                               step="0.1"
                               className="w-20 h-8 text-right"
                               placeholder="--"
-                              defaultValue={owner.ipLimit ?? ""}
+                              defaultValue={team.ipLimit ?? ""}
                               onBlur={(e) => {
                                 const val = e.target.value === "" ? null : parseFloat(e.target.value);
-                                if (val !== owner.ipLimit) {
-                                  updateUserLimits.mutate({ userId: owner.id, limits: { ipLimit: val } });
+                                if (val !== team.ipLimit) {
+                                  updateAuctionTeamLimits.mutate({ auctionId: activeAuction.id, userId: team.userId, limits: { ipLimit: val } });
                                 }
                               }}
-                              data-testid={`input-ip-limit-${owner.id}`}
+                              data-testid={`input-ip-limit-${team.userId}`}
                             />
                           </TableCell>
                           <TableCell className="text-right">
@@ -1452,31 +1472,31 @@ export default function Commissioner() {
                               min="0"
                               className="w-20 h-8 text-right"
                               placeholder="--"
-                              defaultValue={owner.paLimit ?? ""}
+                              defaultValue={team.paLimit ?? ""}
                               onBlur={(e) => {
                                 const val = e.target.value === "" ? null : parseInt(e.target.value);
-                                if (val !== owner.paLimit) {
-                                  updateUserLimits.mutate({ userId: owner.id, limits: { paLimit: val } });
+                                if (val !== team.paLimit) {
+                                  updateAuctionTeamLimits.mutate({ auctionId: activeAuction.id, userId: team.userId, limits: { paLimit: val } });
                                 }
                               }}
-                              data-testid={`input-pa-limit-${owner.id}`}
+                              data-testid={`input-pa-limit-${team.userId}`}
                             />
                           </TableCell>
                           <TableCell className="text-center">
                             <div className="flex items-center justify-center gap-1">
-                              {user?.isSuperAdmin && !owner.isCommissioner && !owner.isSuperAdmin && (
+                              {user?.isSuperAdmin && !team.user.isCommissioner && !team.user.isSuperAdmin && (
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  onClick={() => makeCommissioner.mutate(owner.id)}
+                                  onClick={() => makeCommissioner.mutate(team.userId)}
                                   title="Make Commissioner"
-                                  data-testid={`button-make-commissioner-${owner.id}`}
+                                  data-testid={`button-make-commissioner-${team.userId}`}
                                 >
                                   <Crown className="h-4 w-4" />
                                 </Button>
                               )}
-                              {!owner.isCommissioner && !owner.isSuperAdmin && (
-                                <Dialog open={deleteTeamId === owner.id} onOpenChange={(open) => {
+                              {!team.user.isCommissioner && !team.user.isSuperAdmin && (
+                                <Dialog open={deleteTeamId === team.userId} onOpenChange={(open) => {
                                   if (!open) {
                                     setDeleteTeamId(null);
                                     setDeletingTeamName("");
@@ -1487,11 +1507,11 @@ export default function Commissioner() {
                                       variant="ghost"
                                       size="icon"
                                       onClick={() => {
-                                        setDeleteTeamId(owner.id);
-                                        setDeletingTeamName(`${owner.firstName || ""} ${owner.lastName || ""}`.trim() || owner.email);
+                                        setDeleteTeamId(team.userId);
+                                        setDeletingTeamName(`${team.user.firstName || ""} ${team.user.lastName || ""}`.trim() || team.user.email);
                                       }}
                                       title="Delete Team"
-                                      data-testid={`button-delete-team-${owner.id}`}
+                                      data-testid={`button-delete-team-${team.userId}`}
                                     >
                                       <Trash2 className="h-4 w-4 text-destructive" />
                                     </Button>
@@ -1516,7 +1536,7 @@ export default function Commissioner() {
                                       </Button>
                                       <Button
                                         variant="destructive"
-                                        onClick={() => deleteTeam.mutate(owner.id)}
+                                        onClick={() => deleteTeam.mutate(team.userId)}
                                         disabled={deleteTeam.isPending}
                                         data-testid="button-confirm-delete-team"
                                       >
@@ -1570,7 +1590,7 @@ export default function Commissioner() {
               Upload Team Owners
             </CardTitle>
             <CardDescription>
-              Upload a CSV file to create user accounts. Required: email. Optional: first_name, last_name, team_name, budget
+              Upload a CSV file to create team accounts. Required: email. Optional: first_name, last_name, team_name
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -1644,7 +1664,6 @@ export default function Commissioner() {
                         <TableHead>Email</TableHead>
                         <TableHead>Name</TableHead>
                         <TableHead>Team</TableHead>
-                        <TableHead>Budget</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1653,12 +1672,11 @@ export default function Commissioner() {
                           <TableCell className="font-medium">{u.email}</TableCell>
                           <TableCell>{u.firstName || ""} {u.lastName || ""}</TableCell>
                           <TableCell>{u.teamName || "-"}</TableCell>
-                          <TableCell>{u.budget ? `$${u.budget}` : "Default"}</TableCell>
                         </TableRow>
                       ))}
                       {parsedUsers.length > 10 && (
                         <TableRow>
-                          <TableCell colSpan={4} className="text-center text-muted-foreground">
+                          <TableCell colSpan={3} className="text-center text-muted-foreground">
                             ... and {parsedUsers.length - 10} more users
                           </TableCell>
                         </TableRow>

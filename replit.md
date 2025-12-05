@@ -26,9 +26,11 @@ Preferred communication style: Simple, everyday language.
 ### Database Layer
 - **ORM**: Drizzle ORM with PostgreSQL.
 - **Schema**: Centralized in `shared/schema.ts`, using Drizzle-Zod for runtime validation.
-- **Core Tables**: `users`, `leagueSettings`, `freeAgents`, `bids`, `autoBids`, `sessions`.
+- **Core Tables**: `users`, `auctions`, `auctionTeams`, `leagueSettings`, `freeAgents`, `bids`, `autoBids`, `sessions`.
 - **Storage Abstraction**: `server/storage.ts` for database operations encapsulation.
 - **Migrations**: Drizzle Kit for schema changes, stored in `/migrations`.
+- **User Table**: Stores only basic account info: email, firstName, lastName, teamName, isCommissioner, isSuperAdmin. No budget or limits.
+- **AuctionTeams Table**: Per-auction team participation with budget, rosterLimit, ipLimit, paLimit. Teams must be enrolled to participate.
 
 ### Authentication & Authorization
 - **Authentication**: Email/password with bcrypt hashing (cost 12).

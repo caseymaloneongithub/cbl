@@ -45,13 +45,17 @@ export default function Home() {
   }>({
     queryKey: ["/api/budget", activeAuction?.id],
     queryFn: async () => {
-      const url = activeAuction?.id 
-        ? `/api/budget?auctionId=${activeAuction.id}` 
-        : "/api/budget";
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch budget");
+      if (!activeAuction?.id) return { budget: 0, spent: 0, committed: 0, available: 0 };
+      const res = await fetch(`/api/budget?auctionId=${activeAuction.id}`, { credentials: "include" });
+      if (!res.ok) {
+        if (res.status === 404) {
+          return { budget: 0, spent: 0, committed: 0, available: 0 };
+        }
+        throw new Error("Failed to fetch budget");
+      }
       return res.json();
     },
+    enabled: !!activeAuction?.id,
   });
 
   const activeAgents = freeAgents?.filter(a => a.isActive) || [];

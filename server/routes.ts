@@ -748,83 +748,43 @@ export async function registerRoutes(
     }
   });
 
-  // Budget (supports optional auctionId for per-auction budgets)
+  // Budget (requires auctionId - budgets are per-auction)
   app.get("/api/budget", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.userId!;
-      let auctionId: number | undefined = undefined;
-      if (req.query.auctionId) {
-        const parsed = parseInt(req.query.auctionId);
-        if (!isNaN(parsed)) {
-          auctionId = parsed;
-        }
+      const auctionId = req.query.auctionId ? parseInt(req.query.auctionId) : undefined;
+      
+      if (!auctionId || isNaN(auctionId)) {
+        return res.status(400).json({ message: "auctionId is required" });
       }
+      
       const budgetInfo = await storage.getUserBudgetInfo(userId, auctionId);
       res.json(budgetInfo);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === "Team not enrolled in this auction") {
+        return res.status(404).json({ message: error.message });
+      }
       console.error("Error fetching budget:", error);
       res.status(500).json({ message: "Failed to fetch budget" });
     }
   });
 
-  // Commissioner: Update user budget
-  app.patch("/api/users/:userId/budget", isAuthenticated, async (req: any, res) => {
-    try {
-      const adminId = req.session.userId!;
-      const admin = await storage.getUser(adminId);
-      
-      if (!admin?.isCommissioner) {
-        return res.status(403).json({ message: "Commissioner access required" });
-      }
-
-      const { userId } = req.params;
-      const { budget } = req.body;
-
-      if (typeof budget !== "number" || budget < 0) {
-        return res.status(400).json({ message: "Invalid budget value" });
-      }
-
-      const updated = await storage.updateUserBudget(userId, budget);
-      res.json(updated);
-    } catch (error) {
-      console.error("Error updating user budget:", error);
-      res.status(500).json({ message: "Failed to update budget" });
-    }
-  });
-
-  // Commissioner: Reset all budgets
-  app.post("/api/users/reset-budgets", isAuthenticated, async (req: any, res) => {
-    try {
-      const adminId = req.session.userId!;
-      const admin = await storage.getUser(adminId);
-      
-      if (!admin?.isCommissioner) {
-        return res.status(403).json({ message: "Commissioner access required" });
-      }
-
-      const settings = await storage.getSettings();
-      await storage.resetAllBudgets(settings.defaultBudget);
-      res.json({ success: true, budget: settings.defaultBudget });
-    } catch (error) {
-      console.error("Error resetting budgets:", error);
-      res.status(500).json({ message: "Failed to reset budgets" });
-    }
-  });
-
-  // Team limits (supports optional auctionId for per-auction limits)
+  // Team limits (requires auctionId - limits are per-auction)
   app.get("/api/limits", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.userId!;
-      let auctionId: number | undefined = undefined;
-      if (req.query.auctionId) {
-        const parsed = parseInt(req.query.auctionId);
-        if (!isNaN(parsed)) {
-          auctionId = parsed;
-        }
+      const auctionId = req.query.auctionId ? parseInt(req.query.auctionId) : undefined;
+      
+      if (!auctionId || isNaN(auctionId)) {
+        return res.status(400).json({ message: "auctionId is required" });
       }
+      
       const limitsInfo = await storage.getUserLimitsInfo(userId, auctionId);
       res.json(limitsInfo);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message === "Team not enrolled in this auction") {
+        return res.status(404).json({ message: error.message });
+      }
       console.error("Error fetching limits:", error);
       res.status(500).json({ message: "Failed to fetch limits" });
     }
@@ -843,41 +803,6 @@ export async function registerRoutes(
     }
   });
 
-  // Commissioner: Update user limits
-  app.patch("/api/users/:userId/limits", isAuthenticated, async (req: any, res) => {
-    try {
-      const adminId = req.session.userId!;
-      const admin = await storage.getUser(adminId);
-      
-      if (!admin?.isCommissioner) {
-        return res.status(403).json({ message: "Commissioner access required" });
-      }
-
-      const { userId } = req.params;
-      const { rosterLimit, ipLimit, paLimit } = req.body;
-
-      // Validate limits (null = unlimited, otherwise must be non-negative)
-      if (rosterLimit !== null && rosterLimit !== undefined && (typeof rosterLimit !== "number" || rosterLimit < 0)) {
-        return res.status(400).json({ message: "Invalid roster limit value" });
-      }
-      if (ipLimit !== null && ipLimit !== undefined && (typeof ipLimit !== "number" || ipLimit < 0)) {
-        return res.status(400).json({ message: "Invalid IP limit value" });
-      }
-      if (paLimit !== null && paLimit !== undefined && (typeof paLimit !== "number" || paLimit < 0)) {
-        return res.status(400).json({ message: "Invalid PA limit value" });
-      }
-
-      const updated = await storage.updateUserLimits(userId, { 
-        rosterLimit: rosterLimit ?? undefined, 
-        ipLimit: ipLimit ?? undefined, 
-        paLimit: paLimit ?? undefined 
-      });
-      res.json(updated);
-    } catch (error) {
-      console.error("Error updating user limits:", error);
-      res.status(500).json({ message: "Failed to update limits" });
-    }
-  });
 
   // CSV Export - Auction Results
   app.get("/api/exports/auction-results.csv", isAuthenticated, async (req: any, res) => {
@@ -1006,7 +931,7 @@ export async function registerRoutes(
     }
   });
 
-  // Commissioner: Create a single user with password
+  // Commissioner: Create a single user/team (no budget - budgets are per-auction)
   app.post("/api/users", isAuthenticated, async (req: any, res) => {
     try {
       const adminId = req.session.userId!;
@@ -1016,7 +941,7 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
-      const { email, firstName, lastName, teamName, budget, isCommissioner, password } = req.body;
+      const { email, firstName, lastName, teamName, isCommissioner, password } = req.body;
 
       if (!email) {
         return res.status(400).json({ message: "Email is required" });
@@ -1038,7 +963,6 @@ export async function registerRoutes(
         firstName,
         lastName,
         teamName,
-        budget: budget ?? 260,
         isCommissioner: isCommissioner ?? false,
         mustResetPassword: !password, // Must reset if auto-generated
       });
@@ -1050,7 +974,6 @@ export async function registerRoutes(
           firstName: user.firstName,
           lastName: user.lastName,
           teamName: user.teamName,
-          budget: user.budget,
           isCommissioner: user.isCommissioner,
         },
         temporaryPassword: !password ? userPassword : undefined,
@@ -1061,18 +984,17 @@ export async function registerRoutes(
     }
   });
 
-  // Bulk user creation validation schema
+  // Bulk user creation validation schema (no budget - budgets are per-auction)
   const bulkUserSchema = z.object({
     users: z.array(z.object({
       email: z.string().email("Invalid email format"),
       firstName: z.string().optional(),
       lastName: z.string().optional(),
       teamName: z.string().optional(),
-      budget: z.number().min(0).max(100000).optional(),
     })).min(1, "At least one user is required").max(500, "Maximum 500 users per upload"),
   });
 
-  // Commissioner: Bulk create users via CSV
+  // Commissioner: Bulk create users/teams via CSV
   app.post("/api/users/bulk", isAuthenticated, async (req: any, res) => {
     try {
       const adminId = req.session.userId!;
@@ -1094,7 +1016,6 @@ export async function registerRoutes(
       const { users: usersData } = validation.data;
 
       const results: { email: string; password: string; success: boolean; error?: string }[] = [];
-      const settings = await storage.getSettings();
 
       for (const userData of usersData) {
         const email = userData.email.trim();
@@ -1109,15 +1030,12 @@ export async function registerRoutes(
           const tempPassword = generateRandomPassword();
           const passwordHash = await hashPassword(tempPassword);
 
-          const budget = userData.budget !== undefined ? userData.budget : settings.defaultBudget;
-
           await storage.createUserWithPassword({
             email,
             passwordHash,
             firstName: userData.firstName?.trim(),
             lastName: userData.lastName?.trim(),
             teamName: userData.teamName?.trim(),
-            budget,
             isCommissioner: false,
             mustResetPassword: true,
           });
@@ -1204,9 +1122,6 @@ export async function registerRoutes(
         status: "draft",
         createdBy: userId,
       });
-
-      // Enroll all teams in the new auction
-      await storage.enrollAllTeamsInAuction(auction.id);
 
       res.json(auction);
     } catch (error) {
@@ -1369,6 +1284,85 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching auction teams:", error);
       res.status(500).json({ message: "Failed to fetch auction teams" });
+    }
+  });
+
+  // Get teams not enrolled in an auction
+  app.get("/api/auctions/:id/available-teams", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Commissioner or Super Admin access required" });
+      }
+
+      const auctionId = parseInt(req.params.id);
+      const availableTeams = await storage.getTeamsNotInAuction(auctionId);
+      res.json(availableTeams);
+    } catch (error) {
+      console.error("Error fetching available teams:", error);
+      res.status(500).json({ message: "Failed to fetch available teams" });
+    }
+  });
+
+  // Enroll teams in an auction
+  app.post("/api/auctions/:id/teams/enroll", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isCommissioner) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const auctionId = parseInt(req.params.id);
+      const { userIds, budget, rosterLimit, ipLimit, paLimit } = req.body;
+
+      if (!Array.isArray(userIds) || userIds.length === 0) {
+        return res.status(400).json({ message: "userIds array is required" });
+      }
+
+      if (typeof budget !== 'number' || budget < 0) {
+        return res.status(400).json({ message: "Valid budget is required" });
+      }
+
+      const teams = await storage.enrollTeamsInAuction(
+        auctionId, 
+        userIds, 
+        budget,
+        rosterLimit ?? null,
+        ipLimit ?? null,
+        paLimit ?? null
+      );
+      res.json(teams);
+    } catch (error) {
+      console.error("Error enrolling teams:", error);
+      res.status(500).json({ message: "Failed to enroll teams" });
+    }
+  });
+
+  // Remove a team from an auction
+  app.delete("/api/auctions/:id/teams/:userId", isAuthenticated, async (req: any, res) => {
+    try {
+      const sessionUserId = req.session.userId!;
+      const user = await storage.getUser(sessionUserId);
+      
+      if (!user?.isCommissioner) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const auctionId = parseInt(req.params.id);
+      const targetUserId = req.params.userId;
+
+      const result = await storage.removeTeamFromAuction(auctionId, targetUserId);
+      if (!result) {
+        return res.status(404).json({ message: "Team not found in auction" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error removing team from auction:", error);
+      res.status(500).json({ message: "Failed to remove team from auction" });
     }
   });
 
