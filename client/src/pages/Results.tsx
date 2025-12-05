@@ -16,6 +16,13 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -25,8 +32,8 @@ import {
 } from "@/components/ui/table";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { FreeAgentWithBids } from "@shared/schema";
-import { Trophy, RefreshCcw, Loader2 } from "lucide-react";
+import type { FreeAgentWithBids, Auction } from "@shared/schema";
+import { Trophy, RefreshCcw, Loader2, Archive } from "lucide-react";
 
 export default function Results() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
@@ -36,6 +43,7 @@ export default function Results() {
   const [relistMinBid, setRelistMinBid] = useState(1);
   const [relistMinYears, setRelistMinYears] = useState(1);
   const [relistEndDate, setRelistEndDate] = useState("");
+  const [selectedAuctionId, setSelectedAuctionId] = useState<string>("all");
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -50,8 +58,27 @@ export default function Results() {
     }
   }, [isAuthenticated, authLoading, toast]);
 
+  // Fetch all auctions for the dropdown
+  const { data: auctions } = useQuery<Auction[]>({
+    queryKey: ["/api/auctions"],
+    enabled: isAuthenticated,
+  });
+
+  // Build query key with optional auction filter
+  const resultsQueryKey = selectedAuctionId === "all" 
+    ? ["/api/results"] 
+    : ["/api/results", { auctionId: selectedAuctionId }];
+
   const { data: results, isLoading } = useQuery<FreeAgentWithBids[]>({
-    queryKey: ["/api/results"],
+    queryKey: resultsQueryKey,
+    queryFn: async () => {
+      const url = selectedAuctionId === "all" 
+        ? "/api/results" 
+        : `/api/results?auctionId=${selectedAuctionId}`;
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch results");
+      return res.json();
+    },
     enabled: isAuthenticated,
   });
 
@@ -146,9 +173,36 @@ export default function Results() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold">Auction Results</h1>
-        <p className="text-muted-foreground">Completed auctions and winning bids</p>
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Auction Results</h1>
+          <p className="text-muted-foreground">Completed auctions and winning bids</p>
+        </div>
+        
+        {auctions && auctions.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Archive className="h-4 w-4 text-muted-foreground" />
+            <Select
+              value={selectedAuctionId}
+              onValueChange={setSelectedAuctionId}
+            >
+              <SelectTrigger className="w-[200px]" data-testid="select-auction-filter">
+                <SelectValue placeholder="Select auction" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Auctions</SelectItem>
+                {auctions.map((auction) => (
+                  <SelectItem key={auction.id} value={String(auction.id)}>
+                    {auction.name}
+                    {auction.status === "active" && (
+                      <Badge variant="default" className="ml-2 text-xs">Active</Badge>
+                    )}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       {isLoading ? (
