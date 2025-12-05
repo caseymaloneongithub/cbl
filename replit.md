@@ -31,6 +31,7 @@ Preferred communication style: Simple, everyday language.
 - **Migrations**: Drizzle Kit for schema changes, stored in `/migrations`.
 - **User Table**: Stores only basic account info: email, firstName, lastName, teamName, isCommissioner, isSuperAdmin. No budget or limits.
 - **AuctionTeams Table**: Per-auction team participation with budget, rosterLimit, ipLimit, paLimit. Teams must be enrolled to participate.
+- **Query Optimization**: `enrichFreeAgentsWithBids` uses batch queries (GROUP BY, DISTINCT ON, IN clauses) instead of N+1 queries for fast free agent loading.
 
 ### Authentication & Authorization
 - **Authentication**: Email/password with bcrypt hashing (cost 12).

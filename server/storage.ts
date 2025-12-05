@@ -26,7 +26,7 @@ import {
   type InsertAuctionTeam,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, lt, sql, isNull } from "drizzle-orm";
+import { eq, and, desc, lt, sql, isNull, inArray } from "drizzle-orm";
 
 export interface IStorage {
   // User operations
@@ -397,30 +397,73 @@ export class DatabaseStorage implements IStorage {
   }
 
   private async enrichFreeAgentsWithBids(agents: FreeAgent[]): Promise<FreeAgentWithBids[]> {
-    const enriched: FreeAgentWithBids[] = [];
+    if (agents.length === 0) return [];
     
-    for (const agent of agents) {
-      const highestBid = await this.getHighestBidForAgent(agent.id);
-      const bidCount = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(bids)
-        .where(eq(bids.freeAgentId, agent.id));
-      
-      let highBidder: User | null = null;
-      if (highestBid) {
-        const [bidder] = await db.select().from(users).where(eq(users.id, highestBid.userId));
-        highBidder = bidder || null;
-      }
-      
-      enriched.push({
-        ...agent,
-        currentBid: highestBid || null,
-        highBidder,
-        bidCount: Number(bidCount[0]?.count || 0),
-      });
+    const agentIds = agents.map(a => a.id);
+    
+    // Batch query 1: Get all bid counts in one query
+    const bidCountsResult = await db
+      .select({
+        freeAgentId: bids.freeAgentId,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(bids)
+      .where(inArray(bids.freeAgentId, agentIds))
+      .groupBy(bids.freeAgentId);
+    
+    const bidCountMap = new Map<number, number>();
+    for (const row of bidCountsResult) {
+      bidCountMap.set(row.freeAgentId, row.count);
     }
     
-    return enriched;
+    // Batch query 2: Get highest bids for all agents using DISTINCT ON
+    const highestBidsResult = await db.execute(sql`
+      SELECT DISTINCT ON (free_agent_id) *
+      FROM bids
+      WHERE free_agent_id IN (${sql.join(agentIds.map(id => sql`${id}`), sql`, `)})
+      ORDER BY free_agent_id, total_value DESC
+    `);
+    
+    const highestBidMap = new Map<number, Bid>();
+    const bidderIds = new Set<string>();
+    for (const row of highestBidsResult.rows as any[]) {
+      const bid: Bid = {
+        id: row.id,
+        freeAgentId: row.free_agent_id,
+        userId: row.user_id,
+        amount: row.amount,
+        years: row.years,
+        totalValue: row.total_value,
+        isAutoBid: row.is_auto_bid,
+        createdAt: row.created_at,
+      };
+      highestBidMap.set(row.free_agent_id, bid);
+      bidderIds.add(row.user_id);
+    }
+    
+    // Batch query 3: Get all bidders in one query
+    const bidderMap = new Map<string, User>();
+    if (bidderIds.size > 0) {
+      const bidderIdsArray = Array.from(bidderIds);
+      const biddersResult = await db
+        .select()
+        .from(users)
+        .where(inArray(users.id, bidderIdsArray));
+      
+      for (const bidder of biddersResult) {
+        bidderMap.set(bidder.id, bidder);
+      }
+    }
+    
+    // Assemble the enriched results
+    return agents.map(agent => ({
+      ...agent,
+      currentBid: highestBidMap.get(agent.id) || null,
+      highBidder: highestBidMap.has(agent.id) 
+        ? bidderMap.get(highestBidMap.get(agent.id)!.userId) || null 
+        : null,
+      bidCount: bidCountMap.get(agent.id) || 0,
+    }));
   }
 
   async createFreeAgent(agent: InsertFreeAgent): Promise<FreeAgent> {
