@@ -1046,12 +1046,12 @@ export default function Commissioner() {
           </CardContent>
         </Card>
 
-        {/* Existing Teams Card with Tabs */}
+        {/* Teams Card with Tabs */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="h-5 w-5" />
-              Existing Teams
+              Teams
             </CardTitle>
             <CardDescription>
               View and manage team accounts. Teams enrolled in auctions can be archived instead of deleted.
@@ -1066,15 +1066,15 @@ export default function Commissioner() {
               <Tabs defaultValue="active" className="w-full">
                 <TabsList className="mb-4">
                   <TabsTrigger value="active" data-testid="tab-active-teams">
-                    Active ({owners?.filter(o => !o.isCommissioner && !o.isSuperAdmin && !o.isArchived).length || 0})
+                    Active ({owners?.filter(o => !o.isCommissioner && !o.isArchived).length || 0})
                   </TabsTrigger>
                   <TabsTrigger value="archived" data-testid="tab-archived-teams">
-                    Archived ({owners?.filter(o => !o.isCommissioner && !o.isSuperAdmin && o.isArchived).length || 0})
+                    Archived ({owners?.filter(o => !o.isCommissioner && o.isArchived).length || 0})
                   </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="active">
-                  {owners && owners.filter(o => !o.isCommissioner && !o.isSuperAdmin && !o.isArchived).length > 0 ? (
+                  {owners && owners.filter(o => !o.isCommissioner && !o.isArchived).length > 0 ? (
                     <div className="border rounded-lg overflow-hidden">
                       <Table>
                         <TableHeader>
@@ -1088,7 +1088,7 @@ export default function Commissioner() {
                         </TableHeader>
                         <TableBody>
                           {owners
-                            .filter(o => !o.isCommissioner && !o.isSuperAdmin && !o.isArchived)
+                            .filter(o => !o.isCommissioner && !o.isArchived)
                             .map((owner) => (
                               <TableRow key={owner.id}>
                                 <TableCell className="font-medium">{owner.email}</TableCell>
@@ -1178,7 +1178,7 @@ export default function Commissioner() {
                 </TabsContent>
 
                 <TabsContent value="archived">
-                  {owners && owners.filter(o => !o.isCommissioner && !o.isSuperAdmin && o.isArchived).length > 0 ? (
+                  {owners && owners.filter(o => !o.isCommissioner && o.isArchived).length > 0 ? (
                     <div className="border rounded-lg overflow-hidden">
                       <Table>
                         <TableHeader>
@@ -1192,7 +1192,7 @@ export default function Commissioner() {
                         </TableHeader>
                         <TableBody>
                           {owners
-                            .filter(o => !o.isCommissioner && !o.isSuperAdmin && o.isArchived)
+                            .filter(o => !o.isCommissioner && o.isArchived)
                             .map((owner) => (
                               <TableRow key={owner.id}>
                                 <TableCell className="font-medium">{owner.email}</TableCell>
