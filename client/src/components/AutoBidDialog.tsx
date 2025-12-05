@@ -148,7 +148,7 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange }: AutoBidDialogPr
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             <Zap className="h-5 w-5 text-primary" />
-            <span>Auto-Bid: "{freeAgent.name}" {freeAgent.team ? `("${freeAgent.team}")` : ""}</span>
+            <span>Auto-Bid: {freeAgent.name} {freeAgent.team ? `(${freeAgent.team})` : ""}</span>
           </DialogTitle>
           <DialogDescription>
             Set a maximum bid and the system will automatically bid for you.
