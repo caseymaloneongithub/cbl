@@ -1281,191 +1281,210 @@ export default function Commissioner() {
           </CardContent>
         </Card>
 
-        {/* League Owners */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              League Owners & Team Limits
-            </CardTitle>
-            <CardDescription>
-              View and manage team owners, budgets, and team limits. Leave blank for unlimited.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loadingOwners ? (
-              <div className="space-y-2">
-                {[...Array(4)].map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            ) : !owners || owners.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">
-                No owners have joined yet.
-              </p>
-            ) : (
-              <div className="border rounded-lg overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Owner</TableHead>
-                      <TableHead>Team</TableHead>
-                      <TableHead className="text-right">Budget</TableHead>
-                      <TableHead className="text-right">Roster Limit</TableHead>
-                      <TableHead className="text-right">IP Limit</TableHead>
-                      <TableHead className="text-right">PA Limit</TableHead>
-                      <TableHead className="text-center">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {owners.map((owner) => (
-                      <TableRow key={owner.id} data-testid={`owner-row-${owner.id}`}>
-                        <TableCell>
-                          <div>
-                            <span className="font-medium">
-                              {owner.firstName} {owner.lastName}
-                            </span>
-                            {owner.isCommissioner && (
-                              <Badge variant="secondary" className="ml-2">
-                                <Crown className="h-3 w-3 mr-1" />
-                                Comm
-                              </Badge>
-                            )}
-                            <p className="text-xs text-muted-foreground">{owner.email}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell>{owner.teamName || "-"}</TableCell>
-                        <TableCell className="text-right">${owner.budget}</TableCell>
-                        <TableCell className="text-right">
-                          <Input
-                            type="number"
-                            min="0"
-                            className="w-20 h-8 text-right"
-                            placeholder="--"
-                            defaultValue={owner.rosterLimit ?? ""}
-                            onBlur={(e) => {
-                              const val = e.target.value === "" ? null : parseInt(e.target.value);
-                              if (val !== owner.rosterLimit) {
-                                updateUserLimits.mutate({ userId: owner.id, limits: { rosterLimit: val } });
-                              }
-                            }}
-                            data-testid={`input-roster-limit-${owner.id}`}
-                          />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.1"
-                            className="w-20 h-8 text-right"
-                            placeholder="--"
-                            defaultValue={owner.ipLimit ?? ""}
-                            onBlur={(e) => {
-                              const val = e.target.value === "" ? null : parseFloat(e.target.value);
-                              if (val !== owner.ipLimit) {
-                                updateUserLimits.mutate({ userId: owner.id, limits: { ipLimit: val } });
-                              }
-                            }}
-                            data-testid={`input-ip-limit-${owner.id}`}
-                          />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Input
-                            type="number"
-                            min="0"
-                            className="w-20 h-8 text-right"
-                            placeholder="--"
-                            defaultValue={owner.paLimit ?? ""}
-                            onBlur={(e) => {
-                              const val = e.target.value === "" ? null : parseInt(e.target.value);
-                              if (val !== owner.paLimit) {
-                                updateUserLimits.mutate({ userId: owner.id, limits: { paLimit: val } });
-                              }
-                            }}
-                            data-testid={`input-pa-limit-${owner.id}`}
-                          />
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            {user?.isSuperAdmin && !owner.isCommissioner && !owner.isSuperAdmin && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => makeCommissioner.mutate(owner.id)}
-                                title="Make Commissioner"
-                                data-testid={`button-make-commissioner-${owner.id}`}
-                              >
-                                <Crown className="h-4 w-4" />
-                              </Button>
-                            )}
-                            {!owner.isCommissioner && !owner.isSuperAdmin && (
-                              <Dialog open={deleteTeamId === owner.id} onOpenChange={(open) => {
-                                if (!open) {
-                                  setDeleteTeamId(null);
-                                  setDeletingTeamName("");
-                                }
-                              }}>
-                                <DialogTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => {
-                                      setDeleteTeamId(owner.id);
-                                      setDeletingTeamName(`${owner.firstName || ""} ${owner.lastName || ""}`.trim() || owner.email);
-                                    }}
-                                    title="Delete Team"
-                                    data-testid={`button-delete-team-${owner.id}`}
-                                  >
-                                    <Trash2 className="h-4 w-4 text-destructive" />
-                                  </Button>
-                                </DialogTrigger>
-                                <DialogContent>
-                                  <DialogHeader>
-                                    <DialogTitle>Delete Team</DialogTitle>
-                                    <DialogDescription>
-                                      Are you sure you want to delete "{deletingTeamName}"? This action cannot be undone.
-                                      Teams can only be deleted if they have no bids or won players in any auction.
-                                    </DialogDescription>
-                                  </DialogHeader>
-                                  <DialogFooter>
-                                    <Button
-                                      variant="outline"
-                                      onClick={() => {
-                                        setDeleteTeamId(null);
-                                        setDeletingTeamName("");
-                                      }}
-                                    >
-                                      Cancel
-                                    </Button>
-                                    <Button
-                                      variant="destructive"
-                                      onClick={() => deleteTeam.mutate(owner.id)}
-                                      disabled={deleteTeam.isPending}
-                                      data-testid="button-confirm-delete-team"
-                                    >
-                                      {deleteTeam.isPending ? (
-                                        <>
-                                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                          Deleting...
-                                        </>
-                                      ) : (
-                                        "Delete Team"
-                                      )}
-                                    </Button>
-                                  </DialogFooter>
-                                </DialogContent>
-                              </Dialog>
-                            )}
-                          </div>
-                        </TableCell>
+        {/* League Owners - Only show when there's an active auction */}
+        {allAuctions?.some(a => a.status === "active") ? (
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                League Owners & Team Limits
+              </CardTitle>
+              <CardDescription>
+                View and manage team owners, budgets, and team limits for the active auction. Leave blank for unlimited.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingOwners ? (
+                <div className="space-y-2">
+                  {[...Array(4)].map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : !owners || owners.length === 0 ? (
+                <p className="text-muted-foreground text-center py-8">
+                  No owners have joined yet.
+                </p>
+              ) : (
+                <div className="border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Owner</TableHead>
+                        <TableHead>Team</TableHead>
+                        <TableHead className="text-right">Budget</TableHead>
+                        <TableHead className="text-right">Roster Limit</TableHead>
+                        <TableHead className="text-right">IP Limit</TableHead>
+                        <TableHead className="text-right">PA Limit</TableHead>
+                        <TableHead className="text-center">Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                    </TableHeader>
+                    <TableBody>
+                      {owners.map((owner) => (
+                        <TableRow key={owner.id} data-testid={`owner-row-${owner.id}`}>
+                          <TableCell>
+                            <div>
+                              <span className="font-medium">
+                                {owner.firstName} {owner.lastName}
+                              </span>
+                              {owner.isCommissioner && (
+                                <Badge variant="secondary" className="ml-2">
+                                  <Crown className="h-3 w-3 mr-1" />
+                                  Comm
+                                </Badge>
+                              )}
+                              <p className="text-xs text-muted-foreground">{owner.email}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell>{owner.teamName || "-"}</TableCell>
+                          <TableCell className="text-right">${owner.budget}</TableCell>
+                          <TableCell className="text-right">
+                            <Input
+                              type="number"
+                              min="0"
+                              className="w-20 h-8 text-right"
+                              placeholder="--"
+                              defaultValue={owner.rosterLimit ?? ""}
+                              onBlur={(e) => {
+                                const val = e.target.value === "" ? null : parseInt(e.target.value);
+                                if (val !== owner.rosterLimit) {
+                                  updateUserLimits.mutate({ userId: owner.id, limits: { rosterLimit: val } });
+                                }
+                              }}
+                              data-testid={`input-roster-limit-${owner.id}`}
+                            />
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.1"
+                              className="w-20 h-8 text-right"
+                              placeholder="--"
+                              defaultValue={owner.ipLimit ?? ""}
+                              onBlur={(e) => {
+                                const val = e.target.value === "" ? null : parseFloat(e.target.value);
+                                if (val !== owner.ipLimit) {
+                                  updateUserLimits.mutate({ userId: owner.id, limits: { ipLimit: val } });
+                                }
+                              }}
+                              data-testid={`input-ip-limit-${owner.id}`}
+                            />
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Input
+                              type="number"
+                              min="0"
+                              className="w-20 h-8 text-right"
+                              placeholder="--"
+                              defaultValue={owner.paLimit ?? ""}
+                              onBlur={(e) => {
+                                const val = e.target.value === "" ? null : parseInt(e.target.value);
+                                if (val !== owner.paLimit) {
+                                  updateUserLimits.mutate({ userId: owner.id, limits: { paLimit: val } });
+                                }
+                              }}
+                              data-testid={`input-pa-limit-${owner.id}`}
+                            />
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              {user?.isSuperAdmin && !owner.isCommissioner && !owner.isSuperAdmin && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => makeCommissioner.mutate(owner.id)}
+                                  title="Make Commissioner"
+                                  data-testid={`button-make-commissioner-${owner.id}`}
+                                >
+                                  <Crown className="h-4 w-4" />
+                                </Button>
+                              )}
+                              {!owner.isCommissioner && !owner.isSuperAdmin && (
+                                <Dialog open={deleteTeamId === owner.id} onOpenChange={(open) => {
+                                  if (!open) {
+                                    setDeleteTeamId(null);
+                                    setDeletingTeamName("");
+                                  }
+                                }}>
+                                  <DialogTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => {
+                                        setDeleteTeamId(owner.id);
+                                        setDeletingTeamName(`${owner.firstName || ""} ${owner.lastName || ""}`.trim() || owner.email);
+                                      }}
+                                      title="Delete Team"
+                                      data-testid={`button-delete-team-${owner.id}`}
+                                    >
+                                      <Trash2 className="h-4 w-4 text-destructive" />
+                                    </Button>
+                                  </DialogTrigger>
+                                  <DialogContent>
+                                    <DialogHeader>
+                                      <DialogTitle>Delete Team</DialogTitle>
+                                      <DialogDescription>
+                                        Are you sure you want to delete "{deletingTeamName}"? This action cannot be undone.
+                                        Teams can only be deleted if they have no bids or won players in any auction.
+                                      </DialogDescription>
+                                    </DialogHeader>
+                                    <DialogFooter>
+                                      <Button
+                                        variant="outline"
+                                        onClick={() => {
+                                          setDeleteTeamId(null);
+                                          setDeletingTeamName("");
+                                        }}
+                                      >
+                                        Cancel
+                                      </Button>
+                                      <Button
+                                        variant="destructive"
+                                        onClick={() => deleteTeam.mutate(owner.id)}
+                                        disabled={deleteTeam.isPending}
+                                        data-testid="button-confirm-delete-team"
+                                      >
+                                        {deleteTeam.isPending ? (
+                                          <>
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                            Deleting...
+                                          </>
+                                        ) : (
+                                          "Delete Team"
+                                        )}
+                                      </Button>
+                                    </DialogFooter>
+                                  </DialogContent>
+                                </Dialog>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                League Owners & Team Limits
+              </CardTitle>
+              <CardDescription>
+                Create an auction first to manage team-specific budgets and limits.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-muted-foreground text-center py-8">
+                No active auction. Create an auction in the Auction Management section above to manage team limits.
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* User Upload Card */}
         <Card>
