@@ -130,9 +130,10 @@ export async function registerRoutes(
   });
 
   // Free agents routes
-  app.get("/api/free-agents", isAuthenticated, async (req, res) => {
+  app.get("/api/free-agents", isAuthenticated, async (req: any, res) => {
     try {
-      const agents = await storage.getActiveFreeAgents();
+      const auctionId = req.query.auctionId ? parseInt(req.query.auctionId) : undefined;
+      const agents = await storage.getActiveFreeAgents(auctionId);
       res.json(agents);
     } catch (error) {
       console.error("Error fetching free agents:", error);
@@ -140,13 +141,26 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/results", isAuthenticated, async (req, res) => {
+  app.get("/api/results", isAuthenticated, async (req: any, res) => {
     try {
-      const agents = await storage.getClosedFreeAgents();
+      const auctionId = req.query.auctionId ? parseInt(req.query.auctionId) : undefined;
+      const agents = await storage.getClosedFreeAgents(auctionId);
       res.json(agents);
     } catch (error) {
       console.error("Error fetching results:", error);
       res.status(500).json({ message: "Failed to fetch results" });
+    }
+  });
+  
+  // Get all free agents for a specific auction (active and closed)
+  app.get("/api/auctions/:id/free-agents", isAuthenticated, async (req: any, res) => {
+    try {
+      const auctionId = parseInt(req.params.id);
+      const agents = await storage.getFreeAgentsByAuction(auctionId);
+      res.json(agents);
+    } catch (error) {
+      console.error("Error fetching auction free agents:", error);
+      res.status(500).json({ message: "Failed to fetch auction free agents" });
     }
   });
 

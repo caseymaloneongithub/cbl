@@ -263,22 +263,46 @@ export class DatabaseStorage implements IStorage {
     return this.enrichFreeAgentsWithBids(agents);
   }
 
-  async getActiveFreeAgents(): Promise<FreeAgentWithBids[]> {
+  async getActiveFreeAgents(auctionId?: number): Promise<FreeAgentWithBids[]> {
     const now = new Date();
+    const conditions = [
+      eq(freeAgents.isActive, true),
+      sql`${freeAgents.auctionEndTime} > ${now}`
+    ];
+    
+    if (auctionId !== undefined) {
+      conditions.push(eq(freeAgents.auctionId, auctionId));
+    }
+    
     const agents = await db
       .select()
       .from(freeAgents)
-      .where(and(eq(freeAgents.isActive, true), sql`${freeAgents.auctionEndTime} > ${now}`))
+      .where(and(...conditions))
       .orderBy(freeAgents.auctionEndTime);
     return this.enrichFreeAgentsWithBids(agents);
   }
 
-  async getClosedFreeAgents(): Promise<FreeAgentWithBids[]> {
+  async getClosedFreeAgents(auctionId?: number): Promise<FreeAgentWithBids[]> {
     const now = new Date();
+    const conditions = [sql`${freeAgents.auctionEndTime} <= ${now}`];
+    
+    if (auctionId !== undefined) {
+      conditions.push(eq(freeAgents.auctionId, auctionId));
+    }
+    
     const agents = await db
       .select()
       .from(freeAgents)
-      .where(sql`${freeAgents.auctionEndTime} <= ${now}`)
+      .where(and(...conditions))
+      .orderBy(desc(freeAgents.auctionEndTime));
+    return this.enrichFreeAgentsWithBids(agents);
+  }
+  
+  async getFreeAgentsByAuction(auctionId: number): Promise<FreeAgentWithBids[]> {
+    const agents = await db
+      .select()
+      .from(freeAgents)
+      .where(eq(freeAgents.auctionId, auctionId))
       .orderBy(desc(freeAgents.auctionEndTime));
     return this.enrichFreeAgentsWithBids(agents);
   }
