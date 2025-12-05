@@ -197,6 +197,25 @@ export async function registerRoutes(
     }
   });
 
+  // Get expired players with no bids for an auction (for relisting)
+  app.get("/api/auctions/:id/expired-no-bids", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const auctionId = parseInt(req.params.id);
+      const agents = await storage.getExpiredFreeAgentsNoBids(auctionId);
+      res.json(agents);
+    } catch (error) {
+      console.error("Error fetching expired players:", error);
+      res.status(500).json({ message: "Failed to fetch expired players" });
+    }
+  });
+
   app.post("/api/free-agents/bulk", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.userId!;

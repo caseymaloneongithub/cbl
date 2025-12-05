@@ -49,6 +49,7 @@ export interface IStorage {
   getAllFreeAgents(): Promise<FreeAgentWithBids[]>;
   getActiveFreeAgents(auctionId?: number): Promise<FreeAgentWithBids[]>;
   getClosedFreeAgents(auctionId?: number): Promise<FreeAgentWithBids[]>;
+  getExpiredFreeAgentsNoBids(auctionId: number): Promise<FreeAgentWithBids[]>;
   getFreeAgentsByAuction(auctionId: number): Promise<FreeAgentWithBids[]>;
   createFreeAgent(agent: InsertFreeAgent): Promise<FreeAgent>;
   createFreeAgentsBulk(agents: InsertFreeAgent[]): Promise<FreeAgent[]>;
@@ -328,6 +329,36 @@ export class DatabaseStorage implements IStorage {
       .where(and(...conditions))
       .orderBy(desc(freeAgents.auctionEndTime));
     return this.enrichFreeAgentsWithBids(agents);
+  }
+
+  async getExpiredFreeAgentsNoBids(auctionId: number): Promise<FreeAgentWithBids[]> {
+    const now = new Date();
+    
+    // Get expired players for this auction
+    const expiredAgents = await db
+      .select()
+      .from(freeAgents)
+      .where(and(
+        eq(freeAgents.auctionId, auctionId),
+        sql`${freeAgents.auctionEndTime} <= ${now}`,
+        eq(freeAgents.isActive, true)
+      ))
+      .orderBy(freeAgents.name);
+    
+    // Filter to only those with no bids
+    const agentsNoBids: FreeAgent[] = [];
+    for (const agent of expiredAgents) {
+      const bidCount = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(bids)
+        .where(eq(bids.freeAgentId, agent.id));
+      
+      if (Number(bidCount[0]?.count || 0) === 0) {
+        agentsNoBids.push(agent);
+      }
+    }
+    
+    return this.enrichFreeAgentsWithBids(agentsNoBids);
   }
   
   async getFreeAgentsByAuction(auctionId: number): Promise<FreeAgentWithBids[]> {
