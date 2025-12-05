@@ -1432,6 +1432,40 @@ export async function registerRoutes(
     }
   });
 
+  // Bulk enroll teams with individual budgets and limits
+  app.post("/api/auctions/:id/teams/enroll-bulk", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const auctionId = parseInt(req.params.id);
+      const { teams } = req.body;
+
+      if (!Array.isArray(teams) || teams.length === 0) {
+        return res.status(400).json({ message: "teams array is required" });
+      }
+
+      // Validate each team entry
+      for (const team of teams) {
+        if (!team.userId || typeof team.budget !== 'number' || team.budget < 0) {
+          return res.status(400).json({ 
+            message: `Invalid team entry: userId and valid budget are required` 
+          });
+        }
+      }
+
+      const enrolledTeams = await storage.enrollTeamsInAuctionBulk(auctionId, teams);
+      res.json(enrolledTeams);
+    } catch (error) {
+      console.error("Error bulk enrolling teams:", error);
+      res.status(500).json({ message: "Failed to enroll teams" });
+    }
+  });
+
   // Remove a team from an auction
   app.delete("/api/auctions/:id/teams/:userId", isAuthenticated, async (req: any, res) => {
     try {

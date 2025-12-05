@@ -132,6 +132,10 @@ export interface IStorage {
     ipLimit?: number | null,
     paLimit?: number | null
   ): Promise<AuctionTeam[]>;
+  enrollTeamsInAuctionBulk(
+    auctionId: number,
+    teams: { userId: string; budget: number; rosterLimit: number | null; ipLimit: number | null; paLimit: number | null }[]
+  ): Promise<AuctionTeam[]>;
   removeTeamFromAuction(auctionId: number, userId: string): Promise<boolean>;
   getTeamsNotInAuction(auctionId: number): Promise<User[]>;
   
@@ -1076,6 +1080,53 @@ export class DatabaseStorage implements IStorage {
         enrolledTeams.push(team);
       } else {
         enrolledTeams.push(existing);
+      }
+    }
+    
+    return enrolledTeams;
+  }
+
+  async enrollTeamsInAuctionBulk(
+    auctionId: number,
+    teams: { userId: string; budget: number; rosterLimit: number | null; ipLimit: number | null; paLimit: number | null }[]
+  ): Promise<AuctionTeam[]> {
+    const enrolledTeams: AuctionTeam[] = [];
+    
+    for (const teamData of teams) {
+      // Check if already enrolled
+      const [existing] = await db
+        .select()
+        .from(auctionTeams)
+        .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, teamData.userId)));
+      
+      if (!existing) {
+        const [team] = await db
+          .insert(auctionTeams)
+          .values({ 
+            auctionId, 
+            userId: teamData.userId, 
+            budget: teamData.budget,
+            rosterLimit: teamData.rosterLimit,
+            ipLimit: teamData.ipLimit,
+            paLimit: teamData.paLimit,
+            isActive: true 
+          })
+          .returning();
+        enrolledTeams.push(team);
+      } else {
+        // Update existing team's settings
+        const [updated] = await db
+          .update(auctionTeams)
+          .set({
+            budget: teamData.budget,
+            rosterLimit: teamData.rosterLimit,
+            ipLimit: teamData.ipLimit,
+            paLimit: teamData.paLimit,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(auctionTeams.auctionId, auctionId), eq(auctionTeams.userId, teamData.userId)))
+          .returning();
+        enrolledTeams.push(updated);
       }
     }
     
