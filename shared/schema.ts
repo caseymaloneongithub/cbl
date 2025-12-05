@@ -54,6 +54,7 @@ export const auctions = pgTable("auctions", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   name: varchar("name", { length: 255 }).notNull(),
   status: varchar("status", { length: 20 }).default("active").notNull(), // 'draft', 'active', 'closed'
+  bidIncrement: real("bid_increment").default(0.10).notNull(), // Minimum bid increment as decimal (0.10 = 10%)
   createdById: varchar("created_by_id").references(() => users.id),
   isDeleted: boolean("is_deleted").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
