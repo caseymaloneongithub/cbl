@@ -394,20 +394,16 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Auction end time must be in the future" });
       }
 
-      // Determine target auction - use provided auctionId or fall back to active auction
-      let targetAuctionId: number | null = null;
-      if (auctionId) {
-        const auction = await storage.getAuction(auctionId);
-        if (!auction) {
-          return res.status(400).json({ message: "Invalid auction ID" });
-        }
-        targetAuctionId = auctionId;
-      } else {
-        const activeAuction = await storage.getActiveAuction();
-        if (activeAuction) {
-          targetAuctionId = activeAuction.id;
-        }
+      // Require explicit auction ID - no fallback to active auction
+      if (!auctionId) {
+        return res.status(400).json({ message: "Auction selection is required" });
       }
+      
+      const auction = await storage.getAuction(auctionId);
+      if (!auction) {
+        return res.status(400).json({ message: "Invalid auction ID" });
+      }
+      const targetAuctionId = auctionId;
 
       const parseNum = (val: any): number | null => {
         if (val === undefined || val === null || val === "") return null;
