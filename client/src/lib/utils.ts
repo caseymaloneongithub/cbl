@@ -70,11 +70,11 @@ export function formatDate(date: Date | string): string {
 
 export function calculateTotalValue(amount: number, years: number, yearFactors: number[]): number {
   const factor = yearFactors[years - 1] || 1;
-  return amount * years * factor;
+  return amount * factor;
 }
 
 export function calculateMinimumBid(currentTotalValue: number, years: number, yearFactors: number[]): number {
   const factor = yearFactors[years - 1] || 1;
   const minTotalValue = currentTotalValue * 1.1;
-  return Math.ceil(minTotalValue / (years * factor));
+  return Math.ceil(minTotalValue / factor);
 }
