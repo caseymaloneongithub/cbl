@@ -1001,6 +1001,245 @@ export async function registerRoutes(
     }
   });
 
+  // Auction routes
+  app.get("/api/auctions", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Commissioner or Super Admin access required" });
+      }
+
+      const allAuctions = await storage.getAllAuctions();
+      res.json(allAuctions);
+    } catch (error) {
+      console.error("Error fetching auctions:", error);
+      res.status(500).json({ message: "Failed to fetch auctions" });
+    }
+  });
+
+  app.get("/api/auctions/active", isAuthenticated, async (req, res) => {
+    try {
+      const activeAuction = await storage.getActiveAuction();
+      res.json(activeAuction || null);
+    } catch (error) {
+      console.error("Error fetching active auction:", error);
+      res.status(500).json({ message: "Failed to fetch active auction" });
+    }
+  });
+
+  app.get("/api/auctions/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const auctionId = parseInt(req.params.id);
+      const auction = await storage.getAuction(auctionId);
+      
+      if (!auction) {
+        return res.status(404).json({ message: "Auction not found" });
+      }
+      
+      res.json(auction);
+    } catch (error) {
+      console.error("Error fetching auction:", error);
+      res.status(500).json({ message: "Failed to fetch auction" });
+    }
+  });
+
+  app.post("/api/auctions", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isCommissioner) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const { name } = req.body;
+      
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return res.status(400).json({ message: "Auction name is required" });
+      }
+
+      const auction = await storage.createAuction({
+        name: name.trim(),
+        status: "draft",
+        createdBy: userId,
+      });
+
+      // Enroll all teams in the new auction
+      await storage.enrollAllTeamsInAuction(auction.id);
+
+      res.json(auction);
+    } catch (error) {
+      console.error("Error creating auction:", error);
+      res.status(500).json({ message: "Failed to create auction" });
+    }
+  });
+
+  app.patch("/api/auctions/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isCommissioner) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const auctionId = parseInt(req.params.id);
+      const auction = await storage.getAuction(auctionId);
+      
+      if (!auction) {
+        return res.status(404).json({ message: "Auction not found" });
+      }
+
+      const { name, status } = req.body;
+      const updateData: any = {};
+      
+      if (name !== undefined) updateData.name = name.trim();
+      if (status !== undefined) {
+        if (!["draft", "active", "completed"].includes(status)) {
+          return res.status(400).json({ message: "Invalid status" });
+        }
+        
+        // If activating this auction, deactivate all others
+        if (status === "active") {
+          const allAuctions = await storage.getAllAuctions();
+          for (const a of allAuctions) {
+            if (a.id !== auctionId && a.status === "active") {
+              await storage.updateAuction(a.id, { status: "draft" });
+            }
+          }
+        }
+        
+        updateData.status = status;
+      }
+
+      const updatedAuction = await storage.updateAuction(auctionId, updateData);
+      res.json(updatedAuction);
+    } catch (error) {
+      console.error("Error updating auction:", error);
+      res.status(500).json({ message: "Failed to update auction" });
+    }
+  });
+
+  // Delete auction (requires password confirmation)
+  app.delete("/api/auctions/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isCommissioner) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const { password } = req.body;
+      
+      if (!password) {
+        return res.status(400).json({ message: "Password confirmation required" });
+      }
+
+      // Verify password using bcrypt
+      const bcrypt = await import("bcryptjs");
+      const isValidPassword = await bcrypt.compare(password, user.passwordHash || "");
+      
+      if (!isValidPassword) {
+        return res.status(401).json({ message: "Invalid password" });
+      }
+
+      const auctionId = parseInt(req.params.id);
+      const auction = await storage.getAuction(auctionId);
+      
+      if (!auction) {
+        return res.status(404).json({ message: "Auction not found" });
+      }
+
+      await storage.deleteAuction(auctionId);
+      res.json({ success: true, message: "Auction deleted" });
+    } catch (error) {
+      console.error("Error deleting auction:", error);
+      res.status(500).json({ message: "Failed to delete auction" });
+    }
+  });
+
+  // Reset auction (requires password confirmation)
+  app.post("/api/auctions/:id/reset", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isCommissioner) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const { password } = req.body;
+      
+      if (!password) {
+        return res.status(400).json({ message: "Password confirmation required" });
+      }
+
+      // Verify password using bcrypt
+      const bcrypt = await import("bcryptjs");
+      const isValidPassword = await bcrypt.compare(password, user.passwordHash || "");
+      
+      if (!isValidPassword) {
+        return res.status(401).json({ message: "Invalid password" });
+      }
+
+      const auctionId = parseInt(req.params.id);
+      const auction = await storage.getAuction(auctionId);
+      
+      if (!auction) {
+        return res.status(404).json({ message: "Auction not found" });
+      }
+
+      await storage.resetAuction(auctionId);
+      res.json({ success: true, message: "Auction reset successfully" });
+    } catch (error) {
+      console.error("Error resetting auction:", error);
+      res.status(500).json({ message: "Failed to reset auction" });
+    }
+  });
+
+  // Auction teams
+  app.get("/api/auctions/:id/teams", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Commissioner or Super Admin access required" });
+      }
+
+      const auctionId = parseInt(req.params.id);
+      const teams = await storage.getAuctionTeams(auctionId);
+      res.json(teams);
+    } catch (error) {
+      console.error("Error fetching auction teams:", error);
+      res.status(500).json({ message: "Failed to fetch auction teams" });
+    }
+  });
+
+  app.patch("/api/auctions/:id/teams/:userId", isAuthenticated, async (req: any, res) => {
+    try {
+      const sessionUserId = req.session.userId!;
+      const user = await storage.getUser(sessionUserId);
+      
+      if (!user?.isCommissioner) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const auctionId = parseInt(req.params.id);
+      const targetUserId = req.params.userId;
+      const { isActive } = req.body;
+
+      const team = await storage.setAuctionTeamActive(auctionId, targetUserId, isActive);
+      res.json(team);
+    } catch (error) {
+      console.error("Error updating auction team:", error);
+      res.status(500).json({ message: "Failed to update auction team" });
+    }
+  });
+
   return httpServer;
 }
 
