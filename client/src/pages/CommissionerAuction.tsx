@@ -43,7 +43,7 @@ import { isUnauthorizedError } from "@/lib/authUtils";
 import type { Auction, User } from "@shared/schema";
 import { 
   Settings, Users, Loader2, FileSpreadsheet, Trash2, DollarSign, Plus, UserPlus, 
-  Upload, ArrowLeft, Save, Check, X 
+  Upload, ArrowLeft, Save, Check, X, AlertCircle 
 } from "lucide-react";
 import {
   Dialog,
@@ -136,6 +136,18 @@ export default function CommissionerAuction() {
   const [enrollRosterLimit, setEnrollRosterLimit] = useState<string>("");
   const [enrollIpLimit, setEnrollIpLimit] = useState<string>("");
   const [enrollPaLimit, setEnrollPaLimit] = useState<string>("");
+  
+  interface ParsedTeamEnrollment {
+    abbreviation: string;
+    budget: number;
+    rosterLimit: number | null;
+    ipLimit: number | null;
+    paLimit: number | null;
+    matchedTeam?: User;
+    error?: string;
+  }
+  const [parsedTeamEnrollments, setParsedTeamEnrollments] = useState<ParsedTeamEnrollment[]>([]);
+  const [csvEnrollDragActive, setCsvEnrollDragActive] = useState(false);
   const [deleteTeamId, setDeleteTeamId] = useState<string | null>(null);
   const [deletingTeamName, setDeletingTeamName] = useState("");
   const [editingLimitsUserId, setEditingLimitsUserId] = useState<string | null>(null);
@@ -265,6 +277,30 @@ export default function CommissionerAuction() {
       toast({
         title: "Teams enrolled",
         description: "Selected teams have been enrolled in the auction.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to enroll teams.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const enrollTeamsBulk = useMutation({
+    mutationFn: async (data: { teams: { userId: string; budget: number; rosterLimit: number | null; ipLimit: number | null; paLimit: number | null }[] }) => {
+      const response = await apiRequest("POST", `/api/auctions/${numericAuctionId}/teams/enroll-bulk`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/auctions', numericAuctionId, 'teams'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/auctions', numericAuctionId, 'available-teams'] });
+      setEnrollDialogOpen(false);
+      setParsedTeamEnrollments([]);
+      toast({
+        title: "Teams enrolled",
+        description: "Teams have been enrolled in the auction with their individual budgets and limits.",
       });
     },
     onError: (error: Error) => {
@@ -527,6 +563,150 @@ export default function CommissionerAuction() {
       reader.readAsText(file);
     }
   }, [parseCSV]);
+
+  const parseTeamEnrollmentCSV = useCallback((text: string, teams: User[]) => {
+    const lines = text.split("\n").filter(line => line.trim());
+    if (lines.length < 2) {
+      toast({
+        title: "Invalid CSV",
+        description: "CSV must have a header row and at least one data row.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const headers = lines[0].toLowerCase().split(",").map(h => h.trim());
+    
+    const abbrevIdx = headers.findIndex(h => h === "abbreviation" || h === "abbrev" || h === "team");
+    const budgetIdx = headers.findIndex(h => h === "budget" || h === "budget_dollars" || h === "dollars");
+    const rosterIdx = headers.findIndex(h => h === "roster_limit" || h === "rosterlimit" || h === "players" || h === "roster");
+    const ipIdx = headers.findIndex(h => h === "ip_limit" || h === "iplimit" || h === "ip");
+    const paIdx = headers.findIndex(h => h === "pa_limit" || h === "palimit" || h === "pa");
+
+    if (abbrevIdx === -1) {
+      toast({
+        title: "Missing abbreviation column",
+        description: "CSV must have an 'abbreviation' column to match teams.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (budgetIdx === -1) {
+      toast({
+        title: "Missing budget column",
+        description: "CSV must have a 'budget' column.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    interface ParsedTeamEnrollment {
+      abbreviation: string;
+      budget: number;
+      rosterLimit: number | null;
+      ipLimit: number | null;
+      paLimit: number | null;
+      matchedTeam?: User;
+      error?: string;
+    }
+
+    const enrollments: ParsedTeamEnrollment[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(",").map(v => v.trim());
+      
+      const abbreviation = values[abbrevIdx]?.toUpperCase();
+      if (!abbreviation) continue;
+
+      const budget = parseFloat(values[budgetIdx]);
+      if (isNaN(budget) || budget < 0) {
+        enrollments.push({
+          abbreviation,
+          budget: 0,
+          rosterLimit: null,
+          ipLimit: null,
+          paLimit: null,
+          error: "Invalid budget value",
+        });
+        continue;
+      }
+
+      const parseOptionalNum = (val: string | undefined): number | null => {
+        if (!val || val === "") return null;
+        const num = parseFloat(val);
+        return isNaN(num) ? null : num;
+      };
+
+      const matchedTeam = teams.find(t => 
+        t.teamAbbreviation?.toUpperCase() === abbreviation
+      );
+
+      enrollments.push({
+        abbreviation,
+        budget,
+        rosterLimit: rosterIdx !== -1 ? parseOptionalNum(values[rosterIdx]) : null,
+        ipLimit: ipIdx !== -1 ? parseOptionalNum(values[ipIdx]) : null,
+        paLimit: paIdx !== -1 ? parseOptionalNum(values[paIdx]) : null,
+        matchedTeam,
+        error: matchedTeam ? undefined : "No team found with this abbreviation",
+      });
+    }
+
+    if (enrollments.length === 0) {
+      toast({
+        title: "No valid team data",
+        description: "Could not parse any valid team enrollment data from the CSV.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setParsedTeamEnrollments(enrollments);
+    const matched = enrollments.filter(e => e.matchedTeam).length;
+    const unmatched = enrollments.length - matched;
+    toast({
+      title: "CSV parsed",
+      description: `Found ${enrollments.length} teams. ${matched} matched, ${unmatched} unmatched.`,
+    });
+  }, [toast]);
+
+  const handleEnrollmentCsvDrag = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setCsvEnrollDragActive(true);
+    } else if (e.type === "dragleave") {
+      setCsvEnrollDragActive(false);
+    }
+  }, []);
+
+  const handleEnrollmentCsvDrop = useCallback((e: React.DragEvent, teams: User[]) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCsvEnrollDragActive(false);
+    
+    const file = e.dataTransfer.files[0];
+    if (file && (file.type === "text/csv" || file.name.endsWith(".csv"))) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target?.result as string;
+        parseTeamEnrollmentCSV(text, teams);
+      };
+      reader.readAsText(file);
+    }
+  }, [parseTeamEnrollmentCSV]);
+
+  const handleEnrollmentFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>, teams: User[]) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target?.result as string;
+        parseTeamEnrollmentCSV(text, teams);
+      };
+      reader.readAsText(file);
+    }
+  }, [parseTeamEnrollmentCSV]);
 
   // Loading state
   if (authLoading || auctionLoading) {
@@ -1187,133 +1367,166 @@ export default function CommissionerAuction() {
           setEnrollRosterLimit("");
           setEnrollIpLimit("");
           setEnrollPaLimit("");
+          setParsedTeamEnrollments([]);
         }
       }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Enroll Teams in Auction</DialogTitle>
             <DialogDescription>
-              Select teams to enroll in "{auction.name}". Set their starting budget and optional limits.
+              Upload a CSV file with team abbreviations, budgets, and limits to enroll teams in "{auction.name}".
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            {/* Team Selection */}
-            <div className="space-y-2">
-              <Label>Select Teams</Label>
-              {loadingAvailableTeams ? (
-                <div className="space-y-2">
-                  {[...Array(3)].map((_, i) => (
-                    <Skeleton key={i} className="h-8 w-full" />
-                  ))}
+            {loadingAvailableTeams ? (
+              <div className="space-y-2">
+                {[...Array(3)].map((_, i) => (
+                  <Skeleton key={i} className="h-8 w-full" />
+                ))}
+              </div>
+            ) : parsedTeamEnrollments.length === 0 ? (
+              <>
+                <div
+                  className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                    csvEnrollDragActive ? "border-primary bg-primary/5" : "border-muted-foreground/25"
+                  }`}
+                  onDragEnter={handleEnrollmentCsvDrag}
+                  onDragLeave={handleEnrollmentCsvDrag}
+                  onDragOver={handleEnrollmentCsvDrag}
+                  onDrop={(e) => handleEnrollmentCsvDrop(e, availableTeams || [])}
+                >
+                  <FileSpreadsheet className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+                  <p className="text-sm text-muted-foreground mb-2">
+                    Drag and drop a CSV file here, or click to browse
+                  </p>
+                  <Input
+                    type="file"
+                    accept=".csv"
+                    className="hidden"
+                    id="team-enroll-csv-upload"
+                    onChange={(e) => handleEnrollmentFileSelect(e, availableTeams || [])}
+                    data-testid="input-team-enroll-csv"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => document.getElementById("team-enroll-csv-upload")?.click()}
+                    data-testid="button-browse-team-csv"
+                  >
+                    <Upload className="mr-2 h-4 w-4" />
+                    Browse Files
+                  </Button>
                 </div>
-              ) : availableTeams && availableTeams.length > 0 ? (
-                <div className="max-h-48 overflow-y-auto border rounded-lg p-2 space-y-1">
-                  {availableTeams.map((team) => (
-                    <label
-                      key={team.id}
-                      className="flex items-center gap-2 p-2 rounded hover-elevate cursor-pointer"
-                    >
-                      <Checkbox
-                        checked={selectedTeamsToEnroll.includes(team.id)}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
-                            setSelectedTeamsToEnroll([...selectedTeamsToEnroll, team.id]);
-                          } else {
-                            setSelectedTeamsToEnroll(selectedTeamsToEnroll.filter(id => id !== team.id));
-                          }
-                        }}
-                        data-testid={`checkbox-enroll-${team.id}`}
-                      />
-                      <span className="flex-1">
-                        {team.teamName || `${team.firstName || ""} ${team.lastName || ""}`.trim() || team.email}
-                      </span>
-                      <span className="text-sm text-muted-foreground">{team.email}</span>
-                    </label>
-                  ))}
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <p className="font-medium">Required CSV columns:</p>
+                  <ul className="list-disc list-inside space-y-0.5">
+                    <li><code className="text-xs bg-muted px-1 rounded">abbreviation</code> - Team abbreviation (3 letters)</li>
+                    <li><code className="text-xs bg-muted px-1 rounded">budget</code> - Budget amount in dollars</li>
+                  </ul>
+                  <p className="font-medium mt-2">Optional columns:</p>
+                  <ul className="list-disc list-inside space-y-0.5">
+                    <li><code className="text-xs bg-muted px-1 rounded">roster_limit</code> - Max players</li>
+                    <li><code className="text-xs bg-muted px-1 rounded">ip_limit</code> - IP limit for pitchers</li>
+                    <li><code className="text-xs bg-muted px-1 rounded">pa_limit</code> - PA limit for hitters</li>
+                  </ul>
                 </div>
-              ) : (
-                <p className="text-sm text-muted-foreground py-4 text-center">
-                  All teams are already enrolled in this auction.
-                </p>
-              )}
-            </div>
-
-            {/* Budget */}
-            <div className="space-y-2">
-              <Label htmlFor="enroll-budget">Starting Budget ($)</Label>
-              <Input
-                id="enroll-budget"
-                type="number"
-                min="1"
-                value={enrollBudget}
-                onChange={(e) => setEnrollBudget(parseInt(e.target.value) || 260)}
-                data-testid="input-enroll-budget"
-              />
-            </div>
-
-            {/* Limits */}
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="enroll-roster-limit">Roster Limit</Label>
-                <Input
-                  id="enroll-roster-limit"
-                  type="number"
-                  placeholder="None"
-                  value={enrollRosterLimit}
-                  onChange={(e) => setEnrollRosterLimit(e.target.value)}
-                  data-testid="input-enroll-roster-limit"
-                />
+              </>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="font-medium">
+                      {parsedTeamEnrollments.filter(e => e.matchedTeam && !e.error).length} teams ready to enroll
+                    </p>
+                    {parsedTeamEnrollments.filter(e => e.error).length > 0 && (
+                      <p className="text-sm text-destructive">
+                        {parsedTeamEnrollments.filter(e => e.error).length} teams with errors
+                      </p>
+                    )}
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => setParsedTeamEnrollments([])}
+                    data-testid="button-clear-team-csv"
+                  >
+                    <X className="mr-2 h-4 w-4" />
+                    Clear
+                  </Button>
+                </div>
+                <div className="border rounded-lg overflow-hidden max-h-64 overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Abbrev</TableHead>
+                        <TableHead>Team</TableHead>
+                        <TableHead>Budget</TableHead>
+                        <TableHead>Roster</TableHead>
+                        <TableHead>IP</TableHead>
+                        <TableHead>PA</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {parsedTeamEnrollments.map((enrollment, idx) => (
+                        <TableRow key={idx} className={enrollment.error ? "bg-destructive/10" : ""}>
+                          <TableCell>
+                            {enrollment.error ? (
+                              <AlertCircle className="h-4 w-4 text-destructive" />
+                            ) : (
+                              <Check className="h-4 w-4 text-green-500" />
+                            )}
+                          </TableCell>
+                          <TableCell className="font-mono">{enrollment.abbreviation}</TableCell>
+                          <TableCell>
+                            {enrollment.matchedTeam ? (
+                              enrollment.matchedTeam.teamName || enrollment.matchedTeam.email
+                            ) : (
+                              <span className="text-muted-foreground text-sm">{enrollment.error}</span>
+                            )}
+                          </TableCell>
+                          <TableCell>${enrollment.budget.toLocaleString()}</TableCell>
+                          <TableCell>{enrollment.rosterLimit ?? "-"}</TableCell>
+                          <TableCell>{enrollment.ipLimit ?? "-"}</TableCell>
+                          <TableCell>{enrollment.paLimit ?? "-"}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="enroll-ip-limit">IP Limit</Label>
-                <Input
-                  id="enroll-ip-limit"
-                  type="number"
-                  placeholder="None"
-                  value={enrollIpLimit}
-                  onChange={(e) => setEnrollIpLimit(e.target.value)}
-                  data-testid="input-enroll-ip-limit"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="enroll-pa-limit">PA Limit</Label>
-                <Input
-                  id="enroll-pa-limit"
-                  type="number"
-                  placeholder="None"
-                  value={enrollPaLimit}
-                  onChange={(e) => setEnrollPaLimit(e.target.value)}
-                  data-testid="input-enroll-pa-limit"
-                />
-              </div>
-            </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEnrollDialogOpen(false)}>
               Cancel
             </Button>
-            <Button
-              onClick={() => {
-                enrollTeams.mutate({
-                  userIds: selectedTeamsToEnroll,
-                  budget: enrollBudget,
-                  rosterLimit: enrollRosterLimit ? parseInt(enrollRosterLimit) : undefined,
-                  ipLimit: enrollIpLimit ? parseInt(enrollIpLimit) : undefined,
-                  paLimit: enrollPaLimit ? parseInt(enrollPaLimit) : undefined,
-                });
-              }}
-              disabled={enrollTeams.isPending || selectedTeamsToEnroll.length === 0}
-              data-testid="button-confirm-enroll"
-            >
-              {enrollTeams.isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Enrolling...
-                </>
-              ) : (
-                `Enroll ${selectedTeamsToEnroll.length} Team${selectedTeamsToEnroll.length !== 1 ? 's' : ''}`
-              )}
-            </Button>
+            {parsedTeamEnrollments.length > 0 && (
+              <Button
+                onClick={() => {
+                  const validEnrollments = parsedTeamEnrollments
+                    .filter(e => e.matchedTeam && !e.error)
+                    .map(e => ({
+                      userId: e.matchedTeam!.id,
+                      budget: e.budget,
+                      rosterLimit: e.rosterLimit,
+                      ipLimit: e.ipLimit,
+                      paLimit: e.paLimit,
+                    }));
+                  enrollTeamsBulk.mutate({ teams: validEnrollments });
+                }}
+                disabled={enrollTeamsBulk.isPending || parsedTeamEnrollments.filter(e => e.matchedTeam && !e.error).length === 0}
+                data-testid="button-confirm-enroll"
+              >
+                {enrollTeamsBulk.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Enrolling...
+                  </>
+                ) : (
+                  `Enroll ${parsedTeamEnrollments.filter(e => e.matchedTeam && !e.error).length} Teams`
+                )}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
