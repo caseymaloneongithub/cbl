@@ -737,6 +737,11 @@ export default function Commissioner() {
     e.stopPropagation();
     setDragActive(false);
     
+    // Guard: require auction selection before processing files
+    if (!selectedAuctionForUpload) {
+      return;
+    }
+    
     const file = e.dataTransfer.files[0];
     if (file && file.type === "text/csv") {
       const reader = new FileReader();
@@ -746,9 +751,15 @@ export default function Commissioner() {
       };
       reader.readAsText(file);
     }
-  }, [parseCSV]);
+  }, [parseCSV, selectedAuctionForUpload]);
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    // Guard: require auction selection before processing files
+    if (!selectedAuctionForUpload) {
+      e.target.value = ""; // Reset the input
+      return;
+    }
+    
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
@@ -758,7 +769,7 @@ export default function Commissioner() {
       };
       reader.readAsText(file);
     }
-  }, [parseCSV]);
+  }, [parseCSV, selectedAuctionForUpload]);
 
   const handleUserDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -2069,21 +2080,55 @@ export default function Commissioner() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Drop Zone */}
+          {/* Auction Selection - Required before file upload */}
+          <div className="flex items-center gap-4 p-3 bg-muted/50 rounded-lg">
+            <Label className="text-sm font-medium whitespace-nowrap">Target Auction:</Label>
+            <Select
+              value={selectedAuctionForUpload}
+              onValueChange={setSelectedAuctionForUpload}
+            >
+              <SelectTrigger className="flex-1" data-testid="select-upload-auction">
+                <SelectValue placeholder="Select an auction first" />
+              </SelectTrigger>
+              <SelectContent>
+                {allAuctions && allAuctions.length > 0 ? (
+                  allAuctions.map((auction) => (
+                    <SelectItem key={auction.id} value={String(auction.id)}>
+                      {auction.name} {auction.status === "active" && "(Active)"}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="none" disabled>No auctions - create one first</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+          
+          {(!allAuctions || allAuctions.length === 0) && (
+            <div className="text-sm text-amber-600 dark:text-amber-400 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
+              Please create an auction in the Auction Management section above before uploading players.
+            </div>
+          )}
+
+          {/* Drop Zone - only enabled when auction is selected */}
           <div
             className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-              dragActive
-                ? "border-primary bg-primary/5"
-                : "border-muted-foreground/25 hover:border-muted-foreground/50"
+              !selectedAuctionForUpload
+                ? "border-muted-foreground/15 bg-muted/30 opacity-60"
+                : dragActive
+                  ? "border-primary bg-primary/5"
+                  : "border-muted-foreground/25 hover:border-muted-foreground/50"
             }`}
-            onDragEnter={handleDrag}
-            onDragLeave={handleDrag}
-            onDragOver={handleDrag}
-            onDrop={handleDrop}
+            onDragEnter={selectedAuctionForUpload ? handleDrag : undefined}
+            onDragLeave={selectedAuctionForUpload ? handleDrag : undefined}
+            onDragOver={selectedAuctionForUpload ? handleDrag : undefined}
+            onDrop={selectedAuctionForUpload ? handleDrop : undefined}
           >
             <FileSpreadsheet className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <p className="text-muted-foreground mb-4">
-              Drag and drop a CSV file here, or click to select
+              {selectedAuctionForUpload 
+                ? "Drag and drop a CSV file here, or click to select"
+                : "Select an auction above to enable file upload"}
             </p>
             <input
               type="file"
@@ -2092,12 +2137,19 @@ export default function Commissioner() {
               className="hidden"
               id="csv-upload"
               data-testid="input-csv-upload"
+              disabled={!selectedAuctionForUpload}
             />
-            <Button variant="outline" asChild>
-              <label htmlFor="csv-upload" className="cursor-pointer">
+            {selectedAuctionForUpload ? (
+              <Button variant="outline" asChild>
+                <label htmlFor="csv-upload" className="cursor-pointer">
+                  Select CSV File
+                </label>
+              </Button>
+            ) : (
+              <Button variant="outline" disabled>
                 Select CSV File
-              </label>
-            </Button>
+              </Button>
+            )}
           </div>
 
           {/* Preview Table */}
@@ -2153,36 +2205,6 @@ export default function Commissioner() {
                   </TableBody>
                 </Table>
               </div>
-
-              {/* Auction Selection for Upload */}
-              <div className="flex items-center gap-4 p-3 bg-muted/50 rounded-lg">
-                <Label className="text-sm font-medium whitespace-nowrap">Target Auction:</Label>
-                <Select
-                  value={selectedAuctionForUpload}
-                  onValueChange={setSelectedAuctionForUpload}
-                >
-                  <SelectTrigger className="flex-1" data-testid="select-upload-auction">
-                    <SelectValue placeholder="Select an auction (or create one first)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {allAuctions && allAuctions.length > 0 ? (
-                      allAuctions.map((auction) => (
-                        <SelectItem key={auction.id} value={String(auction.id)}>
-                          {auction.name} {auction.status === "active" && "(Active)"}
-                        </SelectItem>
-                      ))
-                    ) : (
-                      <SelectItem value="none" disabled>No auctions - create one first</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              {(!allAuctions || allAuctions.length === 0) && (
-                <div className="text-sm text-amber-600 dark:text-amber-400 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
-                  Please create an auction in the Auction Management section above before uploading players.
-                </div>
-              )}
 
               <AlertDialog>
                 <AlertDialogTrigger asChild>
