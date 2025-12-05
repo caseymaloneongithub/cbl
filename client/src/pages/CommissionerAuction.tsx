@@ -71,9 +71,8 @@ const settingsSchema = z.object({
   yearFactor3: z.number().min(0.1).max(10),
   yearFactor4: z.number().min(0.1).max(10),
   yearFactor5: z.number().min(0.1).max(10),
-  defaultBudget: z.number().min(1).max(10000),
   enforceBudget: z.boolean(),
-  bidIncrement: z.number().min(1).max(100),
+  bidIncrement: z.number().min(0.01).max(100),
 });
 
 const addPlayerSchema = z.object({
@@ -169,7 +168,6 @@ export default function CommissionerAuction() {
       yearFactor3: 1.33,
       yearFactor4: 1.43,
       yearFactor5: 1.55,
-      defaultBudget: 260,
       enforceBudget: true,
       bidIncrement: 1,
     },
@@ -197,11 +195,9 @@ export default function CommissionerAuction() {
         yearFactor3: Number(auction.yearFactor3) || 1.33,
         yearFactor4: Number(auction.yearFactor4) || 1.43,
         yearFactor5: Number(auction.yearFactor5) || 1.55,
-        defaultBudget: auction.defaultBudget || 260,
         enforceBudget: auction.enforceBudget ?? true,
         bidIncrement: auction.bidIncrement || 1,
       });
-      setEnrollBudget(auction.defaultBudget || 260);
     }
   }, [auction, settingsForm]);
 
@@ -628,26 +624,7 @@ export default function CommissionerAuction() {
                   />
                 ))}
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <FormField
-                  control={settingsForm.control}
-                  name="defaultBudget"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Default Budget ($)</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min="1"
-                          {...field}
-                          onChange={(e) => field.onChange(parseInt(e.target.value))}
-                          data-testid="input-default-budget"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                   control={settingsForm.control}
                   name="bidIncrement"
