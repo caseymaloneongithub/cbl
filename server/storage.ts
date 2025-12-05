@@ -144,6 +144,9 @@ export interface IStorage {
   // Team deletion
   canDeleteUser(userId: string): Promise<{ canDelete: boolean; reason?: string }>;
   deleteUser(userId: string): Promise<void>;
+  
+  // Auction finalization (background job)
+  finalizeClosedAuctions(): Promise<{ finalized: number; errors: string[] }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1335,6 +1338,45 @@ export class DatabaseStorage implements IStorage {
     }
     
     return updated;
+  }
+  
+  // Finalize closed auctions - set winner for auctions that have ended
+  async finalizeClosedAuctions(): Promise<{ finalized: number; errors: string[] }> {
+    const now = new Date();
+    const errors: string[] = [];
+    let finalized = 0;
+    
+    // Find all free agents that have closed but don't have a winner set
+    const closedWithoutWinner = await db
+      .select()
+      .from(freeAgents)
+      .where(
+        and(
+          sql`${freeAgents.auctionEndTime} <= ${now}`,
+          isNull(freeAgents.winnerId)
+        )
+      );
+    
+    for (const agent of closedWithoutWinner) {
+      try {
+        // Get the highest bid for this agent
+        const highestBid = await this.getHighestBidForAgent(agent.id);
+        
+        if (highestBid) {
+          // Set the winner
+          await this.updateFreeAgentWinner(agent.id, highestBid.userId, highestBid.id);
+          finalized++;
+          console.log(`[Auction Job] Finalized: ${agent.name} won by user ${highestBid.userId} with $${highestBid.amount} x ${highestBid.years}yr`);
+        }
+        // If no bids, leave winnerId as null (commissioner can relist)
+      } catch (error) {
+        const message = `Failed to finalize ${agent.name} (ID: ${agent.id}): ${error}`;
+        errors.push(message);
+        console.error(`[Auction Job] ${message}`);
+      }
+    }
+    
+    return { finalized, errors };
   }
 }
 

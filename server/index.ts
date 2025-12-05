@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { storage } from "./storage";
 
 const app = express();
 const httpServer = createServer(app);
@@ -93,6 +94,36 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
+      
+      // Start the auction finalization job - runs every minute
+      startAuctionFinalizationJob();
     },
   );
 })();
+
+// Background job to finalize closed auctions every minute
+function startAuctionFinalizationJob() {
+  const INTERVAL_MS = 60 * 1000; // 1 minute
+  
+  log("Auction finalization job started (runs every minute)", "auction-job");
+  
+  // Run immediately on startup to catch any missed auctions
+  runFinalization();
+  
+  // Then run every minute
+  setInterval(runFinalization, INTERVAL_MS);
+}
+
+async function runFinalization() {
+  try {
+    const result = await storage.finalizeClosedAuctions();
+    if (result.finalized > 0) {
+      log(`Finalized ${result.finalized} auction(s)`, "auction-job");
+    }
+    if (result.errors.length > 0) {
+      log(`Errors: ${result.errors.join(", ")}`, "auction-job");
+    }
+  } catch (error) {
+    log(`Finalization job error: ${error}`, "auction-job");
+  }
+}
