@@ -89,7 +89,8 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange }: AutoBidDialogPr
 
   const watchMaxAmount = form.watch("maxAmount");
   const watchIsActive = form.watch("isActive");
-  const maxTotalValue = calculateTotalValue(watchMaxAmount || 0, selectedYears, yearFactors);
+  const factor = yearFactors[selectedYears - 1] || 1;
+  const maxTotalValue = (watchMaxAmount || 0) * factor;
 
   const saveAutoBid = useMutation({
     mutationFn: async (data: AutoBidFormData) => {
@@ -257,7 +258,7 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange }: AutoBidDialogPr
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
-                      Will bid up to {formatCurrency(watchMaxAmount)}/yr × {selectedYears}yr × {yearFactors[selectedYears - 1]}
+                      {formatCurrency(watchMaxAmount)} × {factor}
                     </p>
                   </div>
 
