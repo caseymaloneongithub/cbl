@@ -213,23 +213,23 @@ export default function Home() {
               </div>
             ) : budget ? (
               <div className="space-y-4">
-                <div className="grid grid-cols-3 gap-4 text-center">
+                <div className="grid grid-cols-3 gap-2 sm:gap-4 text-center">
                   <div>
                     <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Spent</div>
-                    <div className="text-lg font-bold font-mono" data-testid="text-budget-spent">
+                    <div className="text-sm sm:text-lg font-bold font-mono" data-testid="text-budget-spent">
                       {formatCurrency(Math.floor(budget.spent))}
                     </div>
                   </div>
                   <div>
                     <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Committed</div>
-                    <div className="text-lg font-bold font-mono" data-testid="text-budget-committed">
+                    <div className="text-sm sm:text-lg font-bold font-mono" data-testid="text-budget-committed">
                       {formatCurrency(Math.floor(budget.committed))}
                     </div>
                   </div>
                   <div>
                     <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Available</div>
                     <div 
-                      className={`text-lg font-bold font-mono ${budget.available < 20 ? 'text-destructive' : ''}`}
+                      className={`text-sm sm:text-lg font-bold font-mono ${budget.available < 20 ? 'text-destructive' : ''}`}
                       data-testid="text-budget-available"
                     >
                       {formatCurrency(Math.floor(budget.available))}
@@ -237,7 +237,7 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <div className="flex justify-between text-xs text-muted-foreground">
+                  <div className="flex flex-wrap justify-between gap-1 text-xs text-muted-foreground">
                     <span>Budget Usage</span>
                     <span>{formatCurrency(Math.floor(budget.spent + budget.committed))} / {formatCurrency(budget.budget)}</span>
                   </div>
@@ -250,12 +250,12 @@ export default function Home() {
                 {/* IP and PA Limits */}
                 {limits && (limits.ipLimit !== null || limits.paLimit !== null) && (
                   <div className="pt-3 border-t">
-                    <div className="grid grid-cols-2 gap-4 text-center">
+                    <div className="grid grid-cols-2 gap-2 sm:gap-4 text-center">
                       {limits.ipLimit !== null && (
                         <div>
                           <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">IP Limit</div>
                           <div 
-                            className={`text-lg font-bold font-mono ${limits.ipAvailable !== null && limits.ipAvailable < 50 ? 'text-destructive' : ''}`}
+                            className={`text-sm sm:text-lg font-bold font-mono ${limits.ipAvailable !== null && limits.ipAvailable < 50 ? 'text-destructive' : ''}`}
                             data-testid="text-ip-limit"
                           >
                             {limits.ipUsed} / {limits.ipLimit}
@@ -269,7 +269,7 @@ export default function Home() {
                         <div>
                           <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">PA Limit</div>
                           <div 
-                            className={`text-lg font-bold font-mono ${limits.paAvailable !== null && limits.paAvailable < 100 ? 'text-destructive' : ''}`}
+                            className={`text-sm sm:text-lg font-bold font-mono ${limits.paAvailable !== null && limits.paAvailable < 100 ? 'text-destructive' : ''}`}
                             data-testid="text-pa-limit"
                           >
                             {limits.paUsed} / {limits.paLimit}
