@@ -25,7 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatCurrency, calculateTotalValue } from "@/lib/utils";
+import { formatCurrency, calculateTotalValue, formatNumberWithCommas, parseFormattedNumber } from "@/lib/utils";
 import { CountdownTimer } from "./CountdownTimer";
 import type { FreeAgentWithBids, LeagueSettings, AutoBid } from "@shared/schema";
 import { isUnauthorizedError } from "@/lib/authUtils";
@@ -287,17 +287,18 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.
                           <div className="relative">
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
                             <Input
-                              type="number"
-                              value={field.value || ""}
+                              type="text"
+                              inputMode="numeric"
+                              value={formatNumberWithCommas(field.value)}
                               onChange={(e) => {
                                 const val = e.target.value;
-                                field.onChange(val === "" ? 0 : parseInt(val, 10));
+                                const numericOnly = val.replace(/[^\d]/g, '');
+                                field.onChange(numericOnly === "" ? 0 : parseInt(numericOnly, 10));
                               }}
                               onBlur={field.onBlur}
                               name={field.name}
                               ref={field.ref}
                               className="pl-7 font-mono text-lg"
-                              min={1}
                               data-testid="input-max-bid"
                             />
                           </div>

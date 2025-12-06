@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatCurrency, calculateTotalValue, calculateMinimumBid } from "@/lib/utils";
+import { formatCurrency, calculateTotalValue, calculateMinimumBid, formatNumberWithCommas } from "@/lib/utils";
 import { CountdownTimer } from "./CountdownTimer";
 import type { FreeAgentWithBids, LeagueSettings, BidWithUser } from "@shared/schema";
 import { isUnauthorizedError } from "@/lib/authUtils";
@@ -226,11 +226,17 @@ export function BidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.10 }
                       <div className="relative">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
                         <Input
-                          type="number"
-                          {...field}
-                          onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                          type="text"
+                          inputMode="numeric"
+                          value={formatNumberWithCommas(field.value)}
+                          onChange={(e) => {
+                            const numericOnly = e.target.value.replace(/[^\d]/g, '');
+                            field.onChange(numericOnly === "" ? 0 : parseInt(numericOnly, 10));
+                          }}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
                           className="pl-7 font-mono text-lg"
-                          min={1}
                           data-testid="input-bid-amount"
                         />
                       </div>

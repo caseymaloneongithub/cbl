@@ -78,3 +78,15 @@ export function calculateMinimumBid(currentTotalValue: number, years: number, ye
   const minTotalValue = currentTotalValue * (1 + bidIncrement);
   return Math.ceil(minTotalValue / factor);
 }
+
+export function formatNumberWithCommas(value: number | string): string {
+  const num = typeof value === 'string' ? parseFormattedNumber(value) : value;
+  if (num === 0 || isNaN(num)) return '';
+  return new Intl.NumberFormat('en-US').format(num);
+}
+
+export function parseFormattedNumber(value: string): number {
+  const cleaned = value.replace(/,/g, '');
+  const num = parseInt(cleaned, 10);
+  return isNaN(num) ? 0 : num;
+}
