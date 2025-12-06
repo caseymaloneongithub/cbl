@@ -41,10 +41,10 @@ import {
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { formatCurrency, formatNumberWithCommas } from "@/lib/utils";
-import type { Auction, User } from "@shared/schema";
+import type { Auction, User, FreeAgentWithBids } from "@shared/schema";
 import { 
   Settings, Users, Loader2, FileSpreadsheet, Trash2, DollarSign, Plus, UserPlus, 
-  Upload, ArrowLeft, Save, Check, X, AlertCircle 
+  Upload, ArrowLeft, Save, Check, X, AlertCircle, RefreshCcw, Clock 
 } from "lucide-react";
 import {
   Dialog,
@@ -153,6 +153,13 @@ export default function CommissionerAuction() {
   const [deletingTeamName, setDeletingTeamName] = useState("");
   const [editingLimitsUserId, setEditingLimitsUserId] = useState<string | null>(null);
   const [editingLimits, setEditingLimits] = useState({ rosterLimit: "", ipLimit: "", paLimit: "", budget: "" });
+  
+  // Expired players relist state
+  const [relistDialogOpen, setRelistDialogOpen] = useState(false);
+  const [selectedExpiredPlayer, setSelectedExpiredPlayer] = useState<FreeAgentWithBids | null>(null);
+  const [relistMinBid, setRelistMinBid] = useState(1);
+  const [relistMinYears, setRelistMinYears] = useState(1);
+  const [relistEndDate, setRelistEndDate] = useState("");
 
   // Fetch auction details
   const { data: auction, isLoading: auctionLoading } = useQuery<Auction>({
@@ -170,6 +177,12 @@ export default function CommissionerAuction() {
   const { data: availableTeams, isLoading: loadingAvailableTeams } = useQuery<User[]>({
     queryKey: ['/api/auctions', numericAuctionId, 'available-teams'],
     enabled: !!numericAuctionId && enrollDialogOpen,
+  });
+
+  // Fetch expired players with no bids
+  const { data: expiredNoBidPlayers, isLoading: expiredPlayersLoading } = useQuery<FreeAgentWithBids[]>({
+    queryKey: ['/api/auctions', numericAuctionId, 'expired-no-bids'],
+    enabled: !!numericAuctionId,
   });
 
   // Settings form
@@ -414,6 +427,98 @@ export default function CommissionerAuction() {
       });
     },
   });
+
+  // Delete expired player mutation
+  const deleteExpiredPlayer = useMutation({
+    mutationFn: async (playerId: number) => {
+      await apiRequest("DELETE", `/api/free-agents/${playerId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/auctions', numericAuctionId, 'expired-no-bids'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/free-agents'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/results'] });
+      toast({
+        title: "Player removed",
+        description: "The expired player has been removed from the auction.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to remove player.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Relist expired player mutation
+  const relistExpiredPlayer = useMutation({
+    mutationFn: async ({ agentId, minimumBid, minimumYears, auctionEndTime }: { agentId: number; minimumBid: number; minimumYears: number; auctionEndTime: string }) => {
+      await apiRequest("POST", `/api/free-agents/${agentId}/relist`, {
+        minimumBid,
+        minimumYears,
+        auctionEndTime,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/auctions', numericAuctionId, 'expired-no-bids'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/free-agents'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/results'] });
+      toast({
+        title: "Player relisted",
+        description: `${selectedExpiredPlayer?.name} has been relisted for auction.`,
+      });
+      setRelistDialogOpen(false);
+      setSelectedExpiredPlayer(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to relist player.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Handle relist submission
+  const handleRelistSubmit = () => {
+    if (!selectedExpiredPlayer) return;
+
+    if (!relistMinBid || relistMinBid < 1) {
+      toast({
+        title: "Invalid Minimum Bid",
+        description: "Minimum bid must be at least $1",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!relistEndDate) {
+      toast({
+        title: "End Date Required",
+        description: "Please select an auction end date",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const endTime = new Date(relistEndDate);
+    if (endTime <= new Date()) {
+      toast({
+        title: "Invalid End Date",
+        description: "Auction end date must be in the future",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    relistExpiredPlayer.mutate({
+      agentId: selectedExpiredPlayer.id,
+      minimumBid: relistMinBid,
+      minimumYears: relistMinYears,
+      auctionEndTime: endTime.toISOString(),
+    });
+  };
 
   // CSV parsing
   const parseCSV = useCallback((text: string) => {
@@ -1369,6 +1474,196 @@ export default function CommissionerAuction() {
           )}
         </CardContent>
       </Card>
+
+      {/* Expired Players (No Bids) Section */}
+      {(expiredNoBidPlayers && expiredNoBidPlayers.length > 0) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              Expired Players (No Bids)
+              <Badge variant="secondary">{expiredNoBidPlayers.length}</Badge>
+            </CardTitle>
+            <CardDescription>
+              These players' auctions have closed with no bids. You can remove them or adjust their minimum bid/years and relist them.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="border rounded-lg overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Team</TableHead>
+                    <TableHead className="text-right">Min Bid</TableHead>
+                    <TableHead className="text-right">Min Years</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {expiredNoBidPlayers.map((player) => (
+                    <TableRow key={player.id}>
+                      <TableCell className="font-medium">{player.name}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">
+                          {player.playerType === "pitcher" ? "Pitcher" : "Hitter"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{player.team || "-"}</TableCell>
+                      <TableCell className="text-right font-mono">{formatCurrency(player.minimumBid)}</TableCell>
+                      <TableCell className="text-right">{player.minimumYears}yr</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedExpiredPlayer(player);
+                              setRelistMinBid(player.minimumBid);
+                              setRelistMinYears(player.minimumYears);
+                              setRelistEndDate("");
+                              setRelistDialogOpen(true);
+                            }}
+                            data-testid={`button-relist-expired-${player.id}`}
+                          >
+                            <RefreshCcw className="h-4 w-4 mr-1" />
+                            Relist
+                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                data-testid={`button-delete-expired-${player.id}`}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Remove Player</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Are you sure you want to remove {player.name} from this auction? This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => deleteExpiredPlayer.mutate(player.id)}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  {deleteExpiredPlayer.isPending ? (
+                                    <>
+                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                      Removing...
+                                    </>
+                                  ) : (
+                                    "Remove"
+                                  )}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Relist Expired Player Dialog */}
+      <Dialog open={relistDialogOpen} onOpenChange={setRelistDialogOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCcw className="h-5 w-5" />
+              Relist Player
+            </DialogTitle>
+            <DialogDescription>
+              Re-enter {selectedExpiredPlayer?.name} with a new minimum bid and auction end date.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-4">
+            <div className="space-y-2">
+              <Label htmlFor="expired-relist-min-bid">Minimum Bid ($)</Label>
+              <Input
+                id="expired-relist-min-bid"
+                type="text"
+                inputMode="numeric"
+                value={formatNumberWithCommas(relistMinBid)}
+                onChange={(e) => {
+                  const numericOnly = e.target.value.replace(/[^\d]/g, '');
+                  setRelistMinBid(numericOnly === "" ? 0 : parseInt(numericOnly, 10));
+                }}
+                data-testid="input-expired-relist-min-bid"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Minimum Contract Years</Label>
+              <div className="flex gap-2">
+                {[1, 2, 3, 4, 5].map((year) => (
+                  <Button
+                    key={year}
+                    type="button"
+                    variant={relistMinYears === year ? "default" : "outline"}
+                    className="flex-1"
+                    onClick={() => setRelistMinYears(year)}
+                    data-testid={`button-expired-relist-year-${year}`}
+                  >
+                    {year}yr
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="expired-relist-end-date">Auction End Date</Label>
+              <Input
+                id="expired-relist-end-date"
+                type="datetime-local"
+                value={relistEndDate}
+                onChange={(e) => setRelistEndDate(e.target.value)}
+                data-testid="input-expired-relist-end-date"
+              />
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => setRelistDialogOpen(false)}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleRelistSubmit}
+                className="flex-1"
+                disabled={relistExpiredPlayer.isPending}
+                data-testid="button-confirm-expired-relist"
+              >
+                {relistExpiredPlayer.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Relisting...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCcw className="h-4 w-4 mr-2" />
+                    Relist Player
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Team Enrollment Dialog */}
       <Dialog open={enrollDialogOpen} onOpenChange={(open) => {
