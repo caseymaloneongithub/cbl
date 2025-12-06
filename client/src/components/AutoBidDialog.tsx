@@ -288,7 +288,7 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
                             <Input
                               type="number"
-                              value={field.value ?? ""}
+                              value={field.value || ""}
                               onChange={(e) => {
                                 const val = e.target.value;
                                 field.onChange(val === "" ? 0 : parseInt(val, 10));
