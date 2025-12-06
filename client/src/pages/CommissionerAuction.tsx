@@ -512,24 +512,17 @@ export default function CommissionerAuction() {
       return;
     }
 
-    // Combine date and time
-    const endTime = new Date(relistEndDate);
-    endTime.setHours(parseInt(relistEndHour, 10), parseInt(relistEndMinute, 10), 0, 0);
-    
-    if (endTime <= new Date()) {
-      toast({
-        title: "Invalid End Date",
-        description: "Auction end date and time must be in the future",
-        variant: "destructive",
-      });
-      return;
-    }
+    // Format as Eastern Time string (YYYY-MM-DDTHH:MM:SS) for server to parse
+    const year = relistEndDate.getFullYear();
+    const month = String(relistEndDate.getMonth() + 1).padStart(2, '0');
+    const day = String(relistEndDate.getDate()).padStart(2, '0');
+    const easternTimeString = `${year}-${month}-${day}T${relistEndHour}:${relistEndMinute}:00`;
 
     relistExpiredPlayer.mutate({
       agentId: selectedExpiredPlayer.id,
       minimumBid: relistMinBid,
       minimumYears: relistMinYears,
-      auctionEndTime: endTime.toISOString(),
+      auctionEndTime: easternTimeString,
     });
   };
 
@@ -1691,7 +1684,7 @@ export default function CommissionerAuction() {
                     ))}
                   </SelectContent>
                 </Select>
-                <span className="text-sm text-muted-foreground ml-2">(Local time)</span>
+                <span className="text-sm text-muted-foreground ml-2">(Eastern Time)</span>
               </div>
             </div>
 
