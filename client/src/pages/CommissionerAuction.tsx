@@ -40,7 +40,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatNumberWithCommas } from "@/lib/utils";
 import type { Auction, User } from "@shared/schema";
 import { 
   Settings, Users, Loader2, FileSpreadsheet, Trash2, DollarSign, Plus, UserPlus, 
@@ -912,10 +912,14 @@ export default function CommissionerAuction() {
                         <>
                           <TableCell className="text-right">
                             <Input
-                              type="number"
-                              className="w-20 ml-auto"
-                              value={editingLimits.budget}
-                              onChange={(e) => setEditingLimits({ ...editingLimits, budget: e.target.value })}
+                              type="text"
+                              inputMode="numeric"
+                              className="w-28 ml-auto"
+                              value={formatNumberWithCommas(editingLimits.budget)}
+                              onChange={(e) => {
+                                const numericOnly = e.target.value.replace(/[^\d]/g, '');
+                                setEditingLimits({ ...editingLimits, budget: numericOnly });
+                              }}
                               data-testid={`input-edit-budget-${team.odataId}`}
                             />
                           </TableCell>
@@ -1158,10 +1162,16 @@ export default function CommissionerAuction() {
                       <FormLabel>Minimum Bid ($)</FormLabel>
                       <FormControl>
                         <Input
-                          type="number"
-                          min="1"
-                          {...field}
-                          onChange={(e) => field.onChange(parseFloat(e.target.value) || 1)}
+                          type="text"
+                          inputMode="numeric"
+                          value={formatNumberWithCommas(field.value)}
+                          onChange={(e) => {
+                            const numericOnly = e.target.value.replace(/[^\d]/g, '');
+                            field.onChange(numericOnly === "" ? 0 : parseInt(numericOnly, 10));
+                          }}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
                           data-testid="input-add-player-minbid"
                         />
                       </FormControl>

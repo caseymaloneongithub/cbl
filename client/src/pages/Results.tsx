@@ -30,7 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, formatNumberWithCommas } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { FreeAgentWithBids, Auction } from "@shared/schema";
 import { Trophy, RefreshCcw, Loader2, Archive } from "lucide-react";
@@ -328,10 +328,13 @@ export default function Results() {
               <Label htmlFor="relist-min-bid">Minimum Bid ($)</Label>
               <Input
                 id="relist-min-bid"
-                type="number"
-                value={relistMinBid}
-                onChange={(e) => setRelistMinBid(parseInt(e.target.value) || 1)}
-                min={1}
+                type="text"
+                inputMode="numeric"
+                value={formatNumberWithCommas(relistMinBid)}
+                onChange={(e) => {
+                  const numericOnly = e.target.value.replace(/[^\d]/g, '');
+                  setRelistMinBid(numericOnly === "" ? 0 : parseInt(numericOnly, 10));
+                }}
                 data-testid="input-relist-min-bid"
               />
             </div>
