@@ -64,7 +64,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { Link } from "wouter";
+import { format } from "date-fns";
+import { CalendarIcon } from "lucide-react";
 
 const settingsSchema = z.object({
   yearFactor1: z.number().min(0.1).max(10),
@@ -159,7 +167,9 @@ export default function CommissionerAuction() {
   const [selectedExpiredPlayer, setSelectedExpiredPlayer] = useState<FreeAgentWithBids | null>(null);
   const [relistMinBid, setRelistMinBid] = useState(1);
   const [relistMinYears, setRelistMinYears] = useState(1);
-  const [relistEndDate, setRelistEndDate] = useState("");
+  const [relistEndDate, setRelistEndDate] = useState<Date | undefined>(undefined);
+  const [relistEndHour, setRelistEndHour] = useState("20");
+  const [relistEndMinute, setRelistEndMinute] = useState("00");
 
   // Fetch auction details
   const { data: auction, isLoading: auctionLoading } = useQuery<Auction>({
@@ -502,11 +512,14 @@ export default function CommissionerAuction() {
       return;
     }
 
+    // Combine date and time
     const endTime = new Date(relistEndDate);
+    endTime.setHours(parseInt(relistEndHour, 10), parseInt(relistEndMinute, 10), 0, 0);
+    
     if (endTime <= new Date()) {
       toast({
         title: "Invalid End Date",
-        description: "Auction end date must be in the future",
+        description: "Auction end date and time must be in the future",
         variant: "destructive",
       });
       return;
@@ -1522,7 +1535,9 @@ export default function CommissionerAuction() {
                               setSelectedExpiredPlayer(player);
                               setRelistMinBid(player.minimumBid);
                               setRelistMinYears(player.minimumYears);
-                              setRelistEndDate("");
+                              setRelistEndDate(undefined);
+                              setRelistEndHour("20");
+                              setRelistEndMinute("00");
                               setRelistDialogOpen(true);
                             }}
                             data-testid={`button-relist-expired-${player.id}`}
@@ -1624,14 +1639,60 @@ export default function CommissionerAuction() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="expired-relist-end-date">Auction End Date</Label>
-              <Input
-                id="expired-relist-end-date"
-                type="datetime-local"
-                value={relistEndDate}
-                onChange={(e) => setRelistEndDate(e.target.value)}
-                data-testid="input-expired-relist-end-date"
-              />
+              <Label>Auction End Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start text-left font-normal"
+                    data-testid="button-expired-relist-date-picker"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {relistEndDate ? format(relistEndDate, "PPP") : "Select a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={relistEndDate}
+                    onSelect={setRelistEndDate}
+                    disabled={(date) => date < new Date()}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Auction End Time</Label>
+              <div className="flex gap-2 items-center">
+                <Select value={relistEndHour} onValueChange={setRelistEndHour}>
+                  <SelectTrigger className="w-24" data-testid="select-expired-relist-hour">
+                    <SelectValue placeholder="Hour" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <SelectItem key={i} value={i.toString().padStart(2, '0')}>
+                        {i.toString().padStart(2, '0')}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-muted-foreground">:</span>
+                <Select value={relistEndMinute} onValueChange={setRelistEndMinute}>
+                  <SelectTrigger className="w-24" data-testid="select-expired-relist-minute">
+                    <SelectValue placeholder="Min" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {["00", "10", "15", "20", "30", "45"].map((min) => (
+                      <SelectItem key={min} value={min}>
+                        {min}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-sm text-muted-foreground ml-2">(Local time)</span>
+              </div>
             </div>
 
             <div className="flex gap-3 pt-4">
