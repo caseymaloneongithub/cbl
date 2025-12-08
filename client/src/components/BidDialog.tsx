@@ -110,6 +110,7 @@ export function BidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.10 }
       });
       queryClient.invalidateQueries({ queryKey: ["/api/free-agents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/free-agents", freeAgent?.id, "bids"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-bids"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
       onOpenChange(false);
     },

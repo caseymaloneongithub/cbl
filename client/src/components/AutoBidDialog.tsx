@@ -156,6 +156,7 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.
       });
       queryClient.invalidateQueries({ queryKey: ["/api/free-agents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/free-agents", freeAgent?.id, "auto-bid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-bids"] });
       queryClient.invalidateQueries({ queryKey: ["/api/my-auto-bids"] });
       onOpenChange(false);
     },
