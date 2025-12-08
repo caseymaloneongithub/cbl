@@ -5,12 +5,44 @@ import { setupAuth, isAuthenticated, hashPassword, generateRandomPassword } from
 import { insertBidSchema, insertAutoBidSchema } from "@shared/schema";
 import { z } from "zod";
 import { fromZonedTime } from "date-fns-tz";
+import { parse, isValid } from "date-fns";
 
 const EASTERN_TIMEZONE = "America/New_York";
 
 function parseEasternTime(dateString: string): Date {
-  const normalizedDate = dateString.replace(" ", "T");
-  return fromZonedTime(normalizedDate, EASTERN_TIMEZONE);
+  // Try multiple date formats
+  const formats = [
+    "yyyy-MM-dd'T'HH:mm:ss",
+    "yyyy-MM-dd'T'HH:mm",
+    "yyyy-MM-dd HH:mm:ss",
+    "yyyy-MM-dd HH:mm",
+    "MM/dd/yyyy HH:mm:ss",
+    "MM/dd/yyyy HH:mm",
+    "MM/dd/yyyy h:mm a",
+    "MM/dd/yyyy h:mm:ss a",
+    "M/d/yyyy HH:mm:ss",
+    "M/d/yyyy HH:mm",
+    "M/d/yyyy h:mm a",
+    "M/d/yyyy h:mm:ss a",
+  ];
+  
+  const trimmed = dateString.trim();
+  
+  for (const fmt of formats) {
+    const parsed = parse(trimmed, fmt, new Date());
+    if (isValid(parsed)) {
+      return fromZonedTime(parsed, EASTERN_TIMEZONE);
+    }
+  }
+  
+  // Fallback: try normalizing and using fromZonedTime directly
+  const normalizedDate = trimmed.replace(" ", "T");
+  const result = fromZonedTime(normalizedDate, EASTERN_TIMEZONE);
+  if (isValid(result)) {
+    return result;
+  }
+  
+  throw new Error(`Invalid date format: "${dateString}". Expected formats like "2025-12-17 20:00" or "12/17/2025 8:00 PM"`);
 }
 
 export async function registerRoutes(
