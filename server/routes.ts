@@ -10,6 +10,15 @@ import { parse, isValid } from "date-fns";
 const EASTERN_TIMEZONE = "America/New_York";
 
 function parseEasternTime(dateString: string): Date {
+  if (!dateString || typeof dateString !== 'string') {
+    throw new Error(`Invalid date: empty or not a string`);
+  }
+  
+  const trimmed = dateString.trim();
+  if (!trimmed) {
+    throw new Error(`Invalid date: empty string`);
+  }
+  
   // Try multiple date formats
   const formats = [
     "yyyy-MM-dd'T'HH:mm:ss",
@@ -24,22 +33,35 @@ function parseEasternTime(dateString: string): Date {
     "M/d/yyyy HH:mm",
     "M/d/yyyy h:mm a",
     "M/d/yyyy h:mm:ss a",
+    "M/d/yy HH:mm",
+    "M/d/yy h:mm a",
+    "MM/dd/yy HH:mm",
+    "MM/dd/yy h:mm a",
   ];
   
-  const trimmed = dateString.trim();
-  
   for (const fmt of formats) {
-    const parsed = parse(trimmed, fmt, new Date());
-    if (isValid(parsed)) {
-      return fromZonedTime(parsed, EASTERN_TIMEZONE);
+    try {
+      const parsed = parse(trimmed, fmt, new Date());
+      if (isValid(parsed) && parsed.getFullYear() > 2000) {
+        const result = fromZonedTime(parsed, EASTERN_TIMEZONE);
+        if (isValid(result)) {
+          return result;
+        }
+      }
+    } catch (e) {
+      // Continue to next format
     }
   }
   
   // Fallback: try normalizing and using fromZonedTime directly
-  const normalizedDate = trimmed.replace(" ", "T");
-  const result = fromZonedTime(normalizedDate, EASTERN_TIMEZONE);
-  if (isValid(result)) {
-    return result;
+  try {
+    const normalizedDate = trimmed.replace(" ", "T");
+    const result = fromZonedTime(normalizedDate, EASTERN_TIMEZONE);
+    if (isValid(result) && result.getFullYear() > 2000) {
+      return result;
+    }
+  } catch (e) {
+    // Fall through to error
   }
   
   throw new Error(`Invalid date format: "${dateString}". Expected formats like "2025-12-17 20:00" or "12/17/2025 8:00 PM"`);
