@@ -348,9 +348,14 @@ export async function registerRoutes(
 
       const newAgents = await storage.createFreeAgentsBulk(agentsToCreate);
       res.json(newAgents);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error uploading free agents:", error);
-      res.status(500).json({ message: "Failed to upload free agents" });
+      const errorMessage = error?.message || String(error);
+      const errorCode = error?.code || 'unknown';
+      res.status(500).json({ 
+        message: `Failed to upload free agents: ${errorMessage}`,
+        code: errorCode
+      });
     }
   });
 
