@@ -820,6 +820,10 @@ export async function registerRoutes(
                 totalValue: bidTotalValue,
                 isAutoBid: true,
               });
+              
+              // Process auto-bids from other users to allow counter-bidding
+              const bidIncrement = auction?.bidIncrement ?? 0.10;
+              await processAutoBids(agentId, userId, bidTotalValue, auction, bidIncrement);
             }
           }
         } else if (!currentHighBid) {
@@ -828,14 +832,19 @@ export async function registerRoutes(
           
           // Check max amount and budget before placing bid
           if (maxAmount >= startingBid && startingBid <= availableBudget) {
+            const startingTotalValue = startingBid * factor;
             await storage.createBid({
               freeAgentId: agentId,
               userId,
               amount: startingBid,
               years,
-              totalValue: startingBid * factor,
+              totalValue: startingTotalValue,
               isAutoBid: true,
             });
+            
+            // Process other auto-bids that may already exist
+            const bidIncrement = auction?.bidIncrement ?? 0.10;
+            await processAutoBids(agentId, userId, startingTotalValue, auction, bidIncrement);
           }
         }
       }
