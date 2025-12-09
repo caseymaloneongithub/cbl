@@ -170,6 +170,15 @@ export default function CommissionerAuction() {
   const [relistEndDate, setRelistEndDate] = useState<Date | undefined>(undefined);
   const [relistEndHour, setRelistEndHour] = useState("20");
   const [relistEndMinute, setRelistEndMinute] = useState("00");
+  
+  // Bulk relist state
+  const [selectedExpiredPlayerIds, setSelectedExpiredPlayerIds] = useState<number[]>([]);
+  const [bulkRelistDialogOpen, setBulkRelistDialogOpen] = useState(false);
+  const [bulkRelistMinBid, setBulkRelistMinBid] = useState(1);
+  const [bulkRelistMinYears, setBulkRelistMinYears] = useState(1);
+  const [bulkRelistEndDate, setBulkRelistEndDate] = useState<Date | undefined>(undefined);
+  const [bulkRelistEndHour, setBulkRelistEndHour] = useState("20");
+  const [bulkRelistEndMinute, setBulkRelistEndMinute] = useState("00");
 
   // Fetch auction details
   const { data: auction, isLoading: auctionLoading } = useQuery<Auction>({
@@ -489,6 +498,99 @@ export default function CommissionerAuction() {
       });
     },
   });
+
+  // Bulk relist expired players mutation
+  const bulkRelistExpiredPlayers = useMutation({
+    mutationFn: async ({ playerIds, minimumBid, minimumYears, auctionEndTime }: { playerIds: number[]; minimumBid: number; minimumYears: number; auctionEndTime: string }) => {
+      const response = await apiRequest("POST", `/api/free-agents/bulk-relist`, {
+        playerIds,
+        minimumBid,
+        minimumYears,
+        auctionEndTime,
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/auctions', numericAuctionId, 'expired-no-bids'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/free-agents'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/results'] });
+      toast({
+        title: "Bulk Relist Complete",
+        description: data.message,
+      });
+      setBulkRelistDialogOpen(false);
+      setSelectedExpiredPlayerIds([]);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to bulk relist players.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Handle bulk relist submission
+  const handleBulkRelistSubmit = () => {
+    if (selectedExpiredPlayerIds.length === 0) {
+      toast({
+        title: "No Players Selected",
+        description: "Please select at least one player to relist.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!bulkRelistMinBid || bulkRelistMinBid < 1) {
+      toast({
+        title: "Invalid Minimum Bid",
+        description: "Minimum bid must be at least $1",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!bulkRelistEndDate) {
+      toast({
+        title: "End Date Required",
+        description: "Please select an auction end date",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Format as Eastern Time string (YYYY-MM-DDTHH:MM:SS) for server to parse
+    const year = bulkRelistEndDate.getFullYear();
+    const month = String(bulkRelistEndDate.getMonth() + 1).padStart(2, '0');
+    const day = String(bulkRelistEndDate.getDate()).padStart(2, '0');
+    const easternTimeString = `${year}-${month}-${day}T${bulkRelistEndHour}:${bulkRelistEndMinute}:00`;
+
+    bulkRelistExpiredPlayers.mutate({
+      playerIds: selectedExpiredPlayerIds,
+      minimumBid: bulkRelistMinBid,
+      minimumYears: bulkRelistMinYears,
+      auctionEndTime: easternTimeString,
+    });
+  };
+
+  // Toggle player selection for bulk relist
+  const togglePlayerSelection = (playerId: number) => {
+    setSelectedExpiredPlayerIds(prev => 
+      prev.includes(playerId) 
+        ? prev.filter(id => id !== playerId)
+        : [...prev, playerId]
+    );
+  };
+
+  // Select/deselect all expired players
+  const toggleSelectAllExpired = () => {
+    if (!expiredNoBidPlayers) return;
+    if (selectedExpiredPlayerIds.length === expiredNoBidPlayers.length) {
+      setSelectedExpiredPlayerIds([]);
+    } else {
+      setSelectedExpiredPlayerIds(expiredNoBidPlayers.map(p => p.id));
+    }
+  };
 
   // Handle relist submission
   const handleRelistSubmit = () => {
@@ -1485,20 +1587,47 @@ export default function CommissionerAuction() {
       {(expiredNoBidPlayers && expiredNoBidPlayers.length > 0) && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5" />
-              Expired Players (No Bids)
-              <Badge variant="secondary">{expiredNoBidPlayers.length}</Badge>
-            </CardTitle>
-            <CardDescription>
-              These players' auctions have closed with no bids. You can remove them or adjust their minimum bid/years and relist them.
-            </CardDescription>
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Clock className="h-5 w-5" />
+                  Expired Players (No Bids)
+                  <Badge variant="secondary">{expiredNoBidPlayers.length}</Badge>
+                </CardTitle>
+                <CardDescription>
+                  These players' auctions have closed with no bids. You can remove them or adjust their minimum bid/years and relist them.
+                </CardDescription>
+              </div>
+              {selectedExpiredPlayerIds.length > 0 && (
+                <Button
+                  onClick={() => {
+                    setBulkRelistMinBid(400000);
+                    setBulkRelistMinYears(1);
+                    setBulkRelistEndDate(undefined);
+                    setBulkRelistEndHour("20");
+                    setBulkRelistEndMinute("00");
+                    setBulkRelistDialogOpen(true);
+                  }}
+                  data-testid="button-bulk-relist"
+                >
+                  <RefreshCcw className="h-4 w-4 mr-2" />
+                  Bulk Relist ({selectedExpiredPlayerIds.length})
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             <div className="border rounded-lg overflow-hidden">
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-12">
+                      <Checkbox
+                        checked={expiredNoBidPlayers.length > 0 && selectedExpiredPlayerIds.length === expiredNoBidPlayers.length}
+                        onCheckedChange={toggleSelectAllExpired}
+                        data-testid="checkbox-select-all-expired"
+                      />
+                    </TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Team</TableHead>
@@ -1510,6 +1639,13 @@ export default function CommissionerAuction() {
                 <TableBody>
                   {expiredNoBidPlayers.map((player) => (
                     <TableRow key={player.id}>
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedExpiredPlayerIds.includes(player.id)}
+                          onCheckedChange={() => togglePlayerSelection(player.id)}
+                          data-testid={`checkbox-expired-${player.id}`}
+                        />
+                      </TableCell>
                       <TableCell className="font-medium">{player.name}</TableCell>
                       <TableCell>
                         <Badge variant="outline">
@@ -1711,6 +1847,141 @@ export default function CommissionerAuction() {
                   <>
                     <RefreshCcw className="h-4 w-4 mr-2" />
                     Relist Player
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Relist Expired Players Dialog */}
+      <Dialog open={bulkRelistDialogOpen} onOpenChange={setBulkRelistDialogOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCcw className="h-5 w-5" />
+              Bulk Relist Players
+            </DialogTitle>
+            <DialogDescription>
+              Relist {selectedExpiredPlayerIds.length} selected player{selectedExpiredPlayerIds.length !== 1 ? "s" : ""} with the same minimum bid and auction end date.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-4">
+            <div className="space-y-2">
+              <Label htmlFor="bulk-relist-min-bid">Minimum Bid ($)</Label>
+              <Input
+                id="bulk-relist-min-bid"
+                type="text"
+                inputMode="numeric"
+                value={formatNumberWithCommas(bulkRelistMinBid)}
+                onChange={(e) => {
+                  const numericOnly = e.target.value.replace(/[^\d]/g, '');
+                  setBulkRelistMinBid(numericOnly === "" ? 0 : parseInt(numericOnly, 10));
+                }}
+                data-testid="input-bulk-relist-min-bid"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Minimum Contract Years</Label>
+              <div className="flex gap-2">
+                {[1, 2, 3, 4, 5].map((year) => (
+                  <Button
+                    key={year}
+                    type="button"
+                    variant={bulkRelistMinYears === year ? "default" : "outline"}
+                    className="flex-1"
+                    onClick={() => setBulkRelistMinYears(year)}
+                    data-testid={`button-bulk-relist-year-${year}`}
+                  >
+                    {year}yr
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Auction End Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start text-left font-normal"
+                    data-testid="button-bulk-relist-date-picker"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {bulkRelistEndDate ? format(bulkRelistEndDate, "PPP") : "Select a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={bulkRelistEndDate}
+                    onSelect={setBulkRelistEndDate}
+                    disabled={(date) => date < new Date()}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Auction End Time</Label>
+              <div className="flex gap-2 items-center">
+                <Select value={bulkRelistEndHour} onValueChange={setBulkRelistEndHour}>
+                  <SelectTrigger className="w-24" data-testid="select-bulk-relist-hour">
+                    <SelectValue placeholder="Hour" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <SelectItem key={i} value={i.toString().padStart(2, '0')}>
+                        {i.toString().padStart(2, '0')}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-muted-foreground">:</span>
+                <Select value={bulkRelistEndMinute} onValueChange={setBulkRelistEndMinute}>
+                  <SelectTrigger className="w-24" data-testid="select-bulk-relist-minute">
+                    <SelectValue placeholder="Min" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {["00", "10", "15", "20", "30", "45"].map((min) => (
+                      <SelectItem key={min} value={min}>
+                        {min}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-sm text-muted-foreground ml-2">(Eastern Time)</span>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => setBulkRelistDialogOpen(false)}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleBulkRelistSubmit}
+                className="flex-1"
+                disabled={bulkRelistExpiredPlayers.isPending}
+                data-testid="button-confirm-bulk-relist"
+              >
+                {bulkRelistExpiredPlayers.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Relisting...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCcw className="h-4 w-4 mr-2" />
+                    Relist {selectedExpiredPlayerIds.length} Players
                   </>
                 )}
               </Button>

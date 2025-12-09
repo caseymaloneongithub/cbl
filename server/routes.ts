@@ -477,6 +477,88 @@ export async function registerRoutes(
     }
   });
 
+  // Bulk relist multiple expired players (commissioner or super admin only)
+  app.post("/api/free-agents/bulk-relist", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Commissioner or super admin access required" });
+      }
+
+      const { playerIds, minimumBid, minimumYears, auctionEndTime } = req.body;
+
+      if (!Array.isArray(playerIds) || playerIds.length === 0) {
+        return res.status(400).json({ message: "At least one player must be selected" });
+      }
+
+      // Validate minimumBid
+      const parsedMinBid = Number(minimumBid);
+      if (isNaN(parsedMinBid) || parsedMinBid < 1) {
+        return res.status(400).json({ message: "Minimum bid must be a valid number of at least $1" });
+      }
+
+      // Validate minimumYears
+      let parsedMinYears = 1;
+      if (minimumYears !== undefined && minimumYears !== null && minimumYears !== "") {
+        parsedMinYears = Number(minimumYears);
+        if (isNaN(parsedMinYears) || parsedMinYears < 1 || parsedMinYears > 5) {
+          return res.status(400).json({ message: "Minimum years must be between 1 and 5" });
+        }
+        parsedMinYears = Math.floor(parsedMinYears);
+      }
+
+      if (!auctionEndTime) {
+        return res.status(400).json({ message: "Auction end time is required" });
+      }
+
+      const newEndTime = parseEasternTime(auctionEndTime);
+      if (newEndTime <= new Date()) {
+        return res.status(400).json({ message: "Auction end time must be in the future" });
+      }
+
+      // Process each player
+      const results: { id: number; success: boolean; error?: string }[] = [];
+      for (const playerId of playerIds) {
+        try {
+          const agent = await storage.getFreeAgent(playerId);
+          if (!agent) {
+            results.push({ id: playerId, success: false, error: "Player not found" });
+            continue;
+          }
+
+          // Check if auction is already active
+          if (agent.isActive && agent.auctionEndTime && new Date(agent.auctionEndTime) > new Date()) {
+            results.push({ id: playerId, success: false, error: "Auction is still active" });
+            continue;
+          }
+
+          // Check for existing bids
+          const bids = await storage.getBidsForAgent(playerId);
+          if (bids.length > 0) {
+            results.push({ id: playerId, success: false, error: "Has existing bids" });
+            continue;
+          }
+
+          await storage.relistFreeAgent(playerId, parsedMinBid, parsedMinYears, newEndTime);
+          results.push({ id: playerId, success: true });
+        } catch (err) {
+          results.push({ id: playerId, success: false, error: "Failed to relist" });
+        }
+      }
+
+      const successCount = results.filter(r => r.success).length;
+      res.json({ 
+        message: `Successfully relisted ${successCount} of ${playerIds.length} players`,
+        results 
+      });
+    } catch (error) {
+      console.error("Error bulk relisting free agents:", error);
+      res.status(500).json({ message: "Failed to bulk relist free agents" });
+    }
+  });
+
   // Create a single free agent (commissioner or super admin only)
   app.post("/api/free-agents", isAuthenticated, async (req: any, res) => {
     try {
