@@ -8,8 +8,8 @@ function getResendClient() {
     throw new Error('RESEND_API_KEY not configured');
   }
   
-  // Default from email - can be customized once domain is verified
-  const fromEmail = 'CBL Auctions <onboarding@resend.dev>';
+  // Use verified domain
+  const fromEmail = 'CBL Auctions <noreply@cbl-strat.me>';
   
   return {
     client: new Resend(apiKey),
