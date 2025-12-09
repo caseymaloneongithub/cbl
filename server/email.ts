@@ -1,43 +1,16 @@
-// Email service using Resend integration
+// Email service using Resend
 import { Resend } from 'resend';
 
-let connectionSettings: any;
-
-async function getCredentials() {
-  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
-  const xReplitToken = process.env.REPL_IDENTITY 
-    ? 'repl ' + process.env.REPL_IDENTITY 
-    : process.env.WEB_REPL_RENEWAL 
-    ? 'depl ' + process.env.WEB_REPL_RENEWAL 
-    : null;
-
-  if (!xReplitToken) {
-    throw new Error('X_REPLIT_TOKEN not found for repl/depl');
+// Use direct API key from environment
+function getResendClient() {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    throw new Error('RESEND_API_KEY not configured');
   }
-
-  connectionSettings = await fetch(
-    'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=resend',
-    {
-      headers: {
-        'Accept': 'application/json',
-        'X_REPLIT_TOKEN': xReplitToken
-      }
-    }
-  ).then(res => res.json()).then(data => data.items?.[0]);
-
-  if (!connectionSettings || (!connectionSettings.settings.api_key)) {
-    throw new Error('Resend not connected');
-  }
-  return {
-    apiKey: connectionSettings.settings.api_key, 
-    fromEmail: connectionSettings.settings.from_email
-  };
-}
-
-// WARNING: Never cache this client.
-// Access tokens expire, so a new client must be created each time.
-async function getResendClient() {
-  const { apiKey, fromEmail } = await getCredentials();
+  
+  // Default from email - can be customized once domain is verified
+  const fromEmail = 'CBL Auctions <onboarding@resend.dev>';
+  
   return {
     client: new Resend(apiKey),
     fromEmail
@@ -53,7 +26,7 @@ export interface SendEmailOptions {
 
 export async function sendEmail(options: SendEmailOptions): Promise<{ success: boolean; error?: string }> {
   try {
-    const { client, fromEmail } = await getResendClient();
+    const { client, fromEmail } = getResendClient();
     
     const result = await client.emails.send({
       from: fromEmail,
