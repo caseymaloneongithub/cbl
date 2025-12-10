@@ -11,7 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { formatCurrency, isAuctionClosed } from "@/lib/utils";
+import { formatCurrency, isAuctionClosed, formatNumberWithCommas } from "@/lib/utils";
 import type { FreeAgentWithBids } from "@shared/schema";
 import { Plus, Trash2, GripVertical, Package, Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -36,7 +36,7 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
   const [bundleName, setBundleName] = useState("");
   const [bundleItems, setBundleItems] = useState<BundleItem[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
-  const [amount, setAmount] = useState("");
+  const [amount, setAmount] = useState<number>(0);
   const [years, setYears] = useState("1");
   const [playerSearchOpen, setPlayerSearchOpen] = useState(false);
 
@@ -65,7 +65,7 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
     setBundleName("");
     setBundleItems([]);
     setSelectedAgentId("");
-    setAmount("");
+    setAmount(0);
     setYears("1");
   };
 
@@ -79,17 +79,16 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
     const agent = freeAgents?.find((a) => a.id === parseInt(selectedAgentId));
     if (!agent) return;
 
-    const parsedAmount = parseFloat(amount);
     const parsedYears = parseInt(years);
 
     // Validate amount is a positive number
-    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+    if (amount <= 0) {
       toast({ title: "Please enter a valid positive amount", variant: "destructive" });
       return;
     }
 
     // Validate amount meets minimum bid
-    if (parsedAmount < agent.minimumBid) {
+    if (amount < agent.minimumBid) {
       toast({ 
         title: `Amount must be at least ${formatCurrency(agent.minimumBid)} (player minimum)`, 
         variant: "destructive" 
@@ -111,14 +110,14 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       freeAgentId: parseInt(selectedAgentId),
       freeAgentName: agent.name,
-      amount: parsedAmount,
+      amount: amount,
       years: parsedYears,
       priority: bundleItems.length + 1,
     };
 
     setBundleItems([...bundleItems, newItem]);
     setSelectedAgentId("");
-    setAmount("");
+    setAmount(0);
     setYears("1");
   };
 
@@ -299,12 +298,14 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
                     <div>
                       <Label className="text-xs">Max Amount ($)</Label>
                       <Input
-                        type="number"
-                        min="1"
-                        step="1"
+                        type="text"
+                        inputMode="numeric"
                         placeholder="Max bid"
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
+                        value={formatNumberWithCommas(amount)}
+                        onChange={(e) => {
+                          const numericOnly = e.target.value.replace(/[^\d]/g, '');
+                          setAmount(numericOnly === "" ? 0 : parseInt(numericOnly, 10));
+                        }}
                         data-testid="input-amount"
                       />
                     </div>
