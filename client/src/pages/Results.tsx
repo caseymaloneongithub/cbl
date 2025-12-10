@@ -98,6 +98,7 @@ export default function Results() {
       // Invalidate all results queries (both base and filtered)
       queryClient.invalidateQueries({ queryKey: ["/api/results"] });
       queryClient.invalidateQueries({ queryKey: ["/api/free-agents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
       setRelistDialogOpen(false);
       setSelectedAgent(null);
     },

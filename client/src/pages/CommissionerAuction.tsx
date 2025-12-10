@@ -433,6 +433,7 @@ export default function CommissionerAuction() {
       setParsedPlayers([]);
       queryClient.invalidateQueries({ queryKey: ['/api/free-agents'] });
       queryClient.invalidateQueries({ queryKey: ['/api/auctions', numericAuctionId, 'free-agents'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/stats'] });
       toast({
         title: "Upload successful",
         description: `${data.length} players have been added to the auction.`,
@@ -456,6 +457,7 @@ export default function CommissionerAuction() {
       queryClient.invalidateQueries({ queryKey: ['/api/auctions', numericAuctionId, 'expired-no-bids'] });
       queryClient.invalidateQueries({ queryKey: ['/api/free-agents'] });
       queryClient.invalidateQueries({ queryKey: ['/api/results'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/stats'] });
       toast({
         title: "Player removed",
         description: "The expired player has been removed from the auction.",
@@ -483,6 +485,7 @@ export default function CommissionerAuction() {
       queryClient.invalidateQueries({ queryKey: ['/api/auctions', numericAuctionId, 'expired-no-bids'] });
       queryClient.invalidateQueries({ queryKey: ['/api/free-agents'] });
       queryClient.invalidateQueries({ queryKey: ['/api/results'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/stats'] });
       toast({
         title: "Player relisted",
         description: `${selectedExpiredPlayer?.name} has been relisted for auction.`,
@@ -514,6 +517,7 @@ export default function CommissionerAuction() {
       queryClient.invalidateQueries({ queryKey: ['/api/auctions', numericAuctionId, 'expired-no-bids'] });
       queryClient.invalidateQueries({ queryKey: ['/api/free-agents'] });
       queryClient.invalidateQueries({ queryKey: ['/api/results'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/stats'] });
       toast({
         title: "Bulk Relist Complete",
         description: data.message,
