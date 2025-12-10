@@ -1537,6 +1537,185 @@ export class DatabaseStorage implements IStorage {
     const [bid] = await db.select().from(bids).where(eq(bids.id, bidId));
     return bid;
   }
+
+  // Bid bundle operations
+  async getBidBundle(id: number): Promise<BidBundleWithItems | undefined> {
+    const [bundle] = await db
+      .select()
+      .from(bidBundles)
+      .where(eq(bidBundles.id, id));
+    
+    if (!bundle) return undefined;
+
+    const items = await db
+      .select({
+        item: bidBundleItems,
+        freeAgent: freeAgents,
+      })
+      .from(bidBundleItems)
+      .innerJoin(freeAgents, eq(bidBundleItems.freeAgentId, freeAgents.id))
+      .where(eq(bidBundleItems.bundleId, id))
+      .orderBy(bidBundleItems.priority);
+
+    return {
+      ...bundle,
+      items: items.map(row => ({
+        ...row.item,
+        freeAgent: row.freeAgent,
+      })),
+    };
+  }
+
+  async getUserBidBundles(userId: string, auctionId?: number): Promise<BidBundleWithItems[]> {
+    const conditions = [eq(bidBundles.userId, userId)];
+    if (auctionId !== undefined) {
+      conditions.push(eq(bidBundles.auctionId, auctionId));
+    }
+
+    const bundles = await db
+      .select()
+      .from(bidBundles)
+      .where(and(...conditions))
+      .orderBy(desc(bidBundles.createdAt));
+
+    const result: BidBundleWithItems[] = [];
+    for (const bundle of bundles) {
+      const items = await db
+        .select({
+          item: bidBundleItems,
+          freeAgent: freeAgents,
+        })
+        .from(bidBundleItems)
+        .innerJoin(freeAgents, eq(bidBundleItems.freeAgentId, freeAgents.id))
+        .where(eq(bidBundleItems.bundleId, bundle.id))
+        .orderBy(bidBundleItems.priority);
+
+      result.push({
+        ...bundle,
+        items: items.map(row => ({
+          ...row.item,
+          freeAgent: row.freeAgent,
+        })),
+      });
+    }
+
+    return result;
+  }
+
+  async createBidBundle(
+    bundle: InsertBidBundle, 
+    items: Omit<InsertBidBundleItem, 'bundleId'>[]
+  ): Promise<BidBundleWithItems> {
+    // Create the bundle first
+    const [newBundle] = await db
+      .insert(bidBundles)
+      .values(bundle)
+      .returning();
+
+    // Create all bundle items with the first one as 'active'
+    const itemsToInsert = items.map((item, index) => ({
+      ...item,
+      bundleId: newBundle.id,
+      status: index === 0 ? 'active' : 'pending',
+      activatedAt: index === 0 ? new Date() : null,
+    }));
+
+    await db.insert(bidBundleItems).values(itemsToInsert);
+
+    // Return the full bundle with items
+    return this.getBidBundle(newBundle.id) as Promise<BidBundleWithItems>;
+  }
+
+  async updateBidBundle(id: number, data: Partial<InsertBidBundle>): Promise<BidBundle> {
+    const [updated] = await db
+      .update(bidBundles)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(bidBundles.id, id))
+      .returning();
+    return updated;
+  }
+
+  async updateBidBundleItem(id: number, data: Partial<InsertBidBundleItem>): Promise<BidBundleItem> {
+    const [updated] = await db
+      .update(bidBundleItems)
+      .set(data)
+      .where(eq(bidBundleItems.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteBidBundle(id: number): Promise<void> {
+    // Delete items first (foreign key constraint)
+    await db.delete(bidBundleItems).where(eq(bidBundleItems.bundleId, id));
+    await db.delete(bidBundles).where(eq(bidBundles.id, id));
+  }
+
+  async getActiveBundleItemForAgent(
+    freeAgentId: number, 
+    userId: string
+  ): Promise<(BidBundleItem & { bundle: BidBundle }) | undefined> {
+    // Find any active bundle item for this agent owned by this user
+    const results = await db
+      .select({
+        item: bidBundleItems,
+        bundle: bidBundles,
+      })
+      .from(bidBundleItems)
+      .innerJoin(bidBundles, eq(bidBundleItems.bundleId, bidBundles.id))
+      .where(
+        and(
+          eq(bidBundleItems.freeAgentId, freeAgentId),
+          eq(bidBundles.userId, userId),
+          eq(bidBundleItems.status, 'active'),
+          eq(bidBundles.status, 'active')
+        )
+      )
+      .limit(1);
+
+    if (results.length === 0) return undefined;
+
+    return {
+      ...results[0].item,
+      bundle: results[0].bundle,
+    };
+  }
+
+  async activateNextBundleItem(bundleId: number): Promise<BidBundleItem | null> {
+    const bundle = await this.getBidBundle(bundleId);
+    if (!bundle || bundle.status !== 'active') return null;
+
+    // Find the next pending item in priority order
+    const pendingItems = bundle.items
+      .filter(item => item.status === 'pending')
+      .sort((a, b) => a.priority - b.priority);
+
+    if (pendingItems.length === 0) {
+      // No more items - mark bundle as completed
+      await this.updateBidBundle(bundleId, { status: 'completed' });
+      return null;
+    }
+
+    const nextItem = pendingItems[0];
+    
+    // Check if the auction is still open
+    const agent = nextItem.freeAgent;
+    if (new Date(agent.auctionEndTime) <= new Date()) {
+      // Auction closed, skip this item and try the next
+      await this.updateBidBundleItem(nextItem.id, { status: 'skipped' });
+      return this.activateNextBundleItem(bundleId);
+    }
+
+    // Activate the next item
+    await this.updateBidBundleItem(nextItem.id, {
+      status: 'active',
+      activatedAt: new Date(),
+    });
+
+    // Update bundle's active item priority
+    await this.updateBidBundle(bundleId, { activeItemPriority: nextItem.priority });
+
+    return nextItem;
+  }
 }
 
 export const storage = new DatabaseStorage();
