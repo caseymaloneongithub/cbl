@@ -253,7 +253,7 @@ export function BundleDialog({ auctionId, open, onOpenChange, editBundle }: Bund
               <div className="space-y-2">
                 {bundleItems.map((item, idx) => (
                   <Card key={item.id}>
-                    <CardContent className="flex items-center justify-between p-3">
+                    <CardContent className="p-3">
                       <div className="flex items-center gap-3">
                         <div className="flex flex-col gap-1">
                           <Button
@@ -278,21 +278,61 @@ export function BundleDialog({ auctionId, open, onOpenChange, editBundle }: Bund
                           </Button>
                         </div>
                         <Badge variant="outline" className="font-mono">#{idx + 1}</Badge>
-                        <div>
-                          <div className="font-medium">{item.freeAgentName}</div>
-                          <div className="text-sm text-muted-foreground">
-                            Max: {formatCurrency(item.amount)} / {item.years}yr
+                        <div className="flex-1">
+                          <div className="font-medium mb-2">{item.freeAgentName}</div>
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1">
+                              <Label className="text-xs text-muted-foreground">Max Amount ($)</Label>
+                              <Input
+                                type="text"
+                                inputMode="numeric"
+                                value={formatNumberWithCommas(item.amount)}
+                                onChange={(e) => {
+                                  const numericOnly = e.target.value.replace(/[^\d]/g, '');
+                                  const newAmount = numericOnly === "" ? 0 : parseInt(numericOnly, 10);
+                                  setBundleItems(prev => prev.map(i => 
+                                    i.id === item.id ? { ...i, amount: newAmount } : i
+                                  ));
+                                }}
+                                className="h-8"
+                                data-testid={`input-item-amount-${item.id}`}
+                              />
+                            </div>
+                            <div className="w-24">
+                              <Label className="text-xs text-muted-foreground">Years</Label>
+                              <Select 
+                                value={item.years.toString()} 
+                                onValueChange={(value) => {
+                                  setBundleItems(prev => prev.map(i => 
+                                    i.id === item.id ? { ...i, years: parseInt(value) } : i
+                                  ));
+                                }}
+                              >
+                                <SelectTrigger className="h-8" data-testid={`select-item-years-${item.id}`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="1">1 yr</SelectItem>
+                                  <SelectItem value="2">2 yr</SelectItem>
+                                  <SelectItem value="3">3 yr</SelectItem>
+                                  <SelectItem value="4">4 yr</SelectItem>
+                                  <SelectItem value="5">5 yr</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="pt-4">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleRemoveItem(item.id)}
+                                data-testid={`button-remove-item-${item.id}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleRemoveItem(item.id)}
-                        data-testid={`button-remove-item-${item.id}`}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
                     </CardContent>
                   </Card>
                 ))}
