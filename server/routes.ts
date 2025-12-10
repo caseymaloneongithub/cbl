@@ -2092,11 +2092,17 @@ async function deployBundleItemBid(
   bundle: any,
   userId: string
 ): Promise<boolean> {
-  const agent = await storage.getFreeAgent(item.freeAgentId);
+  // Use hydrated freeAgent if available, otherwise fetch
+  let agent = item.freeAgent;
+  if (!agent && item.freeAgentId) {
+    agent = await storage.getFreeAgent(item.freeAgentId);
+  }
   if (!agent) {
+    console.error("deployBundleItemBid: No agent found for item", item.id, "freeAgentId:", item.freeAgentId);
     await storage.updateBidBundleItem(item.id, { status: 'skipped' });
     return false;
   }
+  const freeAgentId = agent.id;
 
   // Check if auction is still open
   if (new Date(agent.auctionEndTime) <= new Date()) {
@@ -2122,7 +2128,7 @@ async function deployBundleItemBid(
   const factor = yearFactors[item.years - 1];
 
   // Get current highest bid
-  const highestBid = await storage.getHighestBidForAgent(item.freeAgentId);
+  const highestBid = await storage.getHighestBidForAgent(freeAgentId);
   let bidAmount = item.amount;
   let bidTotalValue = bidAmount * factor;
 
@@ -2166,7 +2172,7 @@ async function deployBundleItemBid(
   }
 
   // Check roster/IP/PA limits
-  const limitCheck = await storage.canUserBidOnPlayer(userId, item.freeAgentId);
+  const limitCheck = await storage.canUserBidOnPlayer(userId, freeAgentId);
   if (!limitCheck.canBid) {
     await storage.updateBidBundleItem(item.id, { status: 'skipped' });
     return false;
@@ -2174,7 +2180,7 @@ async function deployBundleItemBid(
 
   // Place the bid
   const newBid = await storage.createBid({
-    freeAgentId: item.freeAgentId,
+    freeAgentId: freeAgentId,
     userId: userId,
     amount: bidAmount,
     years: item.years,
@@ -2189,7 +2195,7 @@ async function deployBundleItemBid(
   });
 
   // Process other auto-bids that might want to counter
-  await processAutoBids(item.freeAgentId, userId, bidTotalValue, auction, bidIncrement);
+  await processAutoBids(freeAgentId, userId, bidTotalValue, auction, bidIncrement);
 
   return true;
 }
@@ -2229,9 +2235,12 @@ async function processBundleOutbid(
     // We can counter! Place a counter-bid
     const agent = await storage.getFreeAgent(freeAgentId);
     if (!agent || new Date(agent.auctionEndTime) <= new Date()) {
-      // Auction closed
+      // Auction closed - skip this item and try the next
       await storage.updateBidBundleItem(item.id, { status: 'skipped' });
-      await storage.activateNextBundleItem(bundle.id);
+      const nextItem = await storage.activateNextBundleItem(bundle.id);
+      if (nextItem) {
+        await deployBundleItemBid(nextItem, bundle, outbidUserId);
+      }
       return;
     }
 
@@ -2256,7 +2265,10 @@ async function processBundleOutbid(
       } catch (error) {
         console.error("Error checking budget for bundle counter-bid:", error);
         await storage.updateBidBundleItem(item.id, { status: 'outbid' });
-        await storage.activateNextBundleItem(bundle.id);
+        const nextItem = await storage.activateNextBundleItem(bundle.id);
+        if (nextItem) {
+          await deployBundleItemBid(nextItem, bundle, outbidUserId);
+        }
         return;
       }
     }

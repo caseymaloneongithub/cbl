@@ -33,7 +33,10 @@ import {
   type BidBundleWithItems,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, lt, sql, isNull, inArray } from "drizzle-orm";
+import { eq, and, desc, lt, sql, isNull, inArray, or } from "drizzle-orm";
+
+// Extended type for bundle items with freeAgent attached
+export type BidBundleItemWithAgent = BidBundleItem & { freeAgent: FreeAgent };
 
 export interface IStorage {
   // User operations
@@ -178,7 +181,7 @@ export interface IStorage {
   updateBidBundleItem(id: number, data: Partial<InsertBidBundleItem>): Promise<BidBundleItem>;
   deleteBidBundle(id: number): Promise<void>;
   getActiveBundleItemForAgent(freeAgentId: number, userId: string): Promise<(BidBundleItem & { bundle: BidBundle }) | undefined>;
-  activateNextBundleItem(bundleId: number): Promise<BidBundleItem | null>;
+  activateNextBundleItem(bundleId: number): Promise<BidBundleItemWithAgent | null>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1654,7 +1657,9 @@ export class DatabaseStorage implements IStorage {
     freeAgentId: number, 
     userId: string
   ): Promise<(BidBundleItem & { bundle: BidBundle }) | undefined> {
-    // Find any active bundle item for this agent owned by this user
+    // Find any active or deployed bundle item for this agent owned by this user
+    // 'active' = item is active but no bid placed yet
+    // 'deployed' = item is active and bid has been placed
     const results = await db
       .select({
         item: bidBundleItems,
@@ -1666,7 +1671,10 @@ export class DatabaseStorage implements IStorage {
         and(
           eq(bidBundleItems.freeAgentId, freeAgentId),
           eq(bidBundles.userId, userId),
-          eq(bidBundleItems.status, 'active'),
+          or(
+            eq(bidBundleItems.status, 'active'),
+            eq(bidBundleItems.status, 'deployed')
+          ),
           eq(bidBundles.status, 'active')
         )
       )
@@ -1680,7 +1688,7 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async activateNextBundleItem(bundleId: number): Promise<BidBundleItem | null> {
+  async activateNextBundleItem(bundleId: number): Promise<BidBundleItemWithAgent | null> {
     const bundle = await this.getBidBundle(bundleId);
     if (!bundle || bundle.status !== 'active') return null;
 
@@ -1699,14 +1707,14 @@ export class DatabaseStorage implements IStorage {
     
     // Check if the auction is still open
     const agent = nextItem.freeAgent;
-    if (new Date(agent.auctionEndTime) <= new Date()) {
-      // Auction closed, skip this item and try the next
+    if (!agent || new Date(agent.auctionEndTime) <= new Date()) {
+      // Auction closed or no agent, skip this item and try the next
       await this.updateBidBundleItem(nextItem.id, { status: 'skipped' });
       return this.activateNextBundleItem(bundleId);
     }
 
     // Activate the next item
-    await this.updateBidBundleItem(nextItem.id, {
+    const updatedItem = await this.updateBidBundleItem(nextItem.id, {
       status: 'active',
       activatedAt: new Date(),
     });
@@ -1714,7 +1722,11 @@ export class DatabaseStorage implements IStorage {
     // Update bundle's active item priority
     await this.updateBidBundle(bundleId, { activeItemPriority: nextItem.priority });
 
-    return nextItem;
+    // Return the item with freeAgent attached for use by deployBundleItemBid
+    return {
+      ...updatedItem,
+      freeAgent: agent,
+    };
   }
 }
 
