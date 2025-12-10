@@ -2321,6 +2321,14 @@ async function deployBundleItemBid(
   // Process other auto-bids that might want to counter
   await processAutoBids(freeAgentId, userId, bidTotalValue, auction, bidIncrement);
 
+  // After auto-bids process, check if we got outbid and need to counter or cascade
+  const latestHighBid = await storage.getHighestBidForAgent(freeAgentId);
+  if (latestHighBid && latestHighBid.userId !== userId) {
+    console.log(`[deployBundleItemBid] Got outbid after auto-bids on ${agent.name}, processing bundle cascade`);
+    // Call processBundleOutbid to either counter-bid or cascade to next item
+    await processBundleOutbid(freeAgentId, userId, latestHighBid.totalValue, auction);
+  }
+
   return true;
 }
 
