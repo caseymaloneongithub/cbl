@@ -1059,12 +1059,21 @@ export async function registerRoutes(
       );
 
       // The first item should be activated - place an initial bid
-      const firstItem = bundle.items.find(i => i.status === 'active');
-      if (firstItem) {
-        await deployBundleItemBid(firstItem, bundle, userId);
+      // If it fails (e.g., can't beat existing bid), cascade to next items
+      let currentItem = bundle.items.find(i => i.status === 'active');
+      while (currentItem) {
+        const success = await deployBundleItemBid(currentItem, bundle, userId);
+        if (success) {
+          break; // Successfully deployed a bid
+        }
+        // Failed - try to activate next item
+        const nextItem = await storage.activateNextBundleItem(bundle.id);
+        currentItem = nextItem;
       }
 
-      res.json(bundle);
+      // Fetch the updated bundle with final statuses
+      const finalBundle = await storage.getBidBundle(bundle.id);
+      res.json(finalBundle);
     } catch (error) {
       console.error("Error creating bundle:", error);
       res.status(500).json({ message: "Failed to create bundle" });
@@ -1164,12 +1173,21 @@ export async function registerRoutes(
       );
 
       // Deploy the first item immediately
-      const firstItem = updatedBundle.items.find(i => i.status === 'active');
-      if (firstItem) {
-        await deployBundleItemBid(firstItem, updatedBundle, userId);
+      // If it fails (e.g., can't beat existing bid), cascade to next items
+      let currentItem = updatedBundle.items.find(i => i.status === 'active');
+      while (currentItem) {
+        const success = await deployBundleItemBid(currentItem, updatedBundle, userId);
+        if (success) {
+          break; // Successfully deployed a bid
+        }
+        // Failed - try to activate next item
+        const nextItem = await storage.activateNextBundleItem(updatedBundle.id);
+        currentItem = nextItem;
       }
 
-      res.json(updatedBundle);
+      // Fetch the updated bundle with final statuses
+      const finalBundle = await storage.getBidBundle(updatedBundle.id);
+      res.json(finalBundle);
     } catch (error) {
       console.error("Error updating bundle:", error);
       res.status(500).json({ message: "Failed to update bundle" });
