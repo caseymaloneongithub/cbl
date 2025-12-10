@@ -781,6 +781,9 @@ export async function registerRoutes(
         return res.status(400).json({ message: limitsCheck.reason });
       }
 
+      // Capture previous high bidder before placing new bid (for bundle processing)
+      const previousHighBidderId = currentHighBid?.userId;
+
       const bid = await storage.createBid({
         freeAgentId: agentId,
         userId,
@@ -792,6 +795,15 @@ export async function registerRoutes(
 
       // Process auto-bids from other users
       await processAutoBids(agentId, userId, totalValue, auction, bidIncrement);
+
+      // Process bundle outbids for the previous high bidder (if different from current)
+      if (previousHighBidderId && previousHighBidderId !== userId) {
+        // Get the NEW highest bid after auto-bids processed
+        const newHighestBid = await storage.getHighestBidForAgent(agentId);
+        if (newHighestBid && newHighestBid.userId !== previousHighBidderId) {
+          await processBundleOutbid(agentId, previousHighBidderId, newHighestBid.totalValue, auction);
+        }
+      }
 
       res.json(bid);
     } catch (error) {
@@ -958,6 +970,140 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching auto-bids:", error);
       res.status(500).json({ message: "Failed to fetch auto-bids" });
+    }
+  });
+
+  // Bid bundles - get user's bundles
+  app.get("/api/my-bundles", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const auctionId = req.query.auctionId ? parseInt(req.query.auctionId) : undefined;
+      const bundles = await storage.getUserBidBundles(userId, auctionId);
+      res.json(bundles);
+    } catch (error) {
+      console.error("Error fetching bundles:", error);
+      res.status(500).json({ message: "Failed to fetch bundles" });
+    }
+  });
+
+  // Create a new bid bundle
+  app.post("/api/bundles", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { auctionId, name, items } = req.body;
+
+      // Validate items
+      if (!items || !Array.isArray(items) || items.length === 0 || items.length > 5) {
+        return res.status(400).json({ message: "Bundle must have 1-5 items" });
+      }
+
+      // Validate each item has required fields
+      for (const item of items) {
+        if (!item.freeAgentId || !item.amount || !item.years || !item.priority) {
+          return res.status(400).json({ message: "Each item must have freeAgentId, amount, years, and priority" });
+        }
+        if (item.years < 1 || item.years > 5) {
+          return res.status(400).json({ message: "Years must be between 1 and 5" });
+        }
+        if (item.priority < 1 || item.priority > 5) {
+          return res.status(400).json({ message: "Priority must be between 1 and 5" });
+        }
+      }
+
+      // Check for duplicate priorities
+      const priorities = items.map((i: any) => i.priority);
+      if (new Set(priorities).size !== priorities.length) {
+        return res.status(400).json({ message: "Each item must have a unique priority" });
+      }
+
+      // Check for duplicate players
+      const playerIds = items.map((i: any) => i.freeAgentId);
+      if (new Set(playerIds).size !== playerIds.length) {
+        return res.status(400).json({ message: "Cannot add the same player twice in a bundle" });
+      }
+
+      // Verify all players exist and auctions are open
+      for (const item of items) {
+        const agent = await storage.getFreeAgent(item.freeAgentId);
+        if (!agent) {
+          return res.status(400).json({ message: `Player not found: ${item.freeAgentId}` });
+        }
+        if (new Date(agent.auctionEndTime) <= new Date()) {
+          return res.status(400).json({ message: `Auction closed for player: ${agent.name}` });
+        }
+        // Verify player belongs to the specified auction
+        if (agent.auctionId !== auctionId) {
+          return res.status(400).json({ message: `Player ${agent.name} is not in the specified auction` });
+        }
+      }
+
+      // Sort items by priority before creating
+      const sortedItems = [...items].sort((a: any, b: any) => a.priority - b.priority);
+
+      const bundle = await storage.createBidBundle(
+        { auctionId, userId, name, status: 'active', activeItemPriority: sortedItems[0].priority },
+        sortedItems.map((item: any) => ({
+          freeAgentId: item.freeAgentId,
+          priority: item.priority,
+          amount: item.amount,
+          years: item.years,
+          status: 'pending',
+        }))
+      );
+
+      // The first item should be activated - place an initial bid
+      const firstItem = bundle.items.find(i => i.status === 'active');
+      if (firstItem) {
+        await deployBundleItemBid(firstItem, bundle, userId);
+      }
+
+      res.json(bundle);
+    } catch (error) {
+      console.error("Error creating bundle:", error);
+      res.status(500).json({ message: "Failed to create bundle" });
+    }
+  });
+
+  // Get a specific bundle
+  app.get("/api/bundles/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const bundleId = parseInt(req.params.id);
+      const bundle = await storage.getBidBundle(bundleId);
+      
+      if (!bundle) {
+        return res.status(404).json({ message: "Bundle not found" });
+      }
+      if (bundle.userId !== userId) {
+        return res.status(403).json({ message: "Not your bundle" });
+      }
+
+      res.json(bundle);
+    } catch (error) {
+      console.error("Error fetching bundle:", error);
+      res.status(500).json({ message: "Failed to fetch bundle" });
+    }
+  });
+
+  // Cancel a bundle
+  app.delete("/api/bundles/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const bundleId = parseInt(req.params.id);
+      const bundle = await storage.getBidBundle(bundleId);
+      
+      if (!bundle) {
+        return res.status(404).json({ message: "Bundle not found" });
+      }
+      if (bundle.userId !== userId) {
+        return res.status(403).json({ message: "Not your bundle" });
+      }
+
+      await storage.deleteBidBundle(bundleId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting bundle:", error);
+      res.status(500).json({ message: "Failed to delete bundle" });
     }
   });
 
@@ -1936,6 +2082,206 @@ async function processAutoBids(
       // Recursively process auto-bids (including original bidder's auto-bid if they have one)
       await processAutoBids(agentId, autoBid.userId, bidTotalValue, auction, bidIncrement);
       break; // Only one auto-bid can win per cycle
+    }
+  }
+}
+
+// Helper function to deploy a bid from a bundle item (works like auto-bid)
+async function deployBundleItemBid(
+  item: any,
+  bundle: any,
+  userId: string
+): Promise<boolean> {
+  const agent = await storage.getFreeAgent(item.freeAgentId);
+  if (!agent) {
+    await storage.updateBidBundleItem(item.id, { status: 'skipped' });
+    return false;
+  }
+
+  // Check if auction is still open
+  if (new Date(agent.auctionEndTime) <= new Date()) {
+    await storage.updateBidBundleItem(item.id, { status: 'skipped' });
+    return false;
+  }
+
+  // Get the auction for year factors and bid increment
+  const auction = await storage.getAuction(bundle.auctionId);
+  if (!auction) {
+    await storage.updateBidBundleItem(item.id, { status: 'skipped' });
+    return false;
+  }
+
+  const yearFactors = [
+    auction.yearFactor1,
+    auction.yearFactor2,
+    auction.yearFactor3,
+    auction.yearFactor4,
+    auction.yearFactor5,
+  ];
+  const bidIncrement = auction.bidIncrement ?? 0.10;
+  const factor = yearFactors[item.years - 1];
+
+  // Get current highest bid
+  const highestBid = await storage.getHighestBidForAgent(item.freeAgentId);
+  let bidAmount = item.amount;
+  let bidTotalValue = bidAmount * factor;
+
+  if (highestBid) {
+    // Need to beat the current highest bid
+    const requiredTotalValue = highestBid.totalValue * (1 + bidIncrement);
+    
+    // Check if our max can beat it
+    const ourMaxTotalValue = item.amount * factor;
+    if (ourMaxTotalValue < requiredTotalValue) {
+      // Can't beat the current bid - skip this item
+      await storage.updateBidBundleItem(item.id, { status: 'skipped' });
+      return false;
+    }
+
+    // Calculate minimum bid to beat current
+    bidAmount = Math.ceil(requiredTotalValue / factor);
+    bidAmount = Math.max(bidAmount, agent.minimumBid);
+    bidTotalValue = bidAmount * factor;
+  } else {
+    // No existing bids - place at minimum or our amount
+    bidAmount = Math.max(agent.minimumBid, 1); // At least $1
+    bidAmount = Math.min(bidAmount, item.amount); // Don't exceed our max
+    bidTotalValue = bidAmount * factor;
+  }
+
+  // Check budget if enforcement is enabled
+  const enforceBudget = auction.enforceBudget ?? true;
+  if (enforceBudget) {
+    try {
+      const budgetInfo = await storage.getUserBudgetInfo(userId, bundle.auctionId);
+      if (bidAmount > budgetInfo.available) {
+        await storage.updateBidBundleItem(item.id, { status: 'skipped' });
+        return false;
+      }
+    } catch (error) {
+      console.error("Error checking budget for bundle bid:", error);
+      await storage.updateBidBundleItem(item.id, { status: 'skipped' });
+      return false;
+    }
+  }
+
+  // Check roster/IP/PA limits
+  const limitCheck = await storage.canUserBidOnPlayer(userId, item.freeAgentId);
+  if (!limitCheck.canBid) {
+    await storage.updateBidBundleItem(item.id, { status: 'skipped' });
+    return false;
+  }
+
+  // Place the bid
+  const newBid = await storage.createBid({
+    freeAgentId: item.freeAgentId,
+    userId: userId,
+    amount: bidAmount,
+    years: item.years,
+    totalValue: bidTotalValue,
+    isAutoBid: true, // Bundle bids are considered auto-bids
+  });
+
+  // Link the bid to the bundle item
+  await storage.updateBidBundleItem(item.id, {
+    status: 'deployed',
+    bidId: newBid.id,
+  });
+
+  // Process other auto-bids that might want to counter
+  await processAutoBids(item.freeAgentId, userId, bidTotalValue, auction, bidIncrement);
+
+  return true;
+}
+
+// Helper function to process bundle cascade when user is outbid
+async function processBundleOutbid(
+  freeAgentId: number,
+  outbidUserId: string,
+  newHighTotalValue: number,
+  auction: any
+): Promise<void> {
+  // Find if this user has an active bundle item for this player
+  const activeBundleItem = await storage.getActiveBundleItemForAgent(freeAgentId, outbidUserId);
+  
+  if (!activeBundleItem) return;
+
+  const bundle = activeBundleItem.bundle;
+  const item = activeBundleItem;
+  
+  // Get year factor for this item
+  const yearFactors = auction ? [
+    auction.yearFactor1,
+    auction.yearFactor2,
+    auction.yearFactor3,
+    auction.yearFactor4,
+    auction.yearFactor5,
+  ] : [1.0, 1.25, 1.33, 1.43, 1.55];
+  
+  const factor = yearFactors[item.years - 1];
+  const bidIncrement = auction?.bidIncrement ?? 0.10;
+  
+  // Check if we can counter-bid (like auto-bid behavior)
+  const requiredTotalValue = newHighTotalValue * (1 + bidIncrement);
+  const ourMaxTotalValue = item.amount * factor;
+  
+  if (ourMaxTotalValue >= requiredTotalValue) {
+    // We can counter! Place a counter-bid
+    const agent = await storage.getFreeAgent(freeAgentId);
+    if (!agent || new Date(agent.auctionEndTime) <= new Date()) {
+      // Auction closed
+      await storage.updateBidBundleItem(item.id, { status: 'skipped' });
+      await storage.activateNextBundleItem(bundle.id);
+      return;
+    }
+
+    let bidAmount = Math.ceil(requiredTotalValue / factor);
+    bidAmount = Math.max(bidAmount, agent.minimumBid);
+    const bidTotalValue = bidAmount * factor;
+
+    // Check budget
+    const enforceBudget = auction?.enforceBudget ?? true;
+    if (enforceBudget) {
+      try {
+        const budgetInfo = await storage.getUserBudgetInfo(outbidUserId, bundle.auctionId);
+        if (bidAmount > budgetInfo.available) {
+          // Can't afford - mark as outbid and move to next
+          await storage.updateBidBundleItem(item.id, { status: 'outbid' });
+          const nextItem = await storage.activateNextBundleItem(bundle.id);
+          if (nextItem) {
+            await deployBundleItemBid(nextItem, bundle, outbidUserId);
+          }
+          return;
+        }
+      } catch (error) {
+        console.error("Error checking budget for bundle counter-bid:", error);
+        await storage.updateBidBundleItem(item.id, { status: 'outbid' });
+        await storage.activateNextBundleItem(bundle.id);
+        return;
+      }
+    }
+
+    // Place counter-bid
+    const newBid = await storage.createBid({
+      freeAgentId: freeAgentId,
+      userId: outbidUserId,
+      amount: bidAmount,
+      years: item.years,
+      totalValue: bidTotalValue,
+      isAutoBid: true,
+    });
+
+    // Update the bundle item with new bid
+    await storage.updateBidBundleItem(item.id, { bidId: newBid.id });
+
+    // Process other auto-bids
+    await processAutoBids(freeAgentId, outbidUserId, bidTotalValue, auction, bidIncrement);
+  } else {
+    // We can't counter - mark as outbid and activate next item
+    await storage.updateBidBundleItem(item.id, { status: 'outbid' });
+    const nextItem = await storage.activateNextBundleItem(bundle.id);
+    if (nextItem) {
+      await deployBundleItemBid(nextItem, bundle, outbidUserId);
     }
   }
 }
