@@ -16,10 +16,12 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { CountdownTimer } from "./CountdownTimer";
 import { formatCurrency } from "@/lib/utils";
 import type { FreeAgentWithBids, BidWithUser } from "@shared/schema";
 import { useAuth } from "@/hooks/useAuth";
 import { formatDistanceToNow } from "date-fns";
+import { Clock } from "lucide-react";
 
 interface BidHistoryModalProps {
   agent: FreeAgentWithBids | null;
@@ -58,6 +60,12 @@ export function BidHistoryModal({ agent, open, onOpenChange }: BidHistoryModalPr
             Bid history and activity for this player
           </DialogDescription>
         </DialogHeader>
+
+        <div className="flex items-center gap-2 py-2 px-3 rounded-md bg-muted/50" data-testid="auction-ending-display">
+          <Clock className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">Auction ending in:</span>
+          <CountdownTimer endTime={agent.auctionEndTime} />
+        </div>
         
         <div className="flex-1 overflow-auto">
           {isLoading ? (
