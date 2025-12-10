@@ -1092,6 +1092,90 @@ export async function registerRoutes(
     }
   });
 
+  // Update a bundle
+  app.put("/api/bundles/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const bundleId = parseInt(req.params.id);
+      const { name, items } = req.body;
+
+      const existingBundle = await storage.getBidBundle(bundleId);
+      if (!existingBundle) {
+        return res.status(404).json({ message: "Bundle not found" });
+      }
+      if (existingBundle.userId !== userId) {
+        return res.status(403).json({ message: "Not your bundle" });
+      }
+      if (existingBundle.status !== 'active') {
+        return res.status(400).json({ message: "Can only edit active bundles" });
+      }
+
+      // Validate items
+      if (!items || !Array.isArray(items) || items.length === 0 || items.length > 5) {
+        return res.status(400).json({ message: "Bundle must have 1-5 items" });
+      }
+
+      for (const item of items) {
+        if (!item.freeAgentId || !item.amount || !item.years || !item.priority) {
+          return res.status(400).json({ message: "Each item must have freeAgentId, amount, years, and priority" });
+        }
+        if (item.years < 1 || item.years > 5) {
+          return res.status(400).json({ message: "Years must be between 1 and 5" });
+        }
+        if (item.priority < 1 || item.priority > 5) {
+          return res.status(400).json({ message: "Priority must be between 1 and 5" });
+        }
+      }
+
+      // Check for duplicate priorities
+      const priorities = items.map((i: any) => i.priority);
+      if (new Set(priorities).size !== priorities.length) {
+        return res.status(400).json({ message: "Each item must have a unique priority" });
+      }
+
+      // Verify all players exist and auctions are open
+      for (const item of items) {
+        const agent = await storage.getFreeAgent(item.freeAgentId);
+        if (!agent) {
+          return res.status(400).json({ message: `Player not found: ${item.freeAgentId}` });
+        }
+        if (new Date(agent.auctionEndTime) <= new Date()) {
+          return res.status(400).json({ message: `Auction closed for player: ${agent.name}` });
+        }
+        if (agent.auctionId !== existingBundle.auctionId) {
+          return res.status(400).json({ message: `Player ${agent.name} is not in the specified auction` });
+        }
+      }
+
+      // Sort items by priority
+      const sortedItems = [...items].sort((a: any, b: any) => a.priority - b.priority);
+
+      // Update the bundle using the new storage method
+      const updatedBundle = await storage.updateBidBundleWithItems(
+        bundleId,
+        { name: name || existingBundle.name },
+        sortedItems.map((item: any) => ({
+          freeAgentId: item.freeAgentId,
+          priority: item.priority,
+          amount: item.amount,
+          years: item.years,
+          status: 'pending',
+        }))
+      );
+
+      // Deploy the first item immediately
+      const firstItem = updatedBundle.items.find(i => i.status === 'active');
+      if (firstItem) {
+        await deployBundleItemBid(firstItem, updatedBundle, userId);
+      }
+
+      res.json(updatedBundle);
+    } catch (error) {
+      console.error("Error updating bundle:", error);
+      res.status(500).json({ message: "Failed to update bundle" });
+    }
+  });
+
   // Cancel a bundle
   app.delete("/api/bundles/:id", isAuthenticated, async (req: any, res) => {
     try {

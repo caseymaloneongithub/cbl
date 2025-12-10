@@ -179,6 +179,7 @@ export interface IStorage {
   createBidBundle(bundle: InsertBidBundle, items: Omit<InsertBidBundleItem, 'bundleId'>[]): Promise<BidBundleWithItems>;
   updateBidBundle(id: number, data: Partial<InsertBidBundle>): Promise<BidBundle>;
   updateBidBundleItem(id: number, data: Partial<InsertBidBundleItem>): Promise<BidBundleItem>;
+  updateBidBundleWithItems(id: number, data: Partial<InsertBidBundle>, items: Omit<InsertBidBundleItem, 'bundleId'>[]): Promise<BidBundleWithItems>;
   deleteBidBundle(id: number): Promise<void>;
   getActiveBundleItemForAgent(freeAgentId: number, userId: string): Promise<(BidBundleItem & { bundle: BidBundle }) | undefined>;
   activateNextBundleItem(bundleId: number): Promise<BidBundleItemWithAgent | null>;
@@ -1645,6 +1646,38 @@ export class DatabaseStorage implements IStorage {
       .where(eq(bidBundleItems.id, id))
       .returning();
     return updated;
+  }
+
+  async updateBidBundleWithItems(
+    id: number, 
+    data: Partial<InsertBidBundle>, 
+    items: Omit<InsertBidBundleItem, 'bundleId'>[]
+  ): Promise<BidBundleWithItems> {
+    // Update the bundle name and reset the active item priority
+    await db
+      .update(bidBundles)
+      .set({ 
+        ...data, 
+        activeItemPriority: items[0]?.priority || 1,
+        updatedAt: new Date() 
+      })
+      .where(eq(bidBundles.id, id));
+
+    // Delete existing items
+    await db.delete(bidBundleItems).where(eq(bidBundleItems.bundleId, id));
+
+    // Create new items with the first one as 'active'
+    const itemsToInsert = items.map((item, index) => ({
+      ...item,
+      bundleId: id,
+      status: index === 0 ? 'active' : 'pending',
+      activatedAt: index === 0 ? new Date() : null,
+    }));
+
+    await db.insert(bidBundleItems).values(itemsToInsert);
+
+    // Return the full bundle with items
+    return this.getBidBundle(id) as Promise<BidBundleWithItems>;
   }
 
   async deleteBidBundle(id: number): Promise<void> {
