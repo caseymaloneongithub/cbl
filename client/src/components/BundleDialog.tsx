@@ -14,6 +14,7 @@ import type { FreeAgentWithBids } from "@shared/schema";
 import { Plus, Trash2, GripVertical, Package } from "lucide-react";
 
 interface BundleItem {
+  id: string;
   freeAgentId: number;
   freeAgentName: string;
   amount: number;
@@ -41,7 +42,7 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
   });
 
   const createBundleMutation = useMutation({
-    mutationFn: async (data: { auctionId: number; name: string; items: Omit<BundleItem, "freeAgentName">[] }) => {
+    mutationFn: async (data: { auctionId: number; name: string; items: { freeAgentId: number; amount: number; years: number; priority: number }[] }) => {
       const response = await apiRequest("POST", "/api/bundles", data);
       return response.json();
     },
@@ -103,6 +104,7 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
     }
 
     const newItem: BundleItem = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       freeAgentId: parseInt(selectedAgentId),
       freeAgentName: agent.name,
       amount: parsedAmount,
@@ -116,8 +118,8 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
     setYears("1");
   };
 
-  const handleRemoveItem = (index: number) => {
-    const filtered = bundleItems.filter((_, idx) => idx !== index);
+  const handleRemoveItem = (itemId: string) => {
+    const filtered = bundleItems.filter((item) => item.id !== itemId);
     setBundleItems(
       filtered.map((item, idx) => ({ ...item, priority: idx + 1 }))
     );
@@ -151,7 +153,7 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
     createBundleMutation.mutate({
       auctionId,
       name: bundleName || `Bundle ${new Date().toLocaleDateString()}`,
-      items: bundleItems.map(({ freeAgentName, ...rest }) => rest),
+      items: bundleItems.map(({ id, freeAgentName, ...rest }) => rest),
     });
   };
 
@@ -191,7 +193,7 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
             {bundleItems.length > 0 && (
               <div className="space-y-2">
                 {bundleItems.map((item, idx) => (
-                  <Card key={`${item.freeAgentId}-${idx}`}>
+                  <Card key={item.id}>
                     <CardContent className="flex items-center justify-between p-3">
                       <div className="flex items-center gap-3">
                         <div className="flex flex-col gap-1">
@@ -201,7 +203,7 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
                             className="h-5 w-5"
                             disabled={idx === 0}
                             onClick={() => handleMoveUp(idx)}
-                            data-testid={`button-move-up-${idx}`}
+                            data-testid={`button-move-up-${item.id}`}
                           >
                             <span className="text-xs">^</span>
                           </Button>
@@ -211,7 +213,7 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
                             className="h-5 w-5"
                             disabled={idx === bundleItems.length - 1}
                             onClick={() => handleMoveDown(idx)}
-                            data-testid={`button-move-down-${idx}`}
+                            data-testid={`button-move-down-${item.id}`}
                           >
                             <span className="text-xs">v</span>
                           </Button>
@@ -227,8 +229,8 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => handleRemoveItem(idx)}
-                        data-testid={`button-remove-item-${idx}`}
+                        onClick={() => handleRemoveItem(item.id)}
+                        data-testid={`button-remove-item-${item.id}`}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>

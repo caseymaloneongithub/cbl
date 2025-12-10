@@ -1713,6 +1713,30 @@ export class DatabaseStorage implements IStorage {
       return this.activateNextBundleItem(bundleId);
     }
 
+    // Mark any earlier items for the same player as 'outbid' (for same-player ladder support)
+    const earlierSamePlayerItems = bundle.items.filter(
+      item => item.freeAgentId === nextItem.freeAgentId && 
+              item.priority < nextItem.priority &&
+              (item.status === 'active' || item.status === 'deployed')
+    );
+    for (const earlierItem of earlierSamePlayerItems) {
+      await this.updateBidBundleItem(earlierItem.id, { status: 'outbid' });
+    }
+    
+    // Deactivate any existing auto-bid for the same player (to prevent conflicts with new bundle item)
+    if (earlierSamePlayerItems.length > 0) {
+      const existingAutoBid = await this.getAutoBid(nextItem.freeAgentId, bundle.userId);
+      if (existingAutoBid && existingAutoBid.isActive) {
+        await this.createOrUpdateAutoBid({
+          freeAgentId: nextItem.freeAgentId,
+          userId: bundle.userId,
+          maxAmount: existingAutoBid.maxAmount,
+          years: existingAutoBid.years,
+          isActive: false,
+        });
+      }
+    }
+
     // Activate the next item
     const updatedItem = await this.updateBidBundleItem(nextItem.id, {
       status: 'active',
