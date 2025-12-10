@@ -43,13 +43,12 @@ export function BundleDialog({ auctionId, open, onOpenChange, editBundle }: Bund
 
   const isEditMode = !!editBundle;
 
-  // Populate form when editing
+  // Populate form when editing - include all items regardless of status
   useEffect(() => {
     if (editBundle && open) {
       setBundleName(editBundle.name || "");
       setBundleItems(
         editBundle.items
-          .filter(item => item.status === 'pending' || item.status === 'active' || item.status === 'deployed')
           .sort((a, b) => a.priority - b.priority)
           .map((item) => ({
             id: `${item.id}-${Date.now()}`,

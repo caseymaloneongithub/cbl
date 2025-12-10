@@ -23,6 +23,7 @@ export default function MyBids() {
   const [editingAutoBid, setEditingAutoBid] = useState<FreeAgentWithBids | null>(null);
   const [autoBidDialogOpen, setAutoBidDialogOpen] = useState(false);
   const [bundleDialogOpen, setBundleDialogOpen] = useState(false);
+  const [editingBundle, setEditingBundle] = useState<BidBundleWithItems | null>(null);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -281,7 +282,10 @@ export default function MyBids() {
         <TabsContent value="bundles" className="space-y-4">
           <div className="flex justify-end">
             <Button
-              onClick={() => setBundleDialogOpen(true)}
+              onClick={() => {
+                setEditingBundle(null);
+                setBundleDialogOpen(true);
+              }}
               disabled={!activeAuction}
               data-testid="button-create-bundle"
             >
@@ -344,17 +348,32 @@ export default function MyBids() {
                           </div>
                         ))}
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full"
-                      onClick={() => deleteBundleMutation.mutate(bundle.id)}
-                      disabled={deleteBundleMutation.isPending}
-                      data-testid={`button-delete-bundle-${bundle.id}`}
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Cancel Bundle
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => {
+                          setEditingBundle(bundle);
+                          setBundleDialogOpen(true);
+                        }}
+                        data-testid={`button-edit-bundle-${bundle.id}`}
+                      >
+                        <Pencil className="h-4 w-4 mr-2" />
+                        Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => deleteBundleMutation.mutate(bundle.id)}
+                        disabled={deleteBundleMutation.isPending}
+                        data-testid={`button-delete-bundle-${bundle.id}`}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Cancel
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               ))}
@@ -428,7 +447,11 @@ export default function MyBids() {
         <BundleDialog
           auctionId={activeAuction.id}
           open={bundleDialogOpen}
-          onOpenChange={setBundleDialogOpen}
+          onOpenChange={(open) => {
+            setBundleDialogOpen(open);
+            if (!open) setEditingBundle(null);
+          }}
+          editBundle={editingBundle}
         />
       )}
     </div>
