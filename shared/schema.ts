@@ -224,6 +224,59 @@ export const autoBidsRelations = relations(autoBids, ({ one }) => ({
   }),
 }));
 
+// Bid bundles table - groups of conditional bids that deploy sequentially when outbid
+export const bidBundles = pgTable("bid_bundles", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  auctionId: integer("auction_id").references(() => auctions.id).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  name: varchar("name", { length: 100 }),
+  status: varchar("status", { length: 20 }).default("active").notNull(), // 'active', 'completed', 'cancelled'
+  activeItemPriority: integer("active_item_priority").default(1).notNull(), // Which priority item is currently active
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const bidBundlesRelations = relations(bidBundles, ({ one, many }) => ({
+  auction: one(auctions, {
+    fields: [bidBundles.auctionId],
+    references: [auctions.id],
+  }),
+  user: one(users, {
+    fields: [bidBundles.userId],
+    references: [users.id],
+  }),
+  items: many(bidBundleItems),
+}));
+
+// Bid bundle items table - individual bids within a bundle
+export const bidBundleItems = pgTable("bid_bundle_items", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  bundleId: integer("bundle_id").references(() => bidBundles.id).notNull(),
+  freeAgentId: integer("free_agent_id").references(() => freeAgents.id).notNull(),
+  priority: integer("priority").notNull(), // 1-5, lower = higher priority
+  amount: real("amount").notNull(),
+  years: integer("years").notNull(),
+  status: varchar("status", { length: 20 }).default("pending").notNull(), // 'pending', 'active', 'deployed', 'outbid', 'skipped', 'won'
+  bidId: integer("bid_id").references(() => bids.id), // Link to actual bid when deployed
+  activatedAt: timestamp("activated_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const bidBundleItemsRelations = relations(bidBundleItems, ({ one }) => ({
+  bundle: one(bidBundles, {
+    fields: [bidBundleItems.bundleId],
+    references: [bidBundles.id],
+  }),
+  freeAgent: one(freeAgents, {
+    fields: [bidBundleItems.freeAgentId],
+    references: [freeAgents.id],
+  }),
+  bid: one(bids, {
+    fields: [bidBundleItems.bidId],
+    references: [bids.id],
+  }),
+}));
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -273,6 +326,19 @@ export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTo
   usedAt: true,
 });
 
+export const insertBidBundleSchema = createInsertSchema(bidBundles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertBidBundleItemSchema = createInsertSchema(bidBundleItems).omit({
+  id: true,
+  bidId: true,
+  activatedAt: true,
+  createdAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -299,6 +365,12 @@ export type InsertAutoBid = z.infer<typeof insertAutoBidSchema>;
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
 export type InsertPasswordResetToken = z.infer<typeof insertPasswordResetTokenSchema>;
 
+export type BidBundle = typeof bidBundles.$inferSelect;
+export type InsertBidBundle = z.infer<typeof insertBidBundleSchema>;
+
+export type BidBundleItem = typeof bidBundleItems.$inferSelect;
+export type InsertBidBundleItem = z.infer<typeof insertBidBundleItemSchema>;
+
 // Extended types for frontend use
 export type FreeAgentWithBids = FreeAgent & {
   currentBid: Bid | null;
@@ -313,4 +385,12 @@ export type BidWithUser = Bid & {
 export type UserWithStats = User & {
   activeBids: number;
   wonPlayers: number;
+};
+
+export type BidBundleItemWithAgent = BidBundleItem & {
+  freeAgent: FreeAgent;
+};
+
+export type BidBundleWithItems = BidBundle & {
+  items: BidBundleItemWithAgent[];
 };
