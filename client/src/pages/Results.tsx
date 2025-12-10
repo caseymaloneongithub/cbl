@@ -31,7 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrency, formatDate, formatNumberWithCommas } from "@/lib/utils";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, REFRESH_INTERVAL } from "@/lib/queryClient";
 import type { FreeAgentWithBids, Auction } from "@shared/schema";
 import { Trophy, RefreshCcw, Loader2, Archive } from "lucide-react";
 
@@ -62,6 +62,7 @@ export default function Results() {
   const { data: auctions } = useQuery<Auction[]>({
     queryKey: ["/api/auctions"],
     enabled: isAuthenticated,
+    refetchInterval: REFRESH_INTERVAL,
   });
 
   // Build query key with optional auction filter
@@ -80,6 +81,7 @@ export default function Results() {
       return res.json();
     },
     enabled: isAuthenticated,
+    refetchInterval: REFRESH_INTERVAL,
   });
 
   const relistMutation = useMutation({

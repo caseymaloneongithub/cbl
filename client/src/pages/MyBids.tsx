@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CountdownTimer } from "@/components/CountdownTimer";
 import { AutoBidDialog } from "@/components/AutoBidDialog";
 import { formatCurrency, isAuctionClosed } from "@/lib/utils";
+import { REFRESH_INTERVAL } from "@/lib/queryClient";
 import type { FreeAgentWithBids, AutoBid, FreeAgent, Auction } from "@shared/schema";
 import { Gavel, Zap, Trophy, AlertCircle, Pencil } from "lucide-react";
 
@@ -47,16 +48,19 @@ export default function MyBids() {
 
   const { data: activeAuction } = useQuery<Auction | null>({
     queryKey: ["/api/auctions/active"],
+    refetchInterval: REFRESH_INTERVAL,
   });
 
   const { data: myBids, isLoading: loadingBids } = useQuery<FreeAgentWithBids[]>({
     queryKey: ["/api/my-bids"],
     enabled: isAuthenticated,
+    refetchInterval: REFRESH_INTERVAL,
   });
 
   const { data: myAutoBids, isLoading: loadingAutoBids } = useQuery<AutoBidWithAgent[]>({
     queryKey: ["/api/my-auto-bids"],
     enabled: isAuthenticated,
+    refetchInterval: REFRESH_INTERVAL,
   });
 
   const activeBids = myBids?.filter(b => !isAuctionClosed(b.auctionEndTime)) || [];

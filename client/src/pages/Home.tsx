@@ -8,6 +8,7 @@ import { Users, Gavel, Trophy, Clock, DollarSign, AlertCircle } from "lucide-rea
 import type { FreeAgentWithBids, UserWithStats, Auction } from "@shared/schema";
 import { FreeAgentsTable } from "@/components/FreeAgentsTable";
 import { formatCurrency } from "@/lib/utils";
+import { REFRESH_INTERVAL } from "@/lib/queryClient";
 
 export default function Home() {
   const { user } = useAuth();
@@ -15,6 +16,7 @@ export default function Home() {
   // Fetch the active auction
   const { data: activeAuction } = useQuery<Auction | null>({
     queryKey: ["/api/auctions/active"],
+    refetchInterval: REFRESH_INTERVAL,
   });
 
   // Check if user is enrolled in the active auction
@@ -27,6 +29,7 @@ export default function Home() {
       return res.json();
     },
     enabled: !!activeAuction?.id,
+    refetchInterval: REFRESH_INTERVAL,
   });
 
   const isEnrolled = enrollmentStatus?.enrolled ?? false;
@@ -42,6 +45,7 @@ export default function Home() {
       if (!res.ok) throw new Error("Failed to fetch free agents");
       return res.json();
     },
+    refetchInterval: REFRESH_INTERVAL,
   });
 
   const { data: stats, isLoading: loadingStats } = useQuery<{
@@ -51,6 +55,7 @@ export default function Home() {
     endingToday: number;
   }>({
     queryKey: ["/api/stats"],
+    refetchInterval: REFRESH_INTERVAL,
   });
 
   const { data: budget, isLoading: loadingBudget } = useQuery<{
@@ -72,6 +77,7 @@ export default function Home() {
       return res.json();
     },
     enabled: !!activeAuction?.id,
+    refetchInterval: REFRESH_INTERVAL,
   });
 
   const { data: limits, isLoading: loadingLimits } = useQuery<{
@@ -98,6 +104,7 @@ export default function Home() {
       return res.json();
     },
     enabled: !!activeAuction?.id,
+    refetchInterval: REFRESH_INTERVAL,
   });
 
   const activeAgents = freeAgents?.filter(a => a.isActive) || [];
