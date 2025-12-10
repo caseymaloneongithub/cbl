@@ -2419,6 +2419,14 @@ async function processBundleOutbid(
 
     // Process other auto-bids
     await processAutoBids(freeAgentId, outbidUserId, bidTotalValue, auction, bidIncrement);
+
+    // After auto-bids process, check if we got outbid again and need to continue the cascade
+    const latestHighBid = await storage.getHighestBidForAgent(freeAgentId);
+    if (latestHighBid && latestHighBid.userId !== outbidUserId) {
+      console.log(`[processBundleOutbid] Got outbid again after auto-bids, recursing with new high value ${latestHighBid.totalValue}`);
+      // Recursively call to either counter-bid or cascade to next item
+      await processBundleOutbid(freeAgentId, outbidUserId, latestHighBid.totalValue, auction);
+    }
   } else {
     // We can't counter - mark as outbid and activate next item
     console.log(`[processBundleOutbid] Can't counter - marking as outbid and activating next item`);
