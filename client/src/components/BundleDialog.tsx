@@ -52,6 +52,10 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/my-bundles"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-bids"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/free-agents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/budget"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/limits"] });
       toast({ title: "Bundle created successfully" });
       resetForm();
       onOpenChange(false);
