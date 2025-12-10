@@ -7,6 +7,8 @@ import {
   passwordResetTokens,
   auctions,
   auctionTeams,
+  bidBundles,
+  bidBundleItems,
   type User,
   type UpsertUser,
   type LeagueSettings,
@@ -24,6 +26,11 @@ import {
   type InsertAuction,
   type AuctionTeam,
   type InsertAuctionTeam,
+  type BidBundle,
+  type InsertBidBundle,
+  type BidBundleItem,
+  type InsertBidBundleItem,
+  type BidBundleWithItems,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, lt, sql, isNull, inArray } from "drizzle-orm";
@@ -162,6 +169,16 @@ export interface IStorage {
       auctionName: string;
     }>;
   }>;
+  
+  // Bid bundles
+  getBidBundle(id: number): Promise<BidBundleWithItems | undefined>;
+  getUserBidBundles(userId: string, auctionId?: number): Promise<BidBundleWithItems[]>;
+  createBidBundle(bundle: InsertBidBundle, items: Omit<InsertBidBundleItem, 'bundleId'>[]): Promise<BidBundleWithItems>;
+  updateBidBundle(id: number, data: Partial<InsertBidBundle>): Promise<BidBundle>;
+  updateBidBundleItem(id: number, data: Partial<InsertBidBundleItem>): Promise<BidBundleItem>;
+  deleteBidBundle(id: number): Promise<void>;
+  getActiveBundleItemForAgent(freeAgentId: number, userId: string): Promise<(BidBundleItem & { bundle: BidBundle }) | undefined>;
+  activateNextBundleItem(bundleId: number): Promise<BidBundleItem | null>;
 }
 
 export class DatabaseStorage implements IStorage {
