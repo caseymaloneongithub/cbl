@@ -2242,6 +2242,16 @@ async function deployBundleItemBid(
   let bidTotalValue = bidAmount * factor;
 
   if (highestBid) {
+    // Check if WE are already the high bidder - don't outbid ourselves!
+    if (highestBid.userId === userId) {
+      // We're already winning - just link to existing bid and mark as deployed
+      await storage.updateBidBundleItem(item.id, {
+        status: 'deployed',
+        bidId: highestBid.id,
+      });
+      return true;
+    }
+
     // Need to beat the current highest bid
     const requiredTotalValue = highestBid.totalValue * (1 + bidIncrement);
     
