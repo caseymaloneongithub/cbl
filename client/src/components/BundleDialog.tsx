@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { formatCurrency, isAuctionClosed, formatNumberWithCommas } from "@/lib/utils";
-import type { FreeAgentWithBids } from "@shared/schema";
+import type { FreeAgentWithBids, BidBundleWithItems } from "@shared/schema";
 import { Plus, Trash2, GripVertical, Package, Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -29,9 +29,10 @@ interface BundleDialogProps {
   auctionId: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  editBundle?: BidBundleWithItems | null;
 }
 
-export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProps) {
+export function BundleDialog({ auctionId, open, onOpenChange, editBundle }: BundleDialogProps) {
   const { toast } = useToast();
   const [bundleName, setBundleName] = useState("");
   const [bundleItems, setBundleItems] = useState<BundleItem[]>([]);
@@ -39,6 +40,28 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
   const [amount, setAmount] = useState<number>(0);
   const [years, setYears] = useState("1");
   const [playerSearchOpen, setPlayerSearchOpen] = useState(false);
+
+  const isEditMode = !!editBundle;
+
+  // Populate form when editing
+  useEffect(() => {
+    if (editBundle && open) {
+      setBundleName(editBundle.name || "");
+      setBundleItems(
+        editBundle.items
+          .filter(item => item.status === 'pending' || item.status === 'active' || item.status === 'deployed')
+          .sort((a, b) => a.priority - b.priority)
+          .map((item) => ({
+            id: `${item.id}-${Date.now()}`,
+            freeAgentId: item.freeAgentId,
+            freeAgentName: item.freeAgent?.name || `Player ${item.freeAgentId}`,
+            amount: item.amount,
+            years: item.years,
+            priority: item.priority,
+          }))
+      );
+    }
+  }, [editBundle, open]);
 
   const { data: freeAgents } = useQuery<FreeAgentWithBids[]>({
     queryKey: ["/api/free-agents", auctionId],
@@ -62,6 +85,26 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
     },
     onError: (error: Error) => {
       toast({ title: "Failed to create bundle", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateBundleMutation = useMutation({
+    mutationFn: async (data: { name: string; items: { freeAgentId: number; amount: number; years: number; priority: number }[] }) => {
+      const response = await apiRequest("PUT", `/api/bundles/${editBundle!.id}`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/my-bundles"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-bids"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/free-agents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/budget"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/limits"] });
+      toast({ title: "Bundle updated successfully" });
+      resetForm();
+      onOpenChange(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to update bundle", description: error.message, variant: "destructive" });
     },
   });
 
@@ -157,11 +200,20 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
       return;
     }
 
-    createBundleMutation.mutate({
-      auctionId,
-      name: bundleName || `Bundle ${new Date().toLocaleDateString()}`,
-      items: bundleItems.map(({ id, freeAgentName, ...rest }) => rest),
-    });
+    const items = bundleItems.map(({ id, freeAgentName, ...rest }) => rest);
+
+    if (isEditMode) {
+      updateBundleMutation.mutate({
+        name: bundleName || editBundle!.name || `Bundle ${new Date().toLocaleDateString()}`,
+        items,
+      });
+    } else {
+      createBundleMutation.mutate({
+        auctionId,
+        name: bundleName || `Bundle ${new Date().toLocaleDateString()}`,
+        items,
+      });
+    }
   };
 
   return (
@@ -173,12 +225,13 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Package className="h-5 w-5" />
-            Create Bid Bundle
+            {isEditMode ? "Edit Bid Bundle" : "Create Bid Bundle"}
           </DialogTitle>
           <DialogDescription>
-            Add up to 5 bids in priority order. You can add the same player multiple times
-            with different amounts/years (e.g., $5M/2yr first, then $7M/1yr as fallback).
-            When outbid, the system moves to your next priority.
+            {isEditMode 
+              ? "Modify your bundle's players and priorities. Changes will reset and redeploy the bundle."
+              : "Add up to 5 bids in priority order. You can add the same player multiple times with different amounts/years (e.g., $5M/2yr first, then $7M/1yr as fallback). When outbid, the system moves to your next priority."
+            }
           </DialogDescription>
         </DialogHeader>
 
@@ -355,10 +408,13 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={bundleItems.length === 0 || createBundleMutation.isPending}
+            disabled={bundleItems.length === 0 || createBundleMutation.isPending || updateBundleMutation.isPending}
             data-testid="button-submit-bundle"
           >
-            {createBundleMutation.isPending ? "Creating..." : "Create Bundle"}
+            {isEditMode
+              ? (updateBundleMutation.isPending ? "Saving..." : "Save Changes")
+              : (createBundleMutation.isPending ? "Creating..." : "Create Bundle")
+            }
           </Button>
         </DialogFooter>
       </DialogContent>
