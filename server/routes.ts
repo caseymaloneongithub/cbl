@@ -986,6 +986,19 @@ export async function registerRoutes(
     }
   });
 
+  // Get user's bundles by auction ID (path parameter version)
+  app.get("/api/my-bundles/:auctionId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const auctionId = parseInt(req.params.auctionId);
+      const bundles = await storage.getUserBidBundles(userId, auctionId);
+      res.json(bundles);
+    } catch (error) {
+      console.error("Error fetching bundles:", error);
+      res.status(500).json({ message: "Failed to fetch bundles" });
+    }
+  });
+
   // Create a new bid bundle
   app.post("/api/bundles", isAuthenticated, async (req: any, res) => {
     try {
