@@ -781,9 +781,6 @@ export async function registerRoutes(
         return res.status(400).json({ message: limitsCheck.reason });
       }
 
-      // Capture previous high bidder before placing new bid (for bundle processing)
-      const previousHighBidderId = currentHighBid?.userId;
-
       const bid = await storage.createBid({
         freeAgentId: agentId,
         userId,
@@ -796,17 +793,20 @@ export async function registerRoutes(
       // Process auto-bids from other users
       await processAutoBids(agentId, userId, totalValue, auction, bidIncrement);
 
-      // Process bundle outbids for the previous high bidder (if different from current)
-      if (previousHighBidderId && previousHighBidderId !== userId) {
-        console.log(`[Bundle Cascade] Checking cascade for agent ${agentId}, previous bidder: ${previousHighBidderId}`);
-        // Get the NEW highest bid after auto-bids processed
-        const newHighestBid = await storage.getHighestBidForAgent(agentId);
-        console.log(`[Bundle Cascade] New highest bid: userId=${newHighestBid?.userId}, totalValue=${newHighestBid?.totalValue}`);
-        if (newHighestBid && newHighestBid.userId !== previousHighBidderId) {
-          console.log(`[Bundle Cascade] Triggering processBundleOutbid for agent ${agentId}, outbid user: ${previousHighBidderId}`);
-          await processBundleOutbid(agentId, previousHighBidderId, newHighestBid.totalValue, auction);
-        } else {
-          console.log(`[Bundle Cascade] Skipping - new high bidder is same as previous or no bid found`);
+      // Process bundle outbids for ALL deployed bundle items on this player
+      // This handles cases where bundle items become outdated (not just the previous high bidder)
+      const newHighestBid = await storage.getHighestBidForAgent(agentId);
+      if (newHighestBid) {
+        const deployedBundleItems = await storage.getAllDeployedBundleItemsForAgent(agentId);
+        console.log(`[Bundle Cascade] Found ${deployedBundleItems.length} deployed bundle items for agent ${agentId}`);
+        
+        for (const bundleItem of deployedBundleItems) {
+          const bundleOwner = bundleItem.bundle.userId;
+          // Only process cascade if the bundle owner is NOT the current high bidder
+          if (bundleOwner !== newHighestBid.userId) {
+            console.log(`[Bundle Cascade] Triggering processBundleOutbid for agent ${agentId}, outbid user: ${bundleOwner}`);
+            await processBundleOutbid(agentId, bundleOwner, newHighestBid.totalValue, auction);
+          }
         }
       }
 

@@ -182,6 +182,7 @@ export interface IStorage {
   updateBidBundleWithItems(id: number, data: Partial<InsertBidBundle>, items: Omit<InsertBidBundleItem, 'bundleId'>[]): Promise<BidBundleWithItems>;
   deleteBidBundle(id: number): Promise<void>;
   getActiveBundleItemForAgent(freeAgentId: number, userId: string): Promise<(BidBundleItem & { bundle: BidBundle }) | undefined>;
+  getAllDeployedBundleItemsForAgent(freeAgentId: number): Promise<(BidBundleItem & { bundle: BidBundle })[]>;
   activateNextBundleItem(bundleId: number): Promise<BidBundleItemWithAgent | null>;
 }
 
@@ -1719,6 +1720,31 @@ export class DatabaseStorage implements IStorage {
       ...results[0].item,
       bundle: results[0].bundle,
     };
+  }
+
+  async getAllDeployedBundleItemsForAgent(
+    freeAgentId: number
+  ): Promise<(BidBundleItem & { bundle: BidBundle })[]> {
+    // Find ALL deployed bundle items for this player (from any user)
+    const results = await db
+      .select({
+        item: bidBundleItems,
+        bundle: bidBundles,
+      })
+      .from(bidBundleItems)
+      .innerJoin(bidBundles, eq(bidBundleItems.bundleId, bidBundles.id))
+      .where(
+        and(
+          eq(bidBundleItems.freeAgentId, freeAgentId),
+          eq(bidBundleItems.status, 'deployed'),
+          eq(bidBundles.status, 'active')
+        )
+      );
+
+    return results.map(r => ({
+      ...r.item,
+      bundle: r.bundle,
+    }));
   }
 
   async activateNextBundleItem(bundleId: number): Promise<BidBundleItemWithAgent | null> {
