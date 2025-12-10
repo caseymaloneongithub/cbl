@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CountdownTimer } from "@/components/CountdownTimer";
 import { AutoBidDialog } from "@/components/AutoBidDialog";
 import { formatCurrency, isAuctionClosed } from "@/lib/utils";
-import { REFRESH_INTERVAL } from "@/lib/queryClient";
+import { REFRESH_INTERVAL, queryClient } from "@/lib/queryClient";
 import type { FreeAgentWithBids, AutoBid, FreeAgent, Auction } from "@shared/schema";
 import { Gavel, Zap, Trophy, AlertCircle, Pencil } from "lucide-react";
 
@@ -66,6 +66,16 @@ export default function MyBids() {
   const activeBids = myBids?.filter(b => !isAuctionClosed(b.auctionEndTime)) || [];
   const wonBids = myBids?.filter(b => isAuctionClosed(b.auctionEndTime) && b.winnerId) || [];
   const activeAutoBids = myAutoBids?.filter(ab => ab.isActive) || [];
+
+  const handleAuctionClose = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/free-agents"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/my-bids"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/my-auto-bids"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/results"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/budget"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/limits"] });
+  }, []);
 
   if (authLoading) {
     return (
@@ -147,7 +157,7 @@ export default function MyBids() {
                         <Badge variant={isWinning ? "default" : "destructive"}>
                           {isWinning ? "WINNING" : "OUTBID"}
                         </Badge>
-                        <CountdownTimer endTime={agent.auctionEndTime} />
+                        <CountdownTimer endTime={agent.auctionEndTime} onClose={handleAuctionClose} />
                       </div>
                     </CardContent>
                   </Card>
@@ -202,7 +212,7 @@ export default function MyBids() {
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-muted-foreground">Ends</span>
-                        <CountdownTimer endTime={autoBid.freeAgent.auctionEndTime} />
+                        <CountdownTimer endTime={autoBid.freeAgent.auctionEndTime} onClose={handleAuctionClose} />
                       </div>
                       <Button
                         variant="outline"

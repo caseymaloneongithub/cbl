@@ -40,6 +40,7 @@ import { Gavel, Zap, Search, ArrowUpDown, ArrowUp, ArrowDown, X, Trash2, History
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useCallback } from "react";
 
 interface FreeAgentsTableProps {
   freeAgents: FreeAgentWithBids[];
@@ -68,6 +69,15 @@ export function FreeAgentsTable({ freeAgents, bidIncrement = 0.10 }: FreeAgentsT
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
   const isAdmin = user?.isCommissioner || user?.isSuperAdmin;
+
+  const handleAuctionClose = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/free-agents"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/my-bids"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/results"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/budget"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/limits"] });
+  }, []);
 
   const deleteAgent = useMutation({
     mutationFn: async (agentId: number) => {
@@ -406,7 +416,7 @@ export function FreeAgentsTable({ freeAgents, bidIncrement = 0.10 }: FreeAgentsT
                           )}
                         </TableCell>
                         <TableCell className="text-center">
-                          <CountdownTimer endTime={agent.auctionEndTime} />
+                          <CountdownTimer endTime={agent.auctionEndTime} onClose={handleAuctionClose} />
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
