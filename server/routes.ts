@@ -1016,12 +1016,6 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Each item must have a unique priority" });
       }
 
-      // Check for duplicate players
-      const playerIds = items.map((i: any) => i.freeAgentId);
-      if (new Set(playerIds).size !== playerIds.length) {
-        return res.status(400).json({ message: "Cannot add the same player twice in a bundle" });
-      }
-
       // Verify all players exist and auctions are open
       for (const item of items) {
         const agent = await storage.getFreeAgent(item.freeAgentId);

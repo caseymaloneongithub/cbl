@@ -65,9 +65,7 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
   };
 
   const availableAgents = freeAgents?.filter(
-    (agent) =>
-      !isAuctionClosed(agent.auctionEndTime) &&
-      !bundleItems.some((item) => item.freeAgentId === agent.id)
+    (agent) => !isAuctionClosed(agent.auctionEndTime)
   ) || [];
 
   const handleAddItem = () => {
@@ -118,8 +116,8 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
     setYears("1");
   };
 
-  const handleRemoveItem = (freeAgentId: number) => {
-    const filtered = bundleItems.filter((item) => item.freeAgentId !== freeAgentId);
+  const handleRemoveItem = (index: number) => {
+    const filtered = bundleItems.filter((_, idx) => idx !== index);
     setBundleItems(
       filtered.map((item, idx) => ({ ...item, priority: idx + 1 }))
     );
@@ -169,8 +167,9 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
             Create Bid Bundle
           </DialogTitle>
           <DialogDescription>
-            Add up to 5 players in priority order. When outbid on one player,
-            the system automatically bids on the next available player in your bundle.
+            Add up to 5 bids in priority order. You can add the same player multiple times
+            with different amounts/years (e.g., $5M/2yr first, then $7M/1yr as fallback).
+            When outbid, the system moves to your next priority.
           </DialogDescription>
         </DialogHeader>
 
@@ -192,7 +191,7 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
             {bundleItems.length > 0 && (
               <div className="space-y-2">
                 {bundleItems.map((item, idx) => (
-                  <Card key={item.freeAgentId}>
+                  <Card key={`${item.freeAgentId}-${idx}`}>
                     <CardContent className="flex items-center justify-between p-3">
                       <div className="flex items-center gap-3">
                         <div className="flex flex-col gap-1">
@@ -202,7 +201,7 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
                             className="h-5 w-5"
                             disabled={idx === 0}
                             onClick={() => handleMoveUp(idx)}
-                            data-testid={`button-move-up-${item.freeAgentId}`}
+                            data-testid={`button-move-up-${idx}`}
                           >
                             <span className="text-xs">^</span>
                           </Button>
@@ -212,7 +211,7 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
                             className="h-5 w-5"
                             disabled={idx === bundleItems.length - 1}
                             onClick={() => handleMoveDown(idx)}
-                            data-testid={`button-move-down-${item.freeAgentId}`}
+                            data-testid={`button-move-down-${idx}`}
                           >
                             <span className="text-xs">v</span>
                           </Button>
@@ -228,8 +227,8 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => handleRemoveItem(item.freeAgentId)}
-                        data-testid={`button-remove-item-${item.freeAgentId}`}
+                        onClick={() => handleRemoveItem(idx)}
+                        data-testid={`button-remove-item-${idx}`}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
