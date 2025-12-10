@@ -798,10 +798,15 @@ export async function registerRoutes(
 
       // Process bundle outbids for the previous high bidder (if different from current)
       if (previousHighBidderId && previousHighBidderId !== userId) {
+        console.log(`[Bundle Cascade] Checking cascade for agent ${agentId}, previous bidder: ${previousHighBidderId}`);
         // Get the NEW highest bid after auto-bids processed
         const newHighestBid = await storage.getHighestBidForAgent(agentId);
+        console.log(`[Bundle Cascade] New highest bid: userId=${newHighestBid?.userId}, totalValue=${newHighestBid?.totalValue}`);
         if (newHighestBid && newHighestBid.userId !== previousHighBidderId) {
+          console.log(`[Bundle Cascade] Triggering processBundleOutbid for agent ${agentId}, outbid user: ${previousHighBidderId}`);
           await processBundleOutbid(agentId, previousHighBidderId, newHighestBid.totalValue, auction);
+        } else {
+          console.log(`[Bundle Cascade] Skipping - new high bidder is same as previous or no bid found`);
         }
       }
 
@@ -2326,10 +2331,15 @@ async function processBundleOutbid(
   newHighTotalValue: number,
   auction: any
 ): Promise<void> {
-  // Find if this user has an active bundle item for this player
-  const activeBundleItem = await storage.getActiveBundleItemForAgent(freeAgentId, outbidUserId);
-  
-  if (!activeBundleItem) return;
+  try {
+    console.log(`[processBundleOutbid] Called for agent ${freeAgentId}, user ${outbidUserId}, newHighTotalValue ${newHighTotalValue}`);
+    
+    // Find if this user has an active bundle item for this player
+    const activeBundleItem = await storage.getActiveBundleItemForAgent(freeAgentId, outbidUserId);
+    
+    console.log(`[processBundleOutbid] Found active bundle item:`, activeBundleItem ? `id=${activeBundleItem.id}, status=${activeBundleItem.status}` : 'none');
+    
+    if (!activeBundleItem) return;
 
   const bundle = activeBundleItem.bundle;
   const item = activeBundleItem;
@@ -2349,6 +2359,8 @@ async function processBundleOutbid(
   // Check if we can counter-bid (like auto-bid behavior)
   const requiredTotalValue = newHighTotalValue * (1 + bidIncrement);
   const ourMaxTotalValue = item.amount * factor;
+  
+  console.log(`[processBundleOutbid] Can we counter? ourMax=${ourMaxTotalValue}, required=${requiredTotalValue}, item.amount=${item.amount}, years=${item.years}, factor=${factor}`);
   
   if (ourMaxTotalValue >= requiredTotalValue) {
     // We can counter! Place a counter-bid
@@ -2409,10 +2421,15 @@ async function processBundleOutbid(
     await processAutoBids(freeAgentId, outbidUserId, bidTotalValue, auction, bidIncrement);
   } else {
     // We can't counter - mark as outbid and activate next item
+    console.log(`[processBundleOutbid] Can't counter - marking as outbid and activating next item`);
     await storage.updateBidBundleItem(item.id, { status: 'outbid' });
     const nextItem = await storage.activateNextBundleItem(bundle.id);
+    console.log(`[processBundleOutbid] Next item activated:`, nextItem ? `id=${nextItem.id}, freeAgentId=${nextItem.freeAgentId}` : 'none');
     if (nextItem) {
       await deployBundleItemBid(nextItem, bundle, outbidUserId);
     }
+  }
+  } catch (error) {
+    console.error(`[processBundleOutbid] Error processing bundle cascade:`, error);
   }
 }
