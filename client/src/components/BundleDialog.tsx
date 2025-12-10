@@ -7,11 +7,14 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { formatCurrency, isAuctionClosed } from "@/lib/utils";
 import type { FreeAgentWithBids } from "@shared/schema";
-import { Plus, Trash2, GripVertical, Package } from "lucide-react";
+import { Plus, Trash2, GripVertical, Package, Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface BundleItem {
   id: string;
@@ -35,6 +38,7 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [amount, setAmount] = useState("");
   const [years, setYears] = useState("1");
+  const [playerSearchOpen, setPlayerSearchOpen] = useState(false);
 
   const { data: freeAgents } = useQuery<FreeAgentWithBids[]>({
     queryKey: ["/api/free-agents", auctionId],
@@ -246,18 +250,51 @@ export function BundleDialog({ auctionId, open, onOpenChange }: BundleDialogProp
                   <div className="grid grid-cols-3 gap-3">
                     <div className="col-span-3 sm:col-span-1">
                       <Label className="text-xs">Player</Label>
-                      <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
-                        <SelectTrigger data-testid="select-player">
-                          <SelectValue placeholder="Select player" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {availableAgents.map((agent) => (
-                            <SelectItem key={agent.id} value={agent.id.toString()}>
-                              {agent.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Popover open={playerSearchOpen} onOpenChange={setPlayerSearchOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={playerSearchOpen}
+                            className="w-full justify-between font-normal"
+                            data-testid="select-player"
+                          >
+                            {selectedAgentId
+                              ? availableAgents.find((agent) => agent.id.toString() === selectedAgentId)?.name
+                              : "Search players..."}
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[300px] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Search players..." data-testid="input-player-search" />
+                            <CommandList>
+                              <CommandEmpty>No player found.</CommandEmpty>
+                              <CommandGroup>
+                                {availableAgents.map((agent) => (
+                                  <CommandItem
+                                    key={agent.id}
+                                    value={agent.name}
+                                    onSelect={() => {
+                                      setSelectedAgentId(agent.id.toString());
+                                      setPlayerSearchOpen(false);
+                                    }}
+                                    data-testid={`option-player-${agent.id}`}
+                                  >
+                                    <Check
+                                      className={cn(
+                                        "mr-2 h-4 w-4",
+                                        selectedAgentId === agent.id.toString() ? "opacity-100" : "opacity-0"
+                                      )}
+                                    />
+                                    {agent.name}
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                     </div>
                     <div>
                       <Label className="text-xs">Max Amount ($)</Label>
