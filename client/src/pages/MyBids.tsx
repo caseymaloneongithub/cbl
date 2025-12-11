@@ -282,6 +282,22 @@ export default function MyBids() {
                         <span className="font-mono">{autoBid.years}yr</span>
                       </div>
                       <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Max Total Value</span>
+                        <span className="font-mono font-medium">
+                          {(() => {
+                            const yearFactors = [
+                              activeAuction?.yearFactor1 ?? 1.0,
+                              activeAuction?.yearFactor2 ?? 1.25,
+                              activeAuction?.yearFactor3 ?? 1.33,
+                              activeAuction?.yearFactor4 ?? 1.43,
+                              activeAuction?.yearFactor5 ?? 1.55,
+                            ];
+                            const factor = yearFactors[autoBid.years - 1];
+                            return formatCurrency(autoBid.maxAmount * factor);
+                          })()}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
                         <span className="text-sm text-muted-foreground">Ends</span>
                         <CountdownTimer endTime={autoBid.freeAgent.auctionEndTime} onClose={handleAuctionClose} />
                       </div>
@@ -366,7 +382,17 @@ export default function MyBids() {
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="font-mono text-xs">
-                                {formatCurrency(item.amount)} / {item.years}yr
+                                {formatCurrency(item.amount)}/{item.years}yr = {(() => {
+                                  const yearFactors = [
+                                    activeAuction?.yearFactor1 ?? 1.0,
+                                    activeAuction?.yearFactor2 ?? 1.25,
+                                    activeAuction?.yearFactor3 ?? 1.33,
+                                    activeAuction?.yearFactor4 ?? 1.43,
+                                    activeAuction?.yearFactor5 ?? 1.55,
+                                  ];
+                                  const factor = yearFactors[item.years - 1];
+                                  return formatCurrency(item.amount * factor);
+                                })()}
                               </span>
                               {getBundleItemStatusBadge(item, user?.id)}
                             </div>
