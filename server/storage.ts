@@ -20,6 +20,7 @@ import {
   type AutoBid,
   type InsertAutoBid,
   type FreeAgentWithBids,
+  type OutbidPlayer,
   type BidWithUser,
   type PasswordResetToken,
   type Auction,
@@ -605,13 +606,13 @@ export class DatabaseStorage implements IStorage {
     return newBid;
   }
 
-  async getUserOutbidPlayers(userId: string): Promise<FreeAgentWithBids[]> {
+  async getUserOutbidPlayers(userId: string): Promise<OutbidPlayer[]> {
     const userBidAgentIds = await db
       .selectDistinct({ agentId: bids.freeAgentId })
       .from(bids)
       .where(eq(bids.userId, userId));
     
-    const result: FreeAgentWithBids[] = [];
+    const result: OutbidPlayer[] = [];
     for (const { agentId } of userBidAgentIds) {
       const [agent] = await db.select().from(freeAgents).where(eq(freeAgents.id, agentId));
       if (agent) {
@@ -620,6 +621,13 @@ export class DatabaseStorage implements IStorage {
           let highBidder: User | null = null;
           const [bidder] = await db.select().from(users).where(eq(users.id, highestBid.userId));
           highBidder = bidder || null;
+          
+          const [userHighestBid] = await db
+            .select()
+            .from(bids)
+            .where(and(eq(bids.freeAgentId, agent.id), eq(bids.userId, userId)))
+            .orderBy(desc(bids.totalValue))
+            .limit(1);
           
           const bidCount = await db
             .select({ count: sql<number>`count(*)` })
@@ -631,6 +639,7 @@ export class DatabaseStorage implements IStorage {
             currentBid: highestBid,
             highBidder,
             bidCount: Number(bidCount[0]?.count || 0),
+            userHighestBid: userHighestBid || null,
           });
         }
       }

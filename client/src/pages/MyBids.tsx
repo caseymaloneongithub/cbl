@@ -12,7 +12,7 @@ import { AutoBidDialog } from "@/components/AutoBidDialog";
 import { BundleDialog } from "@/components/BundleDialog";
 import { formatCurrency, isAuctionClosed } from "@/lib/utils";
 import { REFRESH_INTERVAL, queryClient, apiRequest } from "@/lib/queryClient";
-import type { FreeAgentWithBids, AutoBid, FreeAgent, Auction, BidBundleWithItems } from "@shared/schema";
+import type { FreeAgentWithBids, AutoBid, FreeAgent, Auction, BidBundleWithItems, OutbidPlayer } from "@shared/schema";
 import { Gavel, Zap, Trophy, Package, Plus, Trash2, Pencil, TrendingDown } from "lucide-react";
 
 type AutoBidWithAgent = AutoBid & { freeAgent: FreeAgent };
@@ -72,7 +72,7 @@ export default function MyBids() {
     refetchInterval: REFRESH_INTERVAL,
   });
 
-  const { data: myOutbid, isLoading: loadingOutbid } = useQuery<FreeAgentWithBids[]>({
+  const { data: myOutbid, isLoading: loadingOutbid } = useQuery<OutbidPlayer[]>({
     queryKey: ["/api/my-outbid"],
     enabled: isAuthenticated,
     refetchInterval: REFRESH_INTERVAL,
@@ -491,12 +491,13 @@ export default function MyBids() {
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <div className="text-center py-4 rounded-lg bg-muted/50">
+                        <div className="text-sm text-muted-foreground mb-1">Your Bid</div>
                         <div className="text-3xl font-bold font-mono">
-                          {agent.currentBid ? formatCurrency(agent.currentBid.amount) : "-"}
+                          {agent.userHighestBid ? formatCurrency(agent.userHighestBid.amount) : "-"}
                         </div>
-                        {agent.currentBid && (
+                        {agent.userHighestBid && (
                           <div className="text-sm text-muted-foreground mt-1">
-                            {agent.currentBid.years}yr contract = {formatCurrency(agent.currentBid.totalValue)}
+                            {agent.userHighestBid.years}yr contract = {formatCurrency(agent.userHighestBid.totalValue)}
                           </div>
                         )}
                       </div>

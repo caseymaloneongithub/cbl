@@ -378,6 +378,10 @@ export type FreeAgentWithBids = FreeAgent & {
   bidCount: number;
 };
 
+export type OutbidPlayer = FreeAgentWithBids & {
+  userHighestBid: Bid | null;
+};
+
 export type BidWithUser = Bid & {
   user: User;
 };
