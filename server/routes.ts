@@ -2145,6 +2145,9 @@ async function processAllAutoBidsUntilStable(
   let iterations = 0;
   let anyChangesMade = false;
   
+  // Track who bid in current pass (reset each iteration)
+  let lastBidderThisPass = excludeUserId;
+  
   while (passesWithNoChange < 2 && iterations < maxIterations) {
     iterations++;
     let madeChange = false;
@@ -2165,8 +2168,8 @@ async function processAllAutoBidsUntilStable(
     
     // Process regular auto-bids first
     for (const autoBid of autoBids) {
-      // Skip if this user is already winning or excluded
-      if (autoBid.userId === currentHighUserId || autoBid.userId === excludeUserId || !autoBid.isActive) continue;
+      // Skip if this user is already winning or just bid this pass
+      if (autoBid.userId === currentHighUserId || autoBid.userId === lastBidderThisPass || !autoBid.isActive) continue;
       
       const factor = yearFactors[autoBid.years - 1];
       const maxTotalValue = autoBid.maxAmount * factor;
@@ -2202,7 +2205,7 @@ async function processAllAutoBidsUntilStable(
         
         console.log(`[UnifiedAutoBid] Auto-bid placed: ${autoBid.userId} bid $${bidAmount} on agent ${agentId}`);
         madeChange = true;
-        excludeUserId = autoBid.userId; // Don't let this user bid again this iteration
+        lastBidderThisPass = autoBid.userId; // Don't let this user bid again this iteration
         break; // Only one bid per pass
       }
     }
