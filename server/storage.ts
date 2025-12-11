@@ -156,7 +156,11 @@ export interface IStorage {
   deleteUser(userId: string): Promise<void>;
   
   // Auction finalization (background job)
-  finalizeClosedAuctions(): Promise<{ finalized: number; errors: string[] }>;
+  finalizeClosedAuctions(): Promise<{ 
+    finalized: number; 
+    errors: string[];
+    activatedBundleItems: Array<{ bundleId: number; itemId: number; freeAgentId: number; userId: string; auctionId: number }>;
+  }>;
   
   // Admin operations
   getSuperAdmin(): Promise<User | undefined>;
@@ -1431,10 +1435,16 @@ export class DatabaseStorage implements IStorage {
   }
   
   // Finalize closed auctions - set winner for auctions that have ended
-  async finalizeClosedAuctions(): Promise<{ finalized: number; errors: string[] }> {
+  // Also deactivates auto-bids and updates bundle items for closed players
+  async finalizeClosedAuctions(): Promise<{ 
+    finalized: number; 
+    errors: string[];
+    activatedBundleItems: Array<{ bundleId: number; itemId: number; freeAgentId: number; userId: string; auctionId: number }>;
+  }> {
     const now = new Date();
     const errors: string[] = [];
     let finalized = 0;
+    const activatedBundleItems: Array<{ bundleId: number; itemId: number; freeAgentId: number; userId: string; auctionId: number }> = [];
     
     // Find all free agents that have closed but don't have a winner set
     const closedWithoutWinner = await db
@@ -1459,6 +1469,63 @@ export class DatabaseStorage implements IStorage {
           console.log(`[Auction Job] Finalized: ${agent.name} won by user ${highestBid.userId} with $${highestBid.amount} x ${highestBid.years}yr`);
         }
         // If no bids, leave winnerId as null (commissioner can relist)
+        
+        // Deactivate all auto-bids for this player
+        await db
+          .update(autoBids)
+          .set({ isActive: false, updatedAt: new Date() })
+          .where(eq(autoBids.freeAgentId, agent.id));
+        console.log(`[Auction Job] Deactivated auto-bids for ${agent.name}`);
+        
+        // Find all bundle items targeting this player that are deployed/active
+        const bundleItemsForAgent = await db
+          .select({
+            item: bidBundleItems,
+            bundle: bidBundles,
+          })
+          .from(bidBundleItems)
+          .innerJoin(bidBundles, eq(bidBundleItems.bundleId, bidBundles.id))
+          .where(
+            and(
+              eq(bidBundleItems.freeAgentId, agent.id),
+              inArray(bidBundleItems.status, ['deployed', 'active'])
+            )
+          );
+        
+        for (const { item, bundle } of bundleItemsForAgent) {
+          // Determine the outcome for this bundle item
+          const userWon = highestBid && highestBid.userId === bundle.userId;
+          const newStatus = userWon ? 'won' : (highestBid ? 'outbid' : 'skipped');
+          
+          // Update the bundle item status
+          await db
+            .update(bidBundleItems)
+            .set({ status: newStatus })
+            .where(eq(bidBundleItems.id, item.id));
+          console.log(`[Auction Job] Bundle item ${item.id} for ${agent.name}: ${newStatus}`);
+          
+          // If user lost or no bids, activate next item in bundle
+          if (!userWon) {
+            const nextItem = await this.activateNextBundleItem(bundle.id);
+            if (nextItem) {
+              console.log(`[Auction Job] Activated next bundle item ${nextItem.id} (agent ${nextItem.freeAgentId}) for bundle ${bundle.id}`);
+              activatedBundleItems.push({
+                bundleId: bundle.id,
+                itemId: nextItem.id,
+                freeAgentId: nextItem.freeAgentId,
+                userId: bundle.userId,
+                auctionId: bundle.auctionId,
+              });
+            }
+          } else {
+            // User won - mark bundle as completed
+            await db
+              .update(bidBundles)
+              .set({ status: 'completed', updatedAt: new Date() })
+              .where(eq(bidBundles.id, bundle.id));
+            console.log(`[Auction Job] Bundle ${bundle.id} completed (user won)`);
+          }
+        }
       } catch (error) {
         const message = `Failed to finalize ${agent.name} (ID: ${agent.id}): ${error}`;
         errors.push(message);
@@ -1466,7 +1533,7 @@ export class DatabaseStorage implements IStorage {
       }
     }
     
-    return { finalized, errors };
+    return { finalized, errors, activatedBundleItems };
   }
 
   async getSuperAdmin(): Promise<User | undefined> {

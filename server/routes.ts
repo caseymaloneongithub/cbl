@@ -2382,3 +2382,5 @@ async function deployBundleItemAsAutoBid(
   return true;
 }
 
+// Export functions for use in background jobs
+export { processAllAutoBidsUntilStable, deployBundleItemAsAutoBid };

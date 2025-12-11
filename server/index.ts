@@ -1,5 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
-import { registerRoutes } from "./routes";
+import { registerRoutes, deployBundleItemAsAutoBid } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { storage } from "./storage";
@@ -126,6 +126,37 @@ async function runFinalization() {
     }
     if (result.errors.length > 0) {
       log(`Errors: ${result.errors.join(", ")}`, "auction-job");
+    }
+    
+    // Process activated bundle items - deploy auto-bids for next items in bundles
+    if (result.activatedBundleItems.length > 0) {
+      log(`Processing ${result.activatedBundleItems.length} activated bundle item(s)`, "auction-job");
+      
+      for (const activatedItem of result.activatedBundleItems) {
+        try {
+          // Get the full bundle with items
+          const bundle = await storage.getBidBundle(activatedItem.bundleId);
+          if (!bundle) {
+            log(`Bundle ${activatedItem.bundleId} not found`, "auction-job");
+            continue;
+          }
+          
+          // Find the activated item in the bundle
+          const item = bundle.items.find(i => i.id === activatedItem.itemId);
+          if (!item) {
+            log(`Bundle item ${activatedItem.itemId} not found in bundle`, "auction-job");
+            continue;
+          }
+          
+          // Deploy the bundle item as an auto-bid
+          const deployed = await deployBundleItemAsAutoBid(item, bundle);
+          if (deployed) {
+            log(`Deployed bundle item ${activatedItem.itemId} for player ${activatedItem.freeAgentId}`, "auction-job");
+          }
+        } catch (error) {
+          log(`Error deploying bundle item ${activatedItem.itemId}: ${error}`, "auction-job");
+        }
+      }
     }
   } catch (error) {
     log(`Finalization job error: ${error}`, "auction-job");
