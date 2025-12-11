@@ -13,7 +13,7 @@ import { BundleDialog } from "@/components/BundleDialog";
 import { formatCurrency, isAuctionClosed } from "@/lib/utils";
 import { REFRESH_INTERVAL, queryClient, apiRequest } from "@/lib/queryClient";
 import type { FreeAgentWithBids, AutoBid, FreeAgent, Auction, BidBundleWithItems } from "@shared/schema";
-import { Gavel, Zap, Trophy, Package, Plus, Trash2, Pencil } from "lucide-react";
+import { Gavel, Zap, Trophy, Package, Plus, Trash2, Pencil, TrendingDown } from "lucide-react";
 
 type AutoBidWithAgent = AutoBid & { freeAgent: FreeAgent };
 
@@ -72,6 +72,12 @@ export default function MyBids() {
     refetchInterval: REFRESH_INTERVAL,
   });
 
+  const { data: myOutbid, isLoading: loadingOutbid } = useQuery<FreeAgentWithBids[]>({
+    queryKey: ["/api/my-outbid"],
+    enabled: isAuthenticated,
+    refetchInterval: REFRESH_INTERVAL,
+  });
+
   const deleteBundleMutation = useMutation({
     mutationFn: async (bundleId: number) => {
       await apiRequest("DELETE", `/api/bundles/${bundleId}`);
@@ -89,6 +95,7 @@ export default function MyBids() {
   const wonBids = myBids?.filter(b => isAuctionClosed(b.auctionEndTime) && b.winnerId) || [];
   const activeAutoBids = myAutoBids?.filter(ab => ab.isActive) || [];
   const activeBundles = myBundles?.filter(b => b.status === 'active') || [];
+  const outbidPlayers = myOutbid || [];
 
   const handleAuctionClose = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/free-agents"] });
@@ -96,6 +103,7 @@ export default function MyBids() {
     queryClient.invalidateQueries({ queryKey: ["/api/my-bids"] });
     queryClient.invalidateQueries({ queryKey: ["/api/my-auto-bids"] });
     queryClient.invalidateQueries({ queryKey: ["/api/my-bundles"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/my-outbid"] });
     queryClient.invalidateQueries({ queryKey: ["/api/results"] });
     queryClient.invalidateQueries({ queryKey: ["/api/budget"] });
     queryClient.invalidateQueries({ queryKey: ["/api/limits"] });
@@ -169,6 +177,10 @@ export default function MyBids() {
           <TabsTrigger value="won" data-testid="tab-won">
             <Trophy className="h-4 w-4 mr-2" />
             Won ({wonBids.length})
+          </TabsTrigger>
+          <TabsTrigger value="outbid" data-testid="tab-outbid">
+            <TrendingDown className="h-4 w-4 mr-2" />
+            Outbid ({outbidPlayers.length})
           </TabsTrigger>
         </TabsList>
 
@@ -444,6 +456,67 @@ export default function MyBids() {
                   </CardContent>
                 </Card>
               ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="outbid" className="space-y-4">
+          {loadingOutbid ? (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {[...Array(2)].map((_, i) => (
+                <Skeleton key={i} className="h-40" />
+              ))}
+            </div>
+          ) : outbidPlayers.length === 0 ? (
+            <Card>
+              <CardContent className="p-12 text-center">
+                <TrendingDown className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-medium mb-2">No Outbid Players</h3>
+                <p className="text-muted-foreground">
+                  You haven't been outbid on any players.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {outbidPlayers.map((agent) => {
+                const auctionClosed = isAuctionClosed(agent.auctionEndTime);
+                return (
+                  <Card key={agent.id} data-testid={`card-outbid-${agent.id}`}>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <CardTitle className="text-lg">{agent.name}</CardTitle>
+                        <Badge variant="outline">{agent.playerType === "pitcher" ? "Pitcher" : "Hitter"}</Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="text-center py-4 rounded-lg bg-muted/50">
+                        <div className="text-3xl font-bold font-mono">
+                          {agent.currentBid ? formatCurrency(agent.currentBid.amount) : "-"}
+                        </div>
+                        {agent.currentBid && (
+                          <div className="text-sm text-muted-foreground mt-1">
+                            {agent.currentBid.years}yr contract = {formatCurrency(agent.currentBid.totalValue)}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <Badge variant="destructive">OUTBID</Badge>
+                        {auctionClosed ? (
+                          <Badge variant="secondary">Closed</Badge>
+                        ) : (
+                          <CountdownTimer endTime={agent.auctionEndTime} onClose={handleAuctionClose} />
+                        )}
+                      </div>
+                      {agent.highBidder && (
+                        <div className="text-sm text-muted-foreground">
+                          High bidder: {agent.highBidder.teamName || agent.highBidder.firstName}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </TabsContent>

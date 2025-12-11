@@ -950,6 +950,17 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/my-outbid", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const outbidPlayers = await storage.getUserOutbidPlayers(userId);
+      res.json(outbidPlayers);
+    } catch (error) {
+      console.error("Error fetching outbid players:", error);
+      res.status(500).json({ message: "Failed to fetch outbid players" });
+    }
+  });
+
   app.get("/api/my-auto-bids", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.userId!;

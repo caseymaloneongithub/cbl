@@ -605,6 +605,39 @@ export class DatabaseStorage implements IStorage {
     return newBid;
   }
 
+  async getUserOutbidPlayers(userId: string): Promise<FreeAgentWithBids[]> {
+    const userBidAgentIds = await db
+      .selectDistinct({ agentId: bids.freeAgentId })
+      .from(bids)
+      .where(eq(bids.userId, userId));
+    
+    const result: FreeAgentWithBids[] = [];
+    for (const { agentId } of userBidAgentIds) {
+      const [agent] = await db.select().from(freeAgents).where(eq(freeAgents.id, agentId));
+      if (agent) {
+        const highestBid = await this.getHighestBidForAgent(agent.id);
+        if (highestBid && highestBid.userId !== userId) {
+          let highBidder: User | null = null;
+          const [bidder] = await db.select().from(users).where(eq(users.id, highestBid.userId));
+          highBidder = bidder || null;
+          
+          const bidCount = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(bids)
+            .where(eq(bids.freeAgentId, agent.id));
+          
+          result.push({
+            ...agent,
+            currentBid: highestBid,
+            highBidder,
+            bidCount: Number(bidCount[0]?.count || 0),
+          });
+        }
+      }
+    }
+    return result;
+  }
+
   // Auto bids
   async getAutoBid(agentId: number, userId: string): Promise<AutoBid | undefined> {
     const [autoBid] = await db
