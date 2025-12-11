@@ -98,12 +98,13 @@ export function BidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.10 }
 
   const submitBid = useMutation({
     mutationFn: async (data: BidFormData) => {
-      await apiRequest("POST", `/api/free-agents/${freeAgent!.id}/bids`, {
+      const response = await apiRequest("POST", `/api/free-agents/${freeAgent!.id}/bids`, {
         amount: data.amount,
         years: data.years,
       });
+      return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
         title: "Bid Placed",
         description: `Your bid of ${formatCurrency(watchAmount)} for ${selectedYears} year(s) has been submitted!`,
@@ -112,6 +113,15 @@ export function BidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.10 }
       queryClient.invalidateQueries({ queryKey: ["/api/free-agents", freeAgent?.id, "bids"] });
       queryClient.invalidateQueries({ queryKey: ["/api/my-bids"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+      
+      // If auto-bids were triggered, force full data refresh
+      if (data?.autoBidsTriggered) {
+        queryClient.invalidateQueries({ queryKey: ["/api/my-auto-bids"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/my-bundles"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/results"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/budget"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/limits"] });
+      }
       onOpenChange(false);
     },
     onError: (error: Error) => {

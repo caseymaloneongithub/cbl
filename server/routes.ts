@@ -791,9 +791,9 @@ export async function registerRoutes(
       });
 
       // Process all auto-bids (regular + bundle items) until stable
-      await processAllAutoBidsUntilStable(agentId, userId, auction);
+      const autoBidsTriggered = await processAllAutoBidsUntilStable(agentId, userId, auction);
 
-      res.json(bid);
+      res.json({ ...bid, autoBidsTriggered });
     } catch (error) {
       console.error("Error placing bid:", error);
       res.status(500).json({ message: "Failed to place bid" });
@@ -904,7 +904,8 @@ export async function registerRoutes(
               });
               
               // Process all auto-bids until stable
-              await processAllAutoBidsUntilStable(agentId, userId, auction);
+              const triggered = await processAllAutoBidsUntilStable(agentId, userId, auction);
+              return res.json({ ...autoBid, autoBidsTriggered: triggered });
             }
           }
         } else if (!currentHighBid) {
@@ -924,12 +925,13 @@ export async function registerRoutes(
             });
             
             // Process all auto-bids until stable
-            await processAllAutoBidsUntilStable(agentId, userId, auction);
+            const triggered = await processAllAutoBidsUntilStable(agentId, userId, auction);
+            return res.json({ ...autoBid, autoBidsTriggered: triggered });
           }
         }
       }
 
-      res.json(autoBid);
+      res.json({ ...autoBid, autoBidsTriggered: false });
     } catch (error) {
       console.error("Error saving auto-bid:", error);
       res.status(500).json({ message: "Failed to save auto-bid" });
@@ -2104,16 +2106,17 @@ export async function registerRoutes(
 
 // Unified auto-bid processor that handles both regular auto-bids and bundle items
 // Iterates until stable state (two passes with no changes)
+// Returns true if any changes were made (auto-bids triggered)
 async function processAllAutoBidsUntilStable(
   agentId: number,
   excludeUserId: string,
   auction: any
-): Promise<void> {
+): Promise<boolean> {
   const agent = await storage.getFreeAgent(agentId);
-  if (!agent) return;
+  if (!agent) return false;
   
   // Check if auction is still open
-  if (new Date(agent.auctionEndTime) <= new Date()) return;
+  if (new Date(agent.auctionEndTime) <= new Date()) return false;
   
   const yearFactors = auction ? [
     auction.yearFactor1,
@@ -2129,6 +2132,7 @@ async function processAllAutoBidsUntilStable(
   let passesWithNoChange = 0;
   const maxIterations = 100; // Safety limit
   let iterations = 0;
+  let anyChangesMade = false;
   
   while (passesWithNoChange < 2 && iterations < maxIterations) {
     iterations++;
@@ -2264,6 +2268,7 @@ async function processAllAutoBidsUntilStable(
     
     if (madeChange) {
       passesWithNoChange = 0;
+      anyChangesMade = true;
     } else {
       passesWithNoChange++;
     }
@@ -2272,6 +2277,8 @@ async function processAllAutoBidsUntilStable(
   if (iterations >= maxIterations) {
     console.error(`[UnifiedAutoBid] Hit max iterations (${maxIterations}) for agent ${agentId}`);
   }
+  
+  return anyChangesMade;
 }
 
 // Deploy a bundle item as an initial bid on its player (called when cascade activates a new item)

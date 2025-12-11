@@ -141,13 +141,14 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.
 
   const saveAutoBid = useMutation({
     mutationFn: async (data: AutoBidFormData) => {
-      await apiRequest("POST", `/api/free-agents/${freeAgent!.id}/auto-bid`, {
+      const response = await apiRequest("POST", `/api/free-agents/${freeAgent!.id}/auto-bid`, {
         maxAmount: data.maxAmount,
         years: data.years,
         isActive: data.isActive,
       });
+      return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
         title: "Auto-Bid Saved",
         description: watchIsActive
@@ -159,6 +160,14 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.
       queryClient.invalidateQueries({ queryKey: ["/api/my-bids"] });
       queryClient.invalidateQueries({ queryKey: ["/api/my-auto-bids"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+      
+      // If auto-bids were triggered, force full data refresh
+      if (data?.autoBidsTriggered) {
+        queryClient.invalidateQueries({ queryKey: ["/api/my-bundles"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/results"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/budget"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/limits"] });
+      }
       onOpenChange(false);
     },
     onError: (error: Error) => {
