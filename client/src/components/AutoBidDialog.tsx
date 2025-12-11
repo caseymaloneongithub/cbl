@@ -66,8 +66,18 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.
     enabled: !!freeAgent?.id && open,
   });
 
+  const { data: budget } = useQuery<{ budget: number; spent: number; committed: number; available: number }>({
+    queryKey: ["/api/budget", { auctionId: freeAgent?.auctionId }],
+    enabled: !!freeAgent?.auctionId,
+  });
+
+  const { data: currentUser } = useQuery<{ id: string }>({
+    queryKey: ["/api/auth/me"],
+  });
+
   // Use fresh data if available, otherwise fall back to passed prop
   const currentBidInfo = freshFreeAgent?.currentBid ?? freeAgent?.currentBid;
+  const currentHighBidder = freshFreeAgent?.highBidder ?? freeAgent?.highBidder;
 
   const yearFactors = useMemo(() => 
     settings
@@ -138,6 +148,15 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.
   const factor = yearFactors[selectedYears - 1] || 1;
   const maxTotalValue = (watchMaxAmount || 0) * factor;
   const bidIncrementPercent = Math.round(bidIncrement * 100);
+
+  // Calculate available budget for this auto-bid
+  // If user is already high bidder, their current bid amount is freed up
+  const isCurrentHighBidder = currentUser?.id === currentHighBidder?.id;
+  const currentBidAmount = currentBidInfo?.amount || 0;
+  const availableForThisBid = budget 
+    ? budget.available + (isCurrentHighBidder ? currentBidAmount : 0)
+    : Infinity;
+  const exceedsBudget = budget && watchIsActive && (watchMaxAmount || 0) > availableForThisBid;
 
   const saveAutoBid = useMutation({
     mutationFn: async (data: AutoBidFormData) => {
@@ -321,13 +340,23 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.
                   <div className="rounded-lg border p-4 bg-background">
                     <div className="flex justify-between items-center">
                       <span className="text-sm">Maximum Total Value</span>
-                      <span className="text-xl font-bold font-mono text-primary" data-testid="text-max-total">
+                      <span className={`text-xl font-bold font-mono ${exceedsBudget ? "text-destructive" : "text-primary"}`} data-testid="text-max-total">
                         {formatCurrency(maxTotalValue)}
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
                       {formatCurrency(watchMaxAmount)} × {factor}
                     </p>
+                    {exceedsBudget && (
+                      <p className="text-xs text-destructive mt-2" data-testid="text-budget-exceeded">
+                        Max amount exceeds available budget of {formatCurrency(Math.floor(availableForThisBid))}
+                      </p>
+                    )}
+                    {budget && !exceedsBudget && watchIsActive && (
+                      <p className="text-xs text-muted-foreground mt-1" data-testid="text-available-budget">
+                        Available budget: {formatCurrency(Math.floor(availableForThisBid))}
+                      </p>
+                    )}
                   </div>
 
                   {/* Warning */}
@@ -344,7 +373,7 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.
                 type="submit"
                 className="w-full"
                 size="lg"
-                disabled={saveAutoBid.isPending}
+                disabled={saveAutoBid.isPending || exceedsBudget}
                 data-testid="button-save-auto-bid"
               >
                 {saveAutoBid.isPending ? (

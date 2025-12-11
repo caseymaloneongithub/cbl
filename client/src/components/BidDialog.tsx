@@ -56,6 +56,15 @@ export function BidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.10 }
     enabled: !!freeAgent?.id,
   });
 
+  const { data: budget } = useQuery<{ budget: number; spent: number; committed: number; available: number }>({
+    queryKey: ["/api/budget", { auctionId: freeAgent?.auctionId }],
+    enabled: !!freeAgent?.auctionId,
+  });
+
+  const { data: currentUser } = useQuery<{ id: string }>({
+    queryKey: ["/api/auth/me"],
+  });
+
   const yearFactors = settings
     ? [settings.yearFactor1, settings.yearFactor2, settings.yearFactor3, settings.yearFactor4, settings.yearFactor5]
     : [1, 1.25, 1.33, 1.43, 1.55];
@@ -95,6 +104,15 @@ export function BidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.10 }
   const totalValue = calculateTotalValue(watchAmount || 0, selectedYears, yearFactors);
   const isValidBid = totalValue >= currentTotalValue * (1 + bidIncrement) || currentTotalValue === 0;
   const bidIncrementPercent = Math.round(bidIncrement * 100);
+
+  // Calculate available budget for this bid
+  // If user is already high bidder, their current bid amount is freed up
+  const isCurrentHighBidder = currentUser?.id === freeAgent?.highBidder?.id;
+  const currentBidAmount = freeAgent?.currentBid?.amount || 0;
+  const availableForThisBid = budget 
+    ? budget.available + (isCurrentHighBidder ? currentBidAmount : 0)
+    : Infinity;
+  const exceedsBudget = budget && (watchAmount || 0) > availableForThisBid;
 
   const submitBid = useMutation({
     mutationFn: async (data: BidFormData) => {
@@ -267,7 +285,7 @@ export function BidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.10 }
                   <span className="text-sm">Your Total Contract Value</span>
                   <span
                     className={`text-2xl font-bold font-mono ${
-                      !isValidBid ? "text-destructive" : "text-primary"
+                      !isValidBid || exceedsBudget ? "text-destructive" : "text-primary"
                     }`}
                     data-testid="text-total-value"
                   >
@@ -279,13 +297,23 @@ export function BidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.10 }
                     Must be at least {formatCurrency(Math.ceil(currentTotalValue * (1 + bidIncrement)))} ({bidIncrementPercent}% above current)
                   </p>
                 )}
+                {exceedsBudget && (
+                  <p className="text-xs text-destructive mt-2" data-testid="text-budget-exceeded">
+                    Exceeds available budget of {formatCurrency(Math.floor(availableForThisBid))}
+                  </p>
+                )}
+                {budget && !exceedsBudget && (
+                  <p className="text-xs text-muted-foreground mt-2" data-testid="text-available-budget">
+                    Available budget: {formatCurrency(Math.floor(availableForThisBid))}
+                  </p>
+                )}
               </div>
 
               <Button
                 type="submit"
                 className="w-full"
                 size="lg"
-                disabled={submitBid.isPending || !isValidBid}
+                disabled={submitBid.isPending || !isValidBid || exceedsBudget}
                 data-testid="button-submit-bid"
               >
                 {submitBid.isPending ? (
