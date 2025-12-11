@@ -157,14 +157,14 @@ export default function MyBids() {
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="mb-8">
         <h1 className="text-2xl font-bold">My Bids</h1>
-        <p className="text-muted-foreground">Track your active bids and auto-bid settings</p>
+        <p className="text-muted-foreground">Track your winning bids and auto-bid settings</p>
       </div>
 
       <Tabs defaultValue="active" className="space-y-6">
         <TabsList>
-          <TabsTrigger value="active" data-testid="tab-active">
+          <TabsTrigger value="active" data-testid="tab-winning">
             <Gavel className="h-4 w-4 mr-2" />
-            Active ({activeBids.length})
+            Winning ({activeBids.length})
           </TabsTrigger>
           <TabsTrigger value="auto-bids" data-testid="tab-auto-bids">
             <Zap className="h-4 w-4 mr-2" />
@@ -195,7 +195,7 @@ export default function MyBids() {
             <Card>
               <CardContent className="p-12 text-center">
                 <Gavel className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-medium mb-2">No Active Bids</h3>
+                <h3 className="text-lg font-medium mb-2">No Winning Bids</h3>
                 <p className="text-muted-foreground">
                   Head to the Free Agents page to start bidding!
                 </p>
