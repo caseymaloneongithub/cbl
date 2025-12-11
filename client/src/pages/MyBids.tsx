@@ -510,8 +510,11 @@ export default function MyBids() {
                         )}
                       </div>
                       {agent.highBidder && agent.currentBid && (
-                        <div className="text-sm text-muted-foreground">
-                          High bid: {formatCurrency(agent.currentBid.amount)} ({agent.currentBid.years}yr) by {agent.highBidder.teamName || agent.highBidder.firstName}
+                        <div className="text-sm text-muted-foreground space-y-1">
+                          <div>
+                            High bid: {formatCurrency(agent.currentBid.amount)} ({agent.currentBid.years}yr) = {formatCurrency(agent.currentBid.totalValue)} total
+                          </div>
+                          <div>by {agent.highBidder.teamName || agent.highBidder.firstName}</div>
                         </div>
                       )}
                     </CardContent>
