@@ -790,25 +790,8 @@ export async function registerRoutes(
         isAutoBid: false,
       });
 
-      // Process auto-bids from other users
-      await processAutoBids(agentId, userId, totalValue, auction, bidIncrement);
-
-      // Process bundle outbids for ALL deployed bundle items on this player
-      // This handles cases where bundle items become outdated (not just the previous high bidder)
-      const newHighestBid = await storage.getHighestBidForAgent(agentId);
-      if (newHighestBid) {
-        const deployedBundleItems = await storage.getAllDeployedBundleItemsForAgent(agentId);
-        console.log(`[Bundle Cascade] Found ${deployedBundleItems.length} deployed bundle items for agent ${agentId}`);
-        
-        for (const bundleItem of deployedBundleItems) {
-          const bundleOwner = bundleItem.bundle.userId;
-          // Only process cascade if the bundle owner is NOT the current high bidder
-          if (bundleOwner !== newHighestBid.userId) {
-            console.log(`[Bundle Cascade] Triggering processBundleOutbid for agent ${agentId}, outbid user: ${bundleOwner}`);
-            await processBundleOutbid(agentId, bundleOwner, newHighestBid.totalValue, auction);
-          }
-        }
-      }
+      // Process all auto-bids (regular + bundle items) until stable
+      await processAllAutoBidsUntilStable(agentId, userId, auction);
 
       res.json(bid);
     } catch (error) {
@@ -920,9 +903,8 @@ export async function registerRoutes(
                 isAutoBid: true,
               });
               
-              // Process auto-bids from other users to allow counter-bidding
-              const bidIncrement = auction?.bidIncrement ?? 0.10;
-              await processAutoBids(agentId, userId, bidTotalValue, auction, bidIncrement);
+              // Process all auto-bids until stable
+              await processAllAutoBidsUntilStable(agentId, userId, auction);
             }
           }
         } else if (!currentHighBid) {
@@ -941,9 +923,8 @@ export async function registerRoutes(
               isAutoBid: true,
             });
             
-            // Process other auto-bids that may already exist
-            const bidIncrement = auction?.bidIncrement ?? 0.10;
-            await processAutoBids(agentId, userId, startingTotalValue, auction, bidIncrement);
+            // Process all auto-bids until stable
+            await processAllAutoBidsUntilStable(agentId, userId, auction);
           }
         }
       }
@@ -1063,11 +1044,10 @@ export async function registerRoutes(
         }))
       );
 
-      // The first item should be activated - place an initial bid
-      // If it fails (e.g., can't beat existing bid), cascade to next items
+      // Deploy the first active item using the unified approach
       let currentItem = bundle.items.find(i => i.status === 'active');
       while (currentItem) {
-        const success = await deployBundleItemBid(currentItem, bundle, userId);
+        const success = await deployBundleItemAsAutoBid(currentItem, bundle);
         if (success) {
           break; // Successfully deployed a bid
         }
@@ -1177,11 +1157,10 @@ export async function registerRoutes(
         }))
       );
 
-      // Deploy the first item immediately
-      // If it fails (e.g., can't beat existing bid), cascade to next items
+      // Deploy the first active item using the unified approach
       let currentItem = updatedBundle.items.find(i => i.status === 'active');
       while (currentItem) {
-        const success = await deployBundleItemBid(currentItem, updatedBundle, userId);
+        const success = await deployBundleItemAsAutoBid(currentItem, updatedBundle);
         if (success) {
           break; // Successfully deployed a bid
         }
@@ -2123,114 +2102,201 @@ export async function registerRoutes(
   return httpServer;
 }
 
-// Helper function to process auto-bids after a manual bid
-async function processAutoBids(
+// Unified auto-bid processor that handles both regular auto-bids and bundle items
+// Iterates until stable state (two passes with no changes)
+async function processAllAutoBidsUntilStable(
   agentId: number,
   excludeUserId: string,
-  currentTotalValue: number,
-  auction: any,
-  bidIncrement: number = 0.10
+  auction: any
 ): Promise<void> {
-  const autoBids = await storage.getAutoBidsForAgent(agentId);
   const agent = await storage.getFreeAgent(agentId);
-  
   if (!agent) return;
   
-  // Use per-auction year factors
+  // Check if auction is still open
+  if (new Date(agent.auctionEndTime) <= new Date()) return;
+  
   const yearFactors = auction ? [
     auction.yearFactor1,
     auction.yearFactor2,
     auction.yearFactor3,
     auction.yearFactor4,
     auction.yearFactor5,
-  ] : [1.0, 1.25, 1.33, 1.43, 1.55]; // Fallback defaults
-
-  for (const autoBid of autoBids) {
-    if (autoBid.userId === excludeUserId || !autoBid.isActive) continue;
-
-    const factor = yearFactors[autoBid.years - 1];
-    // Total Value = amount × factor
-    const maxTotalValue = autoBid.maxAmount * factor;
+  ] : [1.0, 1.25, 1.33, 1.43, 1.55];
+  
+  const bidIncrement = auction?.bidIncrement ?? 0.10;
+  const enforceBudget = auction?.enforceBudget ?? true;
+  
+  let passesWithNoChange = 0;
+  const maxIterations = 100; // Safety limit
+  let iterations = 0;
+  
+  while (passesWithNoChange < 2 && iterations < maxIterations) {
+    iterations++;
+    let madeChange = false;
+    
+    // Get current highest bid
+    const highestBid = await storage.getHighestBidForAgent(agentId);
+    if (!highestBid) break; // No bids to respond to
+    
+    const currentHighUserId = highestBid.userId;
+    const currentTotalValue = highestBid.totalValue;
     const requiredTotalValue = currentTotalValue * (1 + bidIncrement);
-
-    if (maxTotalValue >= requiredTotalValue) {
-      // Calculate bid amount, ensuring it meets the player's minimum bid
-      // bidAmount = requiredTotalValue / factor
-      let bidAmount = Math.ceil(requiredTotalValue / factor);
-      bidAmount = Math.max(bidAmount, agent.minimumBid);
-      const bidTotalValue = bidAmount * factor;
+    
+    // Get all regular auto-bids for this player
+    const autoBids = await storage.getAutoBidsForAgent(agentId);
+    
+    // Get all deployed bundle items for this player
+    const deployedBundleItems = await storage.getAllDeployedBundleItemsForAgent(agentId);
+    
+    // Process regular auto-bids first
+    for (const autoBid of autoBids) {
+      // Skip if this user is already winning or excluded
+      if (autoBid.userId === currentHighUserId || autoBid.userId === excludeUserId || !autoBid.isActive) continue;
       
-      // Check if bid still fits within max amount after enforcing minimum
-      if (bidAmount > autoBid.maxAmount) {
-        continue; // Skip if minimum bid exceeds user's max amount
-      }
-
-      // Check budget if enforcement is enabled (per-auction setting)
-      // Budget tracks bid AMOUNT, not total value
-      const enforceBudget = auction?.enforceBudget ?? true;
-      if (enforceBudget && agent.auctionId) {
-        try {
-          // Recalculate budget before each auto-bid placement
-          const budgetInfo = await storage.getUserBudgetInfo(autoBid.userId, agent.auctionId);
-          
-          // For auto-bids, check if user has enough available budget for the AMOUNT
-          if (bidAmount > budgetInfo.available) {
-            // Skip this auto-bid, user doesn't have enough budget
+      const factor = yearFactors[autoBid.years - 1];
+      const maxTotalValue = autoBid.maxAmount * factor;
+      
+      if (maxTotalValue >= requiredTotalValue) {
+        // Can counter - calculate bid amount
+        let bidAmount = Math.ceil(requiredTotalValue / factor);
+        bidAmount = Math.max(bidAmount, agent.minimumBid);
+        const bidTotalValue = bidAmount * factor;
+        
+        if (bidAmount > autoBid.maxAmount) continue;
+        
+        // Check budget
+        if (enforceBudget && agent.auctionId) {
+          try {
+            const budgetInfo = await storage.getUserBudgetInfo(autoBid.userId, agent.auctionId);
+            if (bidAmount > budgetInfo.available) continue;
+          } catch (error) {
+            console.error("Error checking budget for auto-bid:", error);
             continue;
           }
-        } catch (error) {
-          console.error("Error checking budget for auto-bid:", error);
-          continue;
+        }
+        
+        // Place the counter-bid
+        await storage.createBid({
+          freeAgentId: agentId,
+          userId: autoBid.userId,
+          amount: bidAmount,
+          years: autoBid.years,
+          totalValue: bidTotalValue,
+          isAutoBid: true,
+        });
+        
+        console.log(`[UnifiedAutoBid] Auto-bid placed: ${autoBid.userId} bid $${bidAmount} on agent ${agentId}`);
+        madeChange = true;
+        excludeUserId = autoBid.userId; // Don't let this user bid again this iteration
+        break; // Only one bid per pass
+      }
+    }
+    
+    // If no regular auto-bid placed, check bundle items
+    if (!madeChange) {
+      for (const bundleItem of deployedBundleItems) {
+        const bundleOwner = bundleItem.bundle.userId;
+        
+        // Skip if this user is already winning
+        if (bundleOwner === currentHighUserId) continue;
+        
+        const factor = yearFactors[bundleItem.years - 1];
+        const maxTotalValue = bundleItem.amount * factor;
+        
+        if (maxTotalValue >= requiredTotalValue) {
+          // Bundle item can counter - calculate bid amount
+          let bidAmount = Math.ceil(requiredTotalValue / factor);
+          bidAmount = Math.max(bidAmount, agent.minimumBid);
+          const bidTotalValue = bidAmount * factor;
+          
+          if (bidAmount > bundleItem.amount) continue;
+          
+          // Check budget
+          if (enforceBudget) {
+            try {
+              const budgetInfo = await storage.getUserBudgetInfo(bundleOwner, bundleItem.bundle.auctionId);
+              if (bidAmount > budgetInfo.available) {
+                // Can't afford - mark as outbid and activate next
+                await storage.updateBidBundleItem(bundleItem.id, { status: 'outbid' });
+                const nextItem = await storage.activateNextBundleItem(bundleItem.bundle.id);
+                if (nextItem) {
+                  console.log(`[UnifiedAutoBid] Bundle item ${bundleItem.id} outbid (budget), activated next: ${nextItem.id}`);
+                  madeChange = true;
+                }
+                continue;
+              }
+            } catch (error) {
+              console.error("Error checking budget for bundle counter-bid:", error);
+              continue;
+            }
+          }
+          
+          // Place the counter-bid
+          const newBid = await storage.createBid({
+            freeAgentId: agentId,
+            userId: bundleOwner,
+            amount: bidAmount,
+            years: bundleItem.years,
+            totalValue: bidTotalValue,
+            isAutoBid: true,
+          });
+          
+          // Update bundle item with new bid
+          await storage.updateBidBundleItem(bundleItem.id, { bidId: newBid.id });
+          
+          console.log(`[UnifiedAutoBid] Bundle counter-bid placed: ${bundleOwner} bid $${bidAmount} on agent ${agentId}`);
+          madeChange = true;
+          break; // Only one bid per pass
+        } else {
+          // Bundle item can't counter - mark as outbid and activate next
+          console.log(`[UnifiedAutoBid] Bundle item ${bundleItem.id} can't counter (max=${maxTotalValue}, required=${requiredTotalValue})`);
+          await storage.updateBidBundleItem(bundleItem.id, { status: 'outbid' });
+          const nextItem = await storage.activateNextBundleItem(bundleItem.bundle.id);
+          if (nextItem) {
+            console.log(`[UnifiedAutoBid] Activated next bundle item: ${nextItem.id} for player ${nextItem.freeAgentId}`);
+            // Deploy the next item as an initial bid on its player
+            await deployBundleItemAsAutoBid(nextItem, bundleItem.bundle);
+            madeChange = true;
+          }
         }
       }
-
-      await storage.createBid({
-        freeAgentId: agentId,
-        userId: autoBid.userId,
-        amount: bidAmount,
-        years: autoBid.years,
-        totalValue: bidTotalValue,
-        isAutoBid: true,
-      });
-
-      // Recursively process auto-bids (including original bidder's auto-bid if they have one)
-      await processAutoBids(agentId, autoBid.userId, bidTotalValue, auction, bidIncrement);
-      break; // Only one auto-bid can win per cycle
     }
+    
+    if (madeChange) {
+      passesWithNoChange = 0;
+    } else {
+      passesWithNoChange++;
+    }
+  }
+  
+  if (iterations >= maxIterations) {
+    console.error(`[UnifiedAutoBid] Hit max iterations (${maxIterations}) for agent ${agentId}`);
   }
 }
 
-// Helper function to deploy a bid from a bundle item (works like auto-bid)
-async function deployBundleItemBid(
+// Deploy a bundle item as an initial bid on its player (called when cascade activates a new item)
+async function deployBundleItemAsAutoBid(
   item: any,
-  bundle: any,
-  userId: string
+  bundle: any
 ): Promise<boolean> {
-  // Use hydrated freeAgent if available, otherwise fetch
-  let agent = item.freeAgent;
-  if (!agent && item.freeAgentId) {
-    agent = await storage.getFreeAgent(item.freeAgentId);
-  }
+  const agent = await storage.getFreeAgent(item.freeAgentId);
   if (!agent) {
-    console.error("deployBundleItemBid: No agent found for item", item.id, "freeAgentId:", item.freeAgentId);
     await storage.updateBidBundleItem(item.id, { status: 'skipped' });
     return false;
   }
-  const freeAgentId = agent.id;
-
+  
   // Check if auction is still open
   if (new Date(agent.auctionEndTime) <= new Date()) {
     await storage.updateBidBundleItem(item.id, { status: 'skipped' });
     return false;
   }
-
-  // Get the auction for year factors and bid increment
+  
   const auction = await storage.getAuction(bundle.auctionId);
   if (!auction) {
     await storage.updateBidBundleItem(item.id, { status: 'skipped' });
     return false;
   }
-
+  
   const yearFactors = [
     auction.yearFactor1,
     auction.yearFactor2,
@@ -2240,46 +2306,40 @@ async function deployBundleItemBid(
   ];
   const bidIncrement = auction.bidIncrement ?? 0.10;
   const factor = yearFactors[item.years - 1];
-
+  const userId = bundle.userId;
+  
   // Get current highest bid
-  const highestBid = await storage.getHighestBidForAgent(freeAgentId);
-  let bidAmount = item.amount;
-  let bidTotalValue = bidAmount * factor;
-
+  const highestBid = await storage.getHighestBidForAgent(item.freeAgentId);
+  let bidAmount: number;
+  let bidTotalValue: number;
+  
   if (highestBid) {
-    // Check if WE are already the high bidder - don't outbid ourselves!
+    // Check if WE are already the high bidder
     if (highestBid.userId === userId) {
-      // We're already winning - just link to existing bid and mark as deployed
-      await storage.updateBidBundleItem(item.id, {
-        status: 'deployed',
-        bidId: highestBid.id,
-      });
+      await storage.updateBidBundleItem(item.id, { status: 'deployed', bidId: highestBid.id });
       return true;
     }
-
+    
     // Need to beat the current highest bid
     const requiredTotalValue = highestBid.totalValue * (1 + bidIncrement);
-    
-    // Check if our max can beat it
     const ourMaxTotalValue = item.amount * factor;
+    
     if (ourMaxTotalValue < requiredTotalValue) {
-      // Can't beat the current bid - skip this item
       await storage.updateBidBundleItem(item.id, { status: 'skipped' });
       return false;
     }
-
-    // Calculate minimum bid to beat current
+    
     bidAmount = Math.ceil(requiredTotalValue / factor);
     bidAmount = Math.max(bidAmount, agent.minimumBid);
     bidTotalValue = bidAmount * factor;
   } else {
-    // No existing bids - place at minimum or our amount
-    bidAmount = Math.max(agent.minimumBid, 1); // At least $1
-    bidAmount = Math.min(bidAmount, item.amount); // Don't exceed our max
+    // No existing bids
+    bidAmount = Math.max(agent.minimumBid, 1);
+    bidAmount = Math.min(bidAmount, item.amount);
     bidTotalValue = bidAmount * factor;
   }
-
-  // Check budget if enforcement is enabled
+  
+  // Check budget
   const enforceBudget = auction.enforceBudget ?? true;
   if (enforceBudget) {
     try {
@@ -2294,158 +2354,31 @@ async function deployBundleItemBid(
       return false;
     }
   }
-
+  
   // Check roster/IP/PA limits
-  const limitCheck = await storage.canUserBidOnPlayer(userId, freeAgentId);
+  const limitCheck = await storage.canUserBidOnPlayer(userId, item.freeAgentId);
   if (!limitCheck.canBid) {
     await storage.updateBidBundleItem(item.id, { status: 'skipped' });
     return false;
   }
-
+  
   // Place the bid
   const newBid = await storage.createBid({
-    freeAgentId: freeAgentId,
+    freeAgentId: item.freeAgentId,
     userId: userId,
     amount: bidAmount,
     years: item.years,
     totalValue: bidTotalValue,
-    isAutoBid: true, // Bundle bids are considered auto-bids
+    isAutoBid: true,
   });
-
-  // Link the bid to the bundle item
-  await storage.updateBidBundleItem(item.id, {
-    status: 'deployed',
-    bidId: newBid.id,
-  });
-
-  // Process other auto-bids that might want to counter
-  await processAutoBids(freeAgentId, userId, bidTotalValue, auction, bidIncrement);
-
-  // After auto-bids process, check if we got outbid and need to counter or cascade
-  const latestHighBid = await storage.getHighestBidForAgent(freeAgentId);
-  if (latestHighBid && latestHighBid.userId !== userId) {
-    console.log(`[deployBundleItemBid] Got outbid after auto-bids on ${agent.name}, processing bundle cascade`);
-    // Call processBundleOutbid to either counter-bid or cascade to next item
-    await processBundleOutbid(freeAgentId, userId, latestHighBid.totalValue, auction);
-  }
-
+  
+  await storage.updateBidBundleItem(item.id, { status: 'deployed', bidId: newBid.id });
+  
+  console.log(`[deployBundleItemAsAutoBid] Deployed bundle item ${item.id} with bid $${bidAmount} on player ${agent.name}`);
+  
+  // Now run unified processing on this new player to handle any auto-bids
+  await processAllAutoBidsUntilStable(item.freeAgentId, userId, auction);
+  
   return true;
 }
 
-// Helper function to process bundle cascade when user is outbid
-async function processBundleOutbid(
-  freeAgentId: number,
-  outbidUserId: string,
-  newHighTotalValue: number,
-  auction: any
-): Promise<void> {
-  try {
-    console.log(`[processBundleOutbid] Called for agent ${freeAgentId}, user ${outbidUserId}, newHighTotalValue ${newHighTotalValue}`);
-    
-    // Find if this user has an active bundle item for this player
-    const activeBundleItem = await storage.getActiveBundleItemForAgent(freeAgentId, outbidUserId);
-    
-    console.log(`[processBundleOutbid] Found active bundle item:`, activeBundleItem ? `id=${activeBundleItem.id}, status=${activeBundleItem.status}` : 'none');
-    
-    if (!activeBundleItem) return;
-
-  const bundle = activeBundleItem.bundle;
-  const item = activeBundleItem;
-  
-  // Get year factor for this item
-  const yearFactors = auction ? [
-    auction.yearFactor1,
-    auction.yearFactor2,
-    auction.yearFactor3,
-    auction.yearFactor4,
-    auction.yearFactor5,
-  ] : [1.0, 1.25, 1.33, 1.43, 1.55];
-  
-  const factor = yearFactors[item.years - 1];
-  const bidIncrement = auction?.bidIncrement ?? 0.10;
-  
-  // Check if we can counter-bid (like auto-bid behavior)
-  const requiredTotalValue = newHighTotalValue * (1 + bidIncrement);
-  const ourMaxTotalValue = item.amount * factor;
-  
-  console.log(`[processBundleOutbid] Can we counter? ourMax=${ourMaxTotalValue}, required=${requiredTotalValue}, item.amount=${item.amount}, years=${item.years}, factor=${factor}`);
-  
-  if (ourMaxTotalValue >= requiredTotalValue) {
-    // We can counter! Place a counter-bid
-    const agent = await storage.getFreeAgent(freeAgentId);
-    if (!agent || new Date(agent.auctionEndTime) <= new Date()) {
-      // Auction closed - skip this item and try the next
-      await storage.updateBidBundleItem(item.id, { status: 'skipped' });
-      const nextItem = await storage.activateNextBundleItem(bundle.id);
-      if (nextItem) {
-        await deployBundleItemBid(nextItem, bundle, outbidUserId);
-      }
-      return;
-    }
-
-    let bidAmount = Math.ceil(requiredTotalValue / factor);
-    bidAmount = Math.max(bidAmount, agent.minimumBid);
-    const bidTotalValue = bidAmount * factor;
-
-    // Check budget
-    const enforceBudget = auction?.enforceBudget ?? true;
-    if (enforceBudget) {
-      try {
-        const budgetInfo = await storage.getUserBudgetInfo(outbidUserId, bundle.auctionId);
-        if (bidAmount > budgetInfo.available) {
-          // Can't afford - mark as outbid and move to next
-          await storage.updateBidBundleItem(item.id, { status: 'outbid' });
-          const nextItem = await storage.activateNextBundleItem(bundle.id);
-          if (nextItem) {
-            await deployBundleItemBid(nextItem, bundle, outbidUserId);
-          }
-          return;
-        }
-      } catch (error) {
-        console.error("Error checking budget for bundle counter-bid:", error);
-        await storage.updateBidBundleItem(item.id, { status: 'outbid' });
-        const nextItem = await storage.activateNextBundleItem(bundle.id);
-        if (nextItem) {
-          await deployBundleItemBid(nextItem, bundle, outbidUserId);
-        }
-        return;
-      }
-    }
-
-    // Place counter-bid
-    const newBid = await storage.createBid({
-      freeAgentId: freeAgentId,
-      userId: outbidUserId,
-      amount: bidAmount,
-      years: item.years,
-      totalValue: bidTotalValue,
-      isAutoBid: true,
-    });
-
-    // Update the bundle item with new bid
-    await storage.updateBidBundleItem(item.id, { bidId: newBid.id });
-
-    // Process other auto-bids
-    await processAutoBids(freeAgentId, outbidUserId, bidTotalValue, auction, bidIncrement);
-
-    // After auto-bids process, check if we got outbid again and need to continue the cascade
-    const latestHighBid = await storage.getHighestBidForAgent(freeAgentId);
-    if (latestHighBid && latestHighBid.userId !== outbidUserId) {
-      console.log(`[processBundleOutbid] Got outbid again after auto-bids, recursing with new high value ${latestHighBid.totalValue}`);
-      // Recursively call to either counter-bid or cascade to next item
-      await processBundleOutbid(freeAgentId, outbidUserId, latestHighBid.totalValue, auction);
-    }
-  } else {
-    // We can't counter - mark as outbid and activate next item
-    console.log(`[processBundleOutbid] Can't counter - marking as outbid and activating next item`);
-    await storage.updateBidBundleItem(item.id, { status: 'outbid' });
-    const nextItem = await storage.activateNextBundleItem(bundle.id);
-    console.log(`[processBundleOutbid] Next item activated:`, nextItem ? `id=${nextItem.id}, freeAgentId=${nextItem.freeAgentId}` : 'none');
-    if (nextItem) {
-      await deployBundleItemBid(nextItem, bundle, outbidUserId);
-    }
-  }
-  } catch (error) {
-    console.error(`[processBundleOutbid] Error processing bundle cascade:`, error);
-  }
-}
