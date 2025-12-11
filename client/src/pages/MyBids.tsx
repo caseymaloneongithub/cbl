@@ -18,7 +18,7 @@ import { Gavel, Zap, Trophy, Package, Plus, Trash2, Pencil } from "lucide-react"
 type AutoBidWithAgent = AutoBid & { freeAgent: FreeAgent };
 
 export default function MyBids() {
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, user } = useAuth();
   const { toast } = useToast();
   const [editingAutoBid, setEditingAutoBid] = useState<FreeAgentWithBids | null>(null);
   const [autoBidDialogOpen, setAutoBidDialogOpen] = useState(false);
@@ -101,8 +101,21 @@ export default function MyBids() {
     queryClient.invalidateQueries({ queryKey: ["/api/limits"] });
   }, []);
 
-  const getBundleItemStatusBadge = (status: string) => {
-    switch (status) {
+  const getBundleItemStatusBadge = (item: BidBundleWithItems['items'][0], userId?: string) => {
+    const freeAgent = item.freeAgent;
+    const auctionClosed = freeAgent && isAuctionClosed(freeAgent.auctionEndTime);
+    
+    if (auctionClosed && freeAgent) {
+      if (freeAgent.winnerId === userId) {
+        return <Badge variant="default" className="bg-green-600"><Trophy className="h-3 w-3 mr-1" />Won</Badge>;
+      } else if (freeAgent.winnerId) {
+        return <Badge variant="destructive">Lost</Badge>;
+      } else {
+        return <Badge variant="secondary">No Bids</Badge>;
+      }
+    }
+    
+    switch (item.status) {
       case 'active':
       case 'deployed':
         return <Badge variant="default">Active</Badge>;
@@ -115,7 +128,7 @@ export default function MyBids() {
       case 'pending':
         return <Badge variant="outline">Pending</Badge>;
       default:
-        return <Badge variant="outline">{status}</Badge>;
+        return <Badge variant="outline">{item.status}</Badge>;
     }
   };
 
@@ -343,7 +356,7 @@ export default function MyBids() {
                               <span className="font-mono text-xs">
                                 {formatCurrency(item.amount)} / {item.years}yr
                               </span>
-                              {getBundleItemStatusBadge(item.status)}
+                              {getBundleItemStatusBadge(item, user?.id)}
                             </div>
                           </div>
                         ))}
