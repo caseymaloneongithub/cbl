@@ -508,9 +508,9 @@ export default function MyBids() {
                           <CountdownTimer endTime={agent.auctionEndTime} onClose={handleAuctionClose} />
                         )}
                       </div>
-                      {agent.highBidder && (
+                      {agent.highBidder && agent.currentBid && (
                         <div className="text-sm text-muted-foreground">
-                          High bidder: {agent.highBidder.teamName || agent.highBidder.firstName}
+                          High bid: {formatCurrency(agent.currentBid.amount)} ({agent.currentBid.years}yr) by {agent.highBidder.teamName || agent.highBidder.firstName}
                         </div>
                       )}
                     </CardContent>
