@@ -126,7 +126,7 @@ export default function MyBids() {
     switch (item.status) {
       case 'active':
       case 'deployed':
-        return <Badge variant="default">Active</Badge>;
+        return <Badge variant="default">Winning</Badge>;
       case 'winning':
         return <Badge variant="default">Winning</Badge>;
       case 'outbid':
