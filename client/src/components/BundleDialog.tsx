@@ -73,11 +73,16 @@ export function BundleDialog({ auctionId, open, onOpenChange, editBundle }: Bund
       return response.json();
     },
     onSuccess: () => {
+      // Invalidate all bid-related queries immediately for instant refresh
       queryClient.invalidateQueries({ queryKey: ["/api/my-bundles"] });
       queryClient.invalidateQueries({ queryKey: ["/api/my-bids"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-auto-bids"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-outbid"] });
       queryClient.invalidateQueries({ queryKey: ["/api/free-agents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/budget"] });
       queryClient.invalidateQueries({ queryKey: ["/api/limits"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/results"] });
       toast({ title: "Bundle created successfully" });
       resetForm();
       onOpenChange(false);
@@ -93,11 +98,16 @@ export function BundleDialog({ auctionId, open, onOpenChange, editBundle }: Bund
       return response.json();
     },
     onSuccess: () => {
+      // Invalidate all bid-related queries immediately for instant refresh
       queryClient.invalidateQueries({ queryKey: ["/api/my-bundles"] });
       queryClient.invalidateQueries({ queryKey: ["/api/my-bids"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-auto-bids"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-outbid"] });
       queryClient.invalidateQueries({ queryKey: ["/api/free-agents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/budget"] });
       queryClient.invalidateQueries({ queryKey: ["/api/limits"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/results"] });
       toast({ title: "Bundle updated successfully" });
       resetForm();
       onOpenChange(false);

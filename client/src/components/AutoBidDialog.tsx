@@ -155,19 +155,17 @@ export function AutoBidDialog({ freeAgent, open, onOpenChange, bidIncrement = 0.
           ? `Auto-bid configured up to ${formatCurrency(watchMaxAmount)} for ${selectedYears} year(s)`
           : "Auto-bid has been disabled",
       });
+      // Invalidate all bid-related queries immediately for instant refresh
       queryClient.invalidateQueries({ queryKey: ["/api/free-agents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/free-agents", freeAgent?.id, "auto-bid"] });
       queryClient.invalidateQueries({ queryKey: ["/api/my-bids"] });
       queryClient.invalidateQueries({ queryKey: ["/api/my-auto-bids"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-outbid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-bundles"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
-      
-      // If auto-bids were triggered, force full data refresh
-      if (data?.autoBidsTriggered) {
-        queryClient.invalidateQueries({ queryKey: ["/api/my-bundles"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/results"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/budget"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/limits"] });
-      }
+      queryClient.invalidateQueries({ queryKey: ["/api/budget"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/limits"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/results"] });
       onOpenChange(false);
     },
     onError: (error: Error) => {
