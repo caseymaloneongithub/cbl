@@ -885,6 +885,8 @@ export async function registerRoutes(
           const maxTotalValue = maxAmount * factor;
           const requiredTotalValue = currentHighBid.totalValue * (1 + bidIncrement);
           
+          console.log(`[AutoBid Debug] Player ${agentId}: maxTotalValue=${maxTotalValue}, requiredTotalValue=${requiredTotalValue}, currentHighBid.totalValue=${currentHighBid.totalValue}`);
+          
           if (maxTotalValue >= requiredTotalValue) {
             // Calculate bid amount, ensuring it meets the player's minimum bid
             // bidAmount = requiredTotalValue / factor
@@ -892,8 +894,11 @@ export async function registerRoutes(
             bidAmount = Math.max(bidAmount, agent.minimumBid);
             const bidTotalValue = bidAmount * factor;
             
+            console.log(`[AutoBid Debug] bidAmount=${bidAmount}, maxAmount=${maxAmount}, availableBudget=${availableBudget}`);
+            
             // Check max amount and budget before placing bid
             if (bidAmount <= maxAmount && bidAmount <= availableBudget) {
+              console.log(`[AutoBid Debug] Placing counter-bid for ${userId} on ${agentId}: $${bidAmount}`);
               await storage.createBid({
                 freeAgentId: agentId,
                 userId,
@@ -906,7 +911,11 @@ export async function registerRoutes(
               // Process all auto-bids until stable
               const triggered = await processAllAutoBidsUntilStable(agentId, userId, auction);
               return res.json({ ...autoBid, autoBidsTriggered: triggered });
+            } else {
+              console.log(`[AutoBid Debug] Cannot place bid: bidAmount ${bidAmount} > maxAmount ${maxAmount}? ${bidAmount > maxAmount}, bidAmount ${bidAmount} > availableBudget ${availableBudget}? ${bidAmount > availableBudget}`);
             }
+          } else {
+            console.log(`[AutoBid Debug] Cannot beat: maxTotalValue ${maxTotalValue} < requiredTotalValue ${requiredTotalValue}`);
           }
         } else if (!currentHighBid) {
           // No current bid, place minimum bid (player's minimum or $1)
