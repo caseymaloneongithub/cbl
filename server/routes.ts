@@ -2154,8 +2154,8 @@ async function processAllAutoBidsUntilStable(
   let iterations = 0;
   let anyChangesMade = false;
   
-  // Track who bid in current pass (reset each iteration)
-  let lastBidderThisPass = excludeUserId;
+  // Track who placed the most recent bid (to prevent immediate self-counter)
+  let lastBidderId = excludeUserId;
   
   while (passesWithNoChange < 2 && iterations < maxIterations) {
     iterations++;
@@ -2177,8 +2177,8 @@ async function processAllAutoBidsUntilStable(
     
     // Process regular auto-bids first
     for (const autoBid of autoBids) {
-      // Skip if this user is already winning or just bid this pass
-      if (autoBid.userId === currentHighUserId || autoBid.userId === lastBidderThisPass || !autoBid.isActive) continue;
+      // Skip if this user is already winning or just placed the last bid
+      if (autoBid.userId === currentHighUserId || autoBid.userId === lastBidderId || !autoBid.isActive) continue;
       
       const factor = yearFactors[autoBid.years - 1];
       const maxTotalValue = autoBid.maxAmount * factor;
@@ -2214,7 +2214,7 @@ async function processAllAutoBidsUntilStable(
         
         console.log(`[UnifiedAutoBid] Auto-bid placed: ${autoBid.userId} bid $${bidAmount} on agent ${agentId}`);
         madeChange = true;
-        lastBidderThisPass = autoBid.userId; // Don't let this user bid again this iteration
+        lastBidderId = autoBid.userId; // Track who just bid
         break; // Only one bid per pass
       }
     }
@@ -2273,6 +2273,7 @@ async function processAllAutoBidsUntilStable(
           
           console.log(`[UnifiedAutoBid] Bundle counter-bid placed: ${bundleOwner} bid $${bidAmount} on agent ${agentId}`);
           madeChange = true;
+          lastBidderId = bundleOwner; // Track who just bid (bundle owner)
           break; // Only one bid per pass
         } else {
           // Bundle item can't counter - mark as outbid and activate next
