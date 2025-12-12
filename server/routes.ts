@@ -1320,7 +1320,8 @@ export async function registerRoutes(
         "Total Contract Value",
         "Bid Count",
         "Winner Name",
-        "Winner Email"
+        "Winner Email",
+        "Winner Team Abbr"
       ];
 
       const rows = results.map(agent => [
@@ -1334,7 +1335,8 @@ export async function registerRoutes(
         agent.currentBid?.totalValue || 0,
         agent.bidCount,
         agent.highBidder ? `"${agent.highBidder.firstName || ''} ${agent.highBidder.lastName || ''}".trim()` : "",
-        agent.highBidder?.email ? `"${agent.highBidder.email}"` : ""
+        agent.highBidder?.email ? `"${agent.highBidder.email}"` : "",
+        agent.highBidder?.teamAbbreviation || ""
       ]);
 
       const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
@@ -1372,6 +1374,7 @@ export async function registerRoutes(
         "Owner Name",
         "Owner Email",
         "Team Name",
+        "Team Abbr",
         "Player ID",
         "Player Name",
         "Type",
@@ -1391,6 +1394,7 @@ export async function registerRoutes(
             `"${(owner?.firstName || '') + ' ' + (owner?.lastName || '')}".trim()`,
             owner?.email ? `"${owner.email}"` : "",
             owner?.teamName ? `"${owner.teamName.replace(/"/g, '""')}"` : "",
+            owner?.teamAbbreviation || "",
             String(agent.id),
             `"${agent.name.replace(/"/g, '""')}"`,
             agent.playerType === "pitcher" ? "Pitcher" : "Hitter",
