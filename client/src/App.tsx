@@ -7,6 +7,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { Header } from "@/components/Header";
 import { PasswordResetDialog } from "@/components/PasswordResetDialog";
 import { useAuth } from "@/hooks/useAuth";
+import { useLeague } from "@/hooks/useLeague";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/Landing";
 import ResetPassword from "@/pages/ResetPassword";
@@ -15,11 +16,32 @@ import MyBids from "@/pages/MyBids";
 import Results from "@/pages/Results";
 import Commissioner from "@/pages/Commissioner";
 import CommissionerAuction from "@/pages/CommissionerAuction";
+import SuperAdmin from "@/pages/SuperAdmin";
 
 function CommissionerRoute({ component: Component }: { component: React.ComponentType<any> }) {
   const { user } = useAuth();
+  const { hasAnyCommissionerRole, isLoadingLeagues } = useLeague();
   
-  if (!user?.isCommissioner && !user?.isSuperAdmin) {
+  if (isLoadingLeagues) {
+    return (
+      <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
+        <div className="animate-pulse text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
+  
+  // Allow access if user is a commissioner in ANY league or is a super admin
+  if (!hasAnyCommissionerRole && !user?.isSuperAdmin) {
+    return <Redirect to="/" />;
+  }
+  
+  return <Component />;
+}
+
+function SuperAdminRoute({ component: Component }: { component: React.ComponentType<any> }) {
+  const { user } = useAuth();
+  
+  if (!user?.isSuperAdmin) {
     return <Redirect to="/" />;
   }
   
@@ -52,6 +74,9 @@ function Router() {
           </Route>
           <Route path="/commissioner/auctions/:auctionId">
             {() => <CommissionerRoute component={CommissionerAuction} />}
+          </Route>
+          <Route path="/super-admin">
+            {() => <SuperAdminRoute component={SuperAdmin} />}
           </Route>
         </>
       )}

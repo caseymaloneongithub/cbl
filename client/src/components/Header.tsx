@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Diamond, Users, Gavel, Trophy, Settings, LogOut, Menu, UserCog, X, ChevronDown } from "lucide-react";
+import { Diamond, Users, Gavel, Trophy, Settings, LogOut, Menu, UserCog, X, ChevronDown, Globe } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -45,7 +45,7 @@ export function Header() {
     isStartingImpersonation,
     isStoppingImpersonation,
   } = useAuth();
-  const { leagues, currentLeague, selectLeague, isLoadingLeagues } = useLeague();
+  const { leagues, currentLeague, selectLeague, isLoadingLeagues, hasAnyCommissionerRole } = useLeague();
   const [location] = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -158,7 +158,7 @@ export function Header() {
                   </Link>
                 );
               })}
-              {(user?.isCommissioner || user?.isSuperAdmin) && (
+              {(hasAnyCommissionerRole || user?.isSuperAdmin) && (
                 <Link href="/commissioner">
                   <Button
                     variant={location === "/commissioner" ? "secondary" : "ghost"}
@@ -167,6 +167,18 @@ export function Header() {
                   >
                     <Settings className="h-4 w-4 mr-2" />
                     Commissioner
+                  </Button>
+                </Link>
+              )}
+              {user?.isSuperAdmin && (
+                <Link href="/super-admin">
+                  <Button
+                    variant={location === "/super-admin" ? "secondary" : "ghost"}
+                    size="sm"
+                    data-testid="nav-super-admin"
+                  >
+                    <Globe className="h-4 w-4 mr-2" />
+                    Super Admin
                   </Button>
                 </Link>
               )}
@@ -203,7 +215,7 @@ export function Header() {
                           </Link>
                         );
                       })}
-                      {(user?.isCommissioner || user?.isSuperAdmin) && (
+                      {(hasAnyCommissionerRole || user?.isSuperAdmin) && (
                         <Link href="/commissioner" onClick={() => setMobileMenuOpen(false)}>
                           <Button
                             variant={location === "/commissioner" ? "secondary" : "ghost"}
@@ -211,6 +223,17 @@ export function Header() {
                           >
                             <Settings className="h-4 w-4 mr-2" />
                             Commissioner
+                          </Button>
+                        </Link>
+                      )}
+                      {user?.isSuperAdmin && (
+                        <Link href="/super-admin" onClick={() => setMobileMenuOpen(false)}>
+                          <Button
+                            variant={location === "/super-admin" ? "secondary" : "ghost"}
+                            className="w-full justify-start"
+                          >
+                            <Globe className="h-4 w-4 mr-2" />
+                            Super Admin
                           </Button>
                         </Link>
                       )}

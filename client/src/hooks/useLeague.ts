@@ -60,6 +60,9 @@ export function useLeague() {
   });
 
   const isLeagueCommissioner = currentLeague?.role === 'commissioner';
+  
+  // Check if user is a commissioner in ANY league (useful for route guards)
+  const hasAnyCommissionerRole = leagues?.some(l => l.role === 'commissioner') || false;
 
   return {
     leagues: leagues || [],
@@ -68,6 +71,7 @@ export function useLeague() {
     selectLeague,
     isLoadingLeagues,
     isLeagueCommissioner,
+    hasAnyCommissionerRole,
     leagueMembers: leagueMembers || [],
     isLoadingMembers,
   };

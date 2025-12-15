@@ -13,7 +13,9 @@ Preferred communication style: Simple, everyday language.
 - **UI Component System**: shadcn/ui (Radix UI-based) with a Material Design aesthetic, prioritizing data clarity, information density, and a professional sports look (Roboto font).
 - **Styling**: Tailwind CSS with custom CSS variables for theming, supporting light/dark modes.
 - **State Management**: TanStack Query for server state management with aggressive caching.
-- **Routing**: Wouter, handling Landing, Home, My Bids, Results, and Commissioner pages.
+- **Routing**: Wouter, handling Landing, Home, My Bids, Results, Commissioner, and SuperAdmin pages.
+  - **SuperAdmin page**: Super-admin only; league CRUD, member management, user creation
+  - **Commissioner page**: Per-league; auction management, team management, free agent uploads, exports
 - **Key Design Decisions**: Component co-location, path aliases, React Hook Form with Zod for validation, real-time countdowns.
 
 ### Backend
