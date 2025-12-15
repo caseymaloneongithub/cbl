@@ -54,6 +54,11 @@ Preferred communication style: Simple, everyday language.
   - Bid calculations use per-auction year factors: Total Value = Annual Salary × yearFactor[years]
   - Budget enforcement is per-auction: auction.enforceBudget flag controls whether budget limits are enforced
   - Commissioner can configure each auction's settings via Settings dialog in Auction Management
+- **Optional Auction Features** (configurable per auction via Settings dialog):
+  - `allowAutoBidding` (default: true): When disabled, users cannot create auto-bids for this auction
+  - `allowBundledBids` (default: true): When disabled, users cannot create bid bundles for this auction
+  - `extendAuctionOnBid` (default: false): When enabled, bids placed within 24 hours of auction end time automatically extend the end time by 24 hours
+  - Server-side validation enforces these restrictions; frontend hides UI elements when features are disabled
 - **Commissioner Dashboard**: CSV uploads for free agents and user management, auction control (create, rename, activate, reset, delete).
 - **Budget System**: Per-auction team budgets stored in `auctionTeams` table, tracking dollar amount of bids per auction.
   - Budget calculations scope to specific auctions via `?auctionId=X` parameter
