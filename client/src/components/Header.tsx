@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
+import { useLeague } from "@/hooks/useLeague";
 import { ThemeToggle } from "./ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +12,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Diamond, Users, Gavel, Trophy, Settings, LogOut, Menu, UserCog, X } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Diamond, Users, Gavel, Trophy, Settings, LogOut, Menu, UserCog, X, ChevronDown } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -37,6 +45,7 @@ export function Header() {
     isStartingImpersonation,
     isStoppingImpersonation,
   } = useAuth();
+  const { leagues, currentLeague, selectLeague, isLoadingLeagues } = useLeague();
   const [location] = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -44,6 +53,8 @@ export function Header() {
     queryKey: ["/api/owners"],
     enabled: isSuperAdmin || isImpersonating,
   });
+  
+  const showLeagueSwitcher = isAuthenticated && leagues.length > 1;
 
   const initials = user?.firstName && user?.lastName
     ? `${user.firstName[0]}${user.lastName[0]}`
@@ -93,11 +104,40 @@ export function Header() {
     <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-14 items-center justify-between gap-4">
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 hover-elevate active-elevate-2 rounded-md px-2 py-1">
-            <Diamond className="h-6 w-6 text-primary" />
-            <span className="font-bold text-lg hidden sm:inline">CBL Auctions</span>
-          </Link>
+          {/* Logo and League Switcher */}
+          <div className="flex items-center gap-3">
+            <Link href="/" className="flex items-center gap-2 hover-elevate active-elevate-2 rounded-md px-2 py-1">
+              <Diamond className="h-6 w-6 text-primary" />
+              <span className="font-bold text-lg hidden sm:inline">
+                {currentLeague?.name || "CBL Auctions"}
+              </span>
+            </Link>
+            
+            {showLeagueSwitcher && (
+              <Select 
+                value={currentLeague?.id?.toString() || ""} 
+                onValueChange={(val) => selectLeague(parseInt(val, 10))}
+              >
+                <SelectTrigger 
+                  className="w-auto min-w-[120px] h-8" 
+                  data-testid="select-league-switcher"
+                >
+                  <SelectValue placeholder="Select league" />
+                </SelectTrigger>
+                <SelectContent>
+                  {leagues.map((league) => (
+                    <SelectItem 
+                      key={league.id} 
+                      value={league.id.toString()}
+                      data-testid={`select-league-${league.id}`}
+                    >
+                      {league.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
 
           {/* Desktop Navigation */}
           {isAuthenticated && (
