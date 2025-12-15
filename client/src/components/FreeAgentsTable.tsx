@@ -45,6 +45,7 @@ import { useCallback } from "react";
 interface FreeAgentsTableProps {
   freeAgents: FreeAgentWithBids[];
   bidIncrement?: number;
+  allowAutoBidding?: boolean;
 }
 
 type SortField = "name" | "playerType" | "currentBid" | "totalValue" | "endTime" | 
@@ -53,7 +54,7 @@ type SortField = "name" | "playerType" | "currentBid" | "totalValue" | "endTime"
 type SortDirection = "asc" | "desc";
 type PlayerTypeFilter = "all" | "hitter" | "pitcher";
 
-export function FreeAgentsTable({ freeAgents, bidIncrement = 0.10 }: FreeAgentsTableProps) {
+export function FreeAgentsTable({ freeAgents, bidIncrement = 0.10, allowAutoBidding = true }: FreeAgentsTableProps) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [selectedAgent, setSelectedAgent] = useState<FreeAgentWithBids | null>(null);
@@ -430,16 +431,18 @@ export function FreeAgentsTable({ freeAgents, bidIncrement = 0.10 }: FreeAgentsT
                               <Gavel className="h-4 w-4 mr-1" />
                               Bid
                             </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={isClosed}
-                              onClick={() => handleAutoBidClick(agent)}
-                              data-testid={`button-auto-bid-${agent.id}`}
-                            >
-                              <Zap className="h-4 w-4 mr-1" />
-                              Auto
-                            </Button>
+                            {allowAutoBidding && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={isClosed}
+                                onClick={() => handleAutoBidClick(agent)}
+                                data-testid={`button-auto-bid-${agent.id}`}
+                              >
+                                <Zap className="h-4 w-4 mr-1" />
+                                Auto
+                              </Button>
+                            )}
                             {isAdmin && (
                               <AlertDialog>
                                 <AlertDialogTrigger asChild>
@@ -497,12 +500,14 @@ export function FreeAgentsTable({ freeAgents, bidIncrement = 0.10 }: FreeAgentsT
         bidIncrement={bidIncrement}
       />
       
-      <AutoBidDialog
-        freeAgent={selectedAgent}
-        open={autoBidDialogOpen}
-        onOpenChange={setAutoBidDialogOpen}
-        bidIncrement={bidIncrement}
-      />
+      {allowAutoBidding && (
+        <AutoBidDialog
+          freeAgent={selectedAgent}
+          open={autoBidDialogOpen}
+          onOpenChange={setAutoBidDialogOpen}
+          bidIncrement={bidIncrement}
+        />
+      )}
 
       <BidHistoryModal
         agent={bidHistoryAgent}

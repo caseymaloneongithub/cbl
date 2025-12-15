@@ -204,14 +204,18 @@ export default function MyBids() {
             <Gavel className="h-4 w-4 mr-2" />
             Winning ({activeBids.length})
           </TabsTrigger>
-          <TabsTrigger value="auto-bids" data-testid="tab-auto-bids">
-            <Zap className="h-4 w-4 mr-2" />
-            Auto-Bids ({activeAutoBids.length})
-          </TabsTrigger>
-          <TabsTrigger value="bundles" data-testid="tab-bundles">
-            <Package className="h-4 w-4 mr-2" />
-            Bundles ({activeBundles.length})
-          </TabsTrigger>
+          {(activeAuction?.allowAutoBidding ?? true) && (
+            <TabsTrigger value="auto-bids" data-testid="tab-auto-bids">
+              <Zap className="h-4 w-4 mr-2" />
+              Auto-Bids ({activeAutoBids.length})
+            </TabsTrigger>
+          )}
+          {(activeAuction?.allowBundledBids ?? true) && (
+            <TabsTrigger value="bundles" data-testid="tab-bundles">
+              <Package className="h-4 w-4 mr-2" />
+              Bundles ({activeBundles.length})
+            </TabsTrigger>
+          )}
           <TabsTrigger value="won" data-testid="tab-won">
             <Trophy className="h-4 w-4 mr-2" />
             Won ({wonBids.length})
@@ -590,14 +594,16 @@ export default function MyBids() {
         </TabsContent>
       </Tabs>
 
-      <AutoBidDialog
-        freeAgent={editingAutoBid}
-        open={autoBidDialogOpen}
-        onOpenChange={setAutoBidDialogOpen}
-        bidIncrement={activeAuction?.bidIncrement ?? 0.10}
-      />
+      {(activeAuction?.allowAutoBidding ?? true) && (
+        <AutoBidDialog
+          freeAgent={editingAutoBid}
+          open={autoBidDialogOpen}
+          onOpenChange={setAutoBidDialogOpen}
+          bidIncrement={activeAuction?.bidIncrement ?? 0.10}
+        />
+      )}
 
-      {activeAuction && (
+      {activeAuction && (activeAuction?.allowBundledBids ?? true) && (
         <BundleDialog
           auctionId={activeAuction.id}
           open={bundleDialogOpen}

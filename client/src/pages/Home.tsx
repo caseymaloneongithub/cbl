@@ -382,7 +382,11 @@ export default function Home() {
             </CardContent>
           </Card>
         ) : (
-          <FreeAgentsTable freeAgents={activeAgents} bidIncrement={activeAuction?.bidIncrement ?? 0.10} />
+          <FreeAgentsTable 
+            freeAgents={activeAgents} 
+            bidIncrement={activeAuction?.bidIncrement ?? 0.10}
+            allowAutoBidding={activeAuction?.allowAutoBidding ?? true}
+          />
         )}
       </div>
     </div>
