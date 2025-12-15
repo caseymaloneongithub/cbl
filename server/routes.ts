@@ -895,10 +895,26 @@ export async function registerRoutes(
         isAutoBid: false,
       });
 
+      // Check if we need to extend the auction end time (24-hour extension feature)
+      let auctionExtended = false;
+      if (auction?.extendAuctionOnBid) {
+        const now = new Date();
+        const endTime = new Date(agent.auctionEndTime);
+        const hoursUntilEnd = (endTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+        
+        // If bid placed within 24 hours of end time, extend by 24 hours
+        if (hoursUntilEnd > 0 && hoursUntilEnd <= 24) {
+          const newEndTime = new Date(endTime.getTime() + 24 * 60 * 60 * 1000);
+          await storage.updateFreeAgentAuctionEndTime(agentId, newEndTime);
+          auctionExtended = true;
+          console.log(`[Bid] Extended auction for ${agent.name} to ${newEndTime.toISOString()}`);
+        }
+      }
+
       // Process all auto-bids (regular + bundle items) until stable
       const autoBidsTriggered = await processAllAutoBidsUntilStable(agentId, userId, auction);
 
-      res.json({ ...bid, autoBidsTriggered });
+      res.json({ ...bid, autoBidsTriggered, auctionExtended });
     } catch (error) {
       console.error("Error placing bid:", error);
       res.status(500).json({ message: "Failed to place bid" });

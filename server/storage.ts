@@ -72,6 +72,7 @@ export interface IStorage {
   createFreeAgent(agent: InsertFreeAgent): Promise<FreeAgent>;
   createFreeAgentsBulk(agents: InsertFreeAgent[]): Promise<FreeAgent[]>;
   updateFreeAgentWinner(id: number, winnerId: string, winningBidId: number): Promise<void>;
+  updateFreeAgentAuctionEndTime(id: number, auctionEndTime: Date): Promise<FreeAgent | undefined>;
   relistFreeAgent(id: number, minimumBid: number, minimumYears: number, auctionEndTime: Date): Promise<FreeAgent>;
   deleteFreeAgent(id: number): Promise<void>;
   
@@ -533,6 +534,15 @@ export class DatabaseStorage implements IStorage {
       .update(freeAgents)
       .set({ winnerId, winningBidId, isActive: false })
       .where(eq(freeAgents.id, id));
+  }
+
+  async updateFreeAgentAuctionEndTime(id: number, auctionEndTime: Date): Promise<FreeAgent | undefined> {
+    const [updated] = await db
+      .update(freeAgents)
+      .set({ auctionEndTime })
+      .where(eq(freeAgents.id, id))
+      .returning();
+    return updated;
   }
 
   async relistFreeAgent(id: number, minimumBid: number, minimumYears: number, auctionEndTime: Date): Promise<FreeAgent> {
