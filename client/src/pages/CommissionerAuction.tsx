@@ -82,6 +82,9 @@ const settingsSchema = z.object({
   yearFactor5: z.number().min(0.1).max(10),
   enforceBudget: z.boolean(),
   bidIncrement: z.number().min(0.01).max(100),
+  allowAutoBidding: z.boolean(),
+  allowBundledBids: z.boolean(),
+  extendAuctionOnBid: z.boolean(),
 });
 
 const addPlayerSchema = z.object({
@@ -242,6 +245,9 @@ export default function CommissionerAuction() {
         yearFactor5: Number(auction.yearFactor5) || 1.55,
         enforceBudget: auction.enforceBudget ?? true,
         bidIncrement: auction.bidIncrement || 1,
+        allowAutoBidding: auction.allowAutoBidding ?? true,
+        allowBundledBids: auction.allowBundledBids ?? true,
+        extendAuctionOnBid: auction.extendAuctionOnBid ?? false,
       });
     }
   }, [auction, settingsForm]);
@@ -1056,6 +1062,65 @@ export default function CommissionerAuction() {
                           checked={field.value}
                           onCheckedChange={field.onChange}
                           data-testid="switch-enforce-budget"
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <FormField
+                  control={settingsForm.control}
+                  name="allowAutoBidding"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                      <div className="space-y-0.5">
+                        <FormLabel>Allow Auto-Bidding</FormLabel>
+                        <p className="text-xs text-muted-foreground">Users can set automatic bids</p>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          data-testid="switch-allow-auto-bidding"
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={settingsForm.control}
+                  name="allowBundledBids"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                      <div className="space-y-0.5">
+                        <FormLabel>Allow Bundled Bids</FormLabel>
+                        <p className="text-xs text-muted-foreground">Users can create bid bundles</p>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          data-testid="switch-allow-bundled-bids"
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={settingsForm.control}
+                  name="extendAuctionOnBid"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                      <div className="space-y-0.5">
+                        <FormLabel>Extend on Late Bids</FormLabel>
+                        <p className="text-xs text-muted-foreground">Extend end time 24h when bid placed within 24h</p>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          data-testid="switch-extend-auction-on-bid"
                         />
                       </FormControl>
                     </FormItem>

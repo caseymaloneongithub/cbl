@@ -108,6 +108,10 @@ export const auctions = pgTable("auctions", {
   // Budget settings
   defaultBudget: real("default_budget").default(260).notNull(),
   enforceBudget: boolean("enforce_budget").default(true).notNull(),
+  // Optional bidding features
+  allowAutoBidding: boolean("allow_auto_bidding").default(true).notNull(),
+  allowBundledBids: boolean("allow_bundled_bids").default(true).notNull(),
+  extendAuctionOnBid: boolean("extend_auction_on_bid").default(false).notNull(), // Push back end time 24h when bid placed within 24h
   createdById: varchar("created_by_id").references(() => users.id),
   isDeleted: boolean("is_deleted").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
