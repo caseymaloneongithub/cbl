@@ -43,8 +43,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import type { LeagueSettings, User, Auction } from "@shared/schema";
-import { Upload, Settings, Users, Loader2, FileSpreadsheet, Trash2, Crown, Download, DollarSign, Plus, UserPlus, Trophy, RotateCcw, Play, Eye, Edit2, Check, X, Archive, ArchiveRestore } from "lucide-react";
+import type { LeagueSettings, User, Auction, League, LeagueMember } from "@shared/schema";
+import { Upload, Settings, Users, Loader2, FileSpreadsheet, Trash2, Crown, Download, DollarSign, Plus, UserPlus, Trophy, RotateCcw, Play, Eye, Edit2, Check, X, Archive, ArchiveRestore, Globe } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -122,6 +122,15 @@ export default function Commissioner() {
   const [editTeamName, setEditTeamName] = useState("");
   const [editTeamAbbreviation, setEditTeamAbbreviation] = useState("");
   
+  // League management state (super admin only)
+  const [createLeagueDialogOpen, setCreateLeagueDialogOpen] = useState(false);
+  const [newLeagueName, setNewLeagueName] = useState("");
+  const [newLeagueSlug, setNewLeagueSlug] = useState("");
+  const [addMemberDialogOpen, setAddMemberDialogOpen] = useState(false);
+  const [selectedLeagueForMember, setSelectedLeagueForMember] = useState<number | null>(null);
+  const [memberEmail, setMemberEmail] = useState("");
+  const [memberRole, setMemberRole] = useState<"owner" | "commissioner">("owner");
+  const [viewingLeagueId, setViewingLeagueId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -165,6 +174,28 @@ export default function Commissioner() {
       return res.json();
     },
     enabled: isAuthenticated && (user?.isCommissioner || user?.isSuperAdmin) && !!selectedLeagueId,
+  });
+
+  // League management queries (super admin only)
+  const { data: allLeagues, isLoading: loadingLeagues } = useQuery<League[]>({
+    queryKey: ["/api/leagues"],
+    queryFn: async () => {
+      const res = await fetch("/api/leagues", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch leagues");
+      return res.json();
+    },
+    enabled: isAuthenticated && user?.isSuperAdmin,
+  });
+
+  const { data: leagueMembers, isLoading: loadingMembers } = useQuery<(LeagueMember & { user?: User })[]>({
+    queryKey: ["/api/leagues", viewingLeagueId, "members"],
+    queryFn: async () => {
+      if (!viewingLeagueId) return [];
+      const res = await fetch(`/api/leagues/${viewingLeagueId}/members`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch members");
+      return res.json();
+    },
+    enabled: isAuthenticated && user?.isSuperAdmin && !!viewingLeagueId,
   });
 
   const form = useForm<SettingsFormData>({
@@ -417,6 +448,78 @@ export default function Commissioner() {
       toast({ title: "Team Updated", description: "Team details have been saved." });
       setEditingTeam(null);
       queryClient.invalidateQueries({ queryKey: ["/api/owners", selectedLeagueId] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // League management mutations (super admin only)
+  const createLeague = useMutation({
+    mutationFn: async ({ name, slug }: { name: string; slug: string }) => {
+      const res = await apiRequest("POST", "/api/leagues", { name, slug });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "League Created", description: "New league has been created." });
+      setCreateLeagueDialogOpen(false);
+      setNewLeagueName("");
+      setNewLeagueSlug("");
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const addLeagueMember = useMutation({
+    mutationFn: async ({ leagueId, email, role }: { leagueId: number; email: string; role: string }) => {
+      const res = await apiRequest("POST", `/api/leagues/${leagueId}/members`, { email, role });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Member Added", description: "User has been added to the league." });
+      setAddMemberDialogOpen(false);
+      setSelectedLeagueForMember(null);
+      setMemberEmail("");
+      setMemberRole("owner");
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues", viewingLeagueId, "members"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateMemberRole = useMutation({
+    mutationFn: async ({ leagueId, userId, role }: { leagueId: number; userId: string; role: string }) => {
+      const res = await apiRequest("PATCH", `/api/leagues/${leagueId}/members/${userId}`, { role });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Role Updated", description: "Member role has been updated." });
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues", viewingLeagueId, "members"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const removeLeagueMember = useMutation({
+    mutationFn: async ({ leagueId, userId }: { leagueId: number; userId: string }) => {
+      const res = await fetch(`/api/leagues/${leagueId}/members/${userId}`, { 
+        method: "DELETE", 
+        credentials: "include" 
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || "Failed to remove member");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Member Removed", description: "User has been removed from the league." });
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues", viewingLeagueId, "members"] });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -1543,6 +1646,312 @@ export default function Commissioner() {
           </p>
         </CardContent>
       </Card>
+
+      {/* League Management Section - Super Admin Only */}
+      {user?.isSuperAdmin && (
+        <>
+          <Separator className="my-8" />
+          <Card className="mb-8">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Globe className="h-5 w-5" />
+                League Management
+              </CardTitle>
+              <CardDescription>
+                Create and manage leagues across the platform
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex justify-end">
+                <Button
+                  onClick={() => setCreateLeagueDialogOpen(true)}
+                  data-testid="button-create-league"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create League
+                </Button>
+              </div>
+
+              {loadingLeagues ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-12 w-full" />
+                  <Skeleton className="h-12 w-full" />
+                </div>
+              ) : allLeagues && allLeagues.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Slug</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {allLeagues.map((league) => (
+                      <TableRow key={league.id} data-testid={`row-league-${league.id}`}>
+                        <TableCell className="font-medium" data-testid={`text-league-name-${league.id}`}>{league.name}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" data-testid={`badge-league-slug-${league.id}`}>{league.slug}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setViewingLeagueId(league.id);
+                              }}
+                              data-testid={`button-view-members-${league.id}`}
+                            >
+                              <Users className="h-4 w-4 mr-2" />
+                              Members
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedLeagueForMember(league.id);
+                                setAddMemberDialogOpen(true);
+                              }}
+                              data-testid={`button-add-member-${league.id}`}
+                            >
+                              <UserPlus className="h-4 w-4 mr-2" />
+                              Add
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No leagues created yet.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Create League Dialog */}
+          <Dialog open={createLeagueDialogOpen} onOpenChange={setCreateLeagueDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create New League</DialogTitle>
+                <DialogDescription>
+                  Enter a name and URL-friendly slug for the new league.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="league-name">League Name</Label>
+                  <Input
+                    id="league-name"
+                    value={newLeagueName}
+                    onChange={(e) => {
+                      setNewLeagueName(e.target.value);
+                      setNewLeagueSlug(e.target.value.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""));
+                    }}
+                    placeholder="My Fantasy League"
+                    data-testid="input-league-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="league-slug">Slug</Label>
+                  <Input
+                    id="league-slug"
+                    value={newLeagueSlug}
+                    onChange={(e) => setNewLeagueSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                    placeholder="my-fantasy-league"
+                    data-testid="input-league-slug"
+                  />
+                  <p className="text-xs text-muted-foreground">URL-friendly identifier (letters, numbers, hyphens only)</p>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setCreateLeagueDialogOpen(false)} data-testid="button-cancel-create-league">
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    const trimmedName = newLeagueName.trim();
+                    const trimmedSlug = newLeagueSlug.trim();
+                    if (trimmedName && trimmedSlug) {
+                      createLeague.mutate({ name: trimmedName, slug: trimmedSlug });
+                    }
+                  }}
+                  disabled={createLeague.isPending || !newLeagueName.trim() || !newLeagueSlug.trim()}
+                  data-testid="button-confirm-create-league"
+                >
+                  {createLeague.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                  Create League
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Add Member Dialog */}
+          <Dialog open={addMemberDialogOpen} onOpenChange={(open) => {
+            setAddMemberDialogOpen(open);
+            if (!open) {
+              setSelectedLeagueForMember(null);
+              setMemberEmail("");
+              setMemberRole("owner");
+            }
+          }}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Member to League</DialogTitle>
+                <DialogDescription>
+                  Enter the email of an existing user to add them to the league.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="member-email">User Email</Label>
+                  <Input
+                    id="member-email"
+                    type="email"
+                    value={memberEmail}
+                    onChange={(e) => setMemberEmail(e.target.value)}
+                    placeholder="user@example.com"
+                    data-testid="input-member-email"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="member-role">Role</Label>
+                  <Select value={memberRole} onValueChange={(val: "owner" | "commissioner") => setMemberRole(val)}>
+                    <SelectTrigger data-testid="select-member-role">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="owner">Owner</SelectItem>
+                      <SelectItem value="commissioner">Commissioner</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setAddMemberDialogOpen(false)} data-testid="button-cancel-add-member">
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    const trimmedEmail = memberEmail.trim();
+                    if (selectedLeagueForMember && trimmedEmail) {
+                      addLeagueMember.mutate({ leagueId: selectedLeagueForMember, email: trimmedEmail, role: memberRole });
+                    }
+                  }}
+                  disabled={addLeagueMember.isPending || !memberEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(memberEmail.trim()) || !selectedLeagueForMember}
+                  data-testid="button-confirm-add-member"
+                >
+                  {addLeagueMember.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                  Add Member
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* View Members Dialog */}
+          <Dialog open={!!viewingLeagueId} onOpenChange={(open) => {
+            if (!open) setViewingLeagueId(null);
+          }}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>League Members</DialogTitle>
+                <DialogDescription>
+                  {allLeagues?.find(l => l.id === viewingLeagueId)?.name}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="py-4">
+                {loadingMembers ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-10 w-full" />
+                  </div>
+                ) : leagueMembers && leagueMembers.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>User</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Role</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {leagueMembers.map((member) => (
+                        <TableRow key={member.userId} data-testid={`row-member-${member.userId}`}>
+                          <TableCell className="font-medium" data-testid={`text-member-name-${member.userId}`}>
+                            {member.user?.teamName || member.user?.firstName || "Unknown"}
+                          </TableCell>
+                          <TableCell data-testid={`text-member-email-${member.userId}`}>{member.user?.email || "—"}</TableCell>
+                          <TableCell>
+                            <Badge variant={member.role === "commissioner" ? "default" : "outline"} data-testid={`badge-member-role-${member.userId}`}>
+                              {member.role}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Select
+                                value={member.role}
+                                onValueChange={(role) => {
+                                  if (viewingLeagueId) {
+                                    updateMemberRole.mutate({ leagueId: viewingLeagueId, userId: member.userId, role });
+                                  }
+                                }}
+                              >
+                                <SelectTrigger className="w-32" data-testid={`select-role-${member.userId}`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="owner">Owner</SelectItem>
+                                  <SelectItem value="commissioner">Commissioner</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <Button
+                                variant="destructive"
+                                size="icon"
+                                onClick={() => {
+                                  if (viewingLeagueId) {
+                                    removeLeagueMember.mutate({ leagueId: viewingLeagueId, userId: member.userId });
+                                  }
+                                }}
+                                disabled={removeLeagueMember.isPending}
+                                data-testid={`button-remove-member-${member.userId}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No members in this league yet.
+                  </p>
+                )}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setViewingLeagueId(null)} data-testid="button-close-view-members">
+                  Close
+                </Button>
+                <Button
+                  onClick={() => {
+                    setSelectedLeagueForMember(viewingLeagueId);
+                    setAddMemberDialogOpen(true);
+                  }}
+                  data-testid="button-add-member-from-view"
+                >
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Add Member
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
 
     </div>
   );
