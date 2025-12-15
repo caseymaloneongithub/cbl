@@ -932,6 +932,14 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Auction has ended" });
       }
 
+      // Check if auto-bidding is enabled for this auction
+      if (agent.auctionId) {
+        const auction = await storage.getAuction(agent.auctionId);
+        if (auction && !auction.allowAutoBidding) {
+          return res.status(400).json({ message: "Auto-bidding is not enabled for this auction" });
+        }
+      }
+
       const { maxAmount, years, isActive } = req.body;
       
       // Check if auto-bid meets minimum years requirement
@@ -1117,6 +1125,14 @@ export async function registerRoutes(
     try {
       const userId = req.session.userId!;
       const { auctionId, name, items } = req.body;
+
+      // Check if bundled bids are enabled for this auction
+      if (auctionId) {
+        const auction = await storage.getAuction(auctionId);
+        if (auction && !auction.allowBundledBids) {
+          return res.status(400).json({ message: "Bundled bids are not enabled for this auction" });
+        }
+      }
 
       // Validate items
       if (!items || !Array.isArray(items) || items.length === 0 || items.length > 5) {
@@ -1942,7 +1958,10 @@ export async function registerRoutes(
       const { 
         bidIncrement,
         yearFactor1, yearFactor2, yearFactor3, yearFactor4, yearFactor5,
-        enforceBudget
+        enforceBudget,
+        allowAutoBidding,
+        allowBundledBids,
+        extendAuctionOnBid
       } = req.body;
       
       const updateData: any = {};
@@ -1954,6 +1973,9 @@ export async function registerRoutes(
       if (yearFactor4 !== undefined) updateData.yearFactor4 = yearFactor4;
       if (yearFactor5 !== undefined) updateData.yearFactor5 = yearFactor5;
       if (enforceBudget !== undefined) updateData.enforceBudget = enforceBudget;
+      if (allowAutoBidding !== undefined) updateData.allowAutoBidding = allowAutoBidding;
+      if (allowBundledBids !== undefined) updateData.allowBundledBids = allowBundledBids;
+      if (extendAuctionOnBid !== undefined) updateData.extendAuctionOnBid = extendAuctionOnBid;
 
       const updatedAuction = await storage.updateAuction(auctionId, updateData);
       res.json(updatedAuction);
