@@ -9,6 +9,22 @@ import { parse, isValid } from "date-fns";
 
 const EASTERN_TIMEZONE = "America/New_York";
 
+// Helper to check if user is commissioner for a specific league or super admin
+async function hasLeagueCommissionerAccess(userId: string, leagueId: number): Promise<boolean> {
+  const user = await storage.getUser(userId);
+  if (user?.isSuperAdmin) return true;
+  return storage.isLeagueCommissioner(leagueId, userId);
+}
+
+// Helper to check if user is commissioner for auction's league or super admin
+async function hasAuctionCommissionerAccess(userId: string, auctionId: number): Promise<boolean> {
+  const user = await storage.getUser(userId);
+  if (user?.isSuperAdmin) return true;
+  const leagueId = await storage.getLeagueIdFromAuction(auctionId);
+  if (!leagueId) return false;
+  return storage.isLeagueCommissioner(leagueId, userId);
+}
+
 function parseEasternTime(dateString: string): Date {
   if (!dateString || typeof dateString !== 'string') {
     throw new Error(`Invalid date: empty or not a string`);
@@ -90,8 +106,9 @@ export async function registerRoutes(
       const userId = req.session.originalUserId || req.session.userId!;
       const user = await storage.getUser(userId);
       
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
-        return res.status(403).json({ message: "Commissioner or Super Admin access required" });
+      // Global settings can only be updated by super admin
+      if (!user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Super Admin access required" });
       }
 
       const settings = await storage.updateSettings(req.body);
@@ -368,14 +385,13 @@ export async function registerRoutes(
   // Get expired players with no bids for an auction (for relisting)
   app.get("/api/auctions/:id/expired-no-bids", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId!;
-      const user = await storage.getUser(userId);
+      const userId = req.session.originalUserId || req.session.userId!;
+      const auctionId = parseInt(req.params.id);
       
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+      if (!await hasAuctionCommissionerAccess(userId, auctionId)) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
-      const auctionId = parseInt(req.params.id);
       const agents = await storage.getExpiredFreeAgentsNoBids(auctionId);
       res.json(agents);
     } catch (error) {
@@ -386,13 +402,7 @@ export async function registerRoutes(
 
   app.post("/api/free-agents/bulk", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId!;
-      const user = await storage.getUser(userId);
-      
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
-        return res.status(403).json({ message: "Commissioner access required" });
-      }
-
+      const userId = req.session.originalUserId || req.session.userId!;
       const { players, auctionId } = req.body;
       
       if (!Array.isArray(players) || players.length === 0) {
@@ -408,6 +418,11 @@ export async function registerRoutes(
       if (!auction) {
         return res.status(400).json({ message: "Invalid auction ID" });
       }
+      
+      if (!await hasAuctionCommissionerAccess(userId, auctionId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+      
       const targetAuctionId = auctionId;
 
       const defaultEndTime = new Date();
@@ -504,18 +519,17 @@ export async function registerRoutes(
   // Commissioner: Relist a player with no bids (new minimum bid and end time)
   app.post("/api/free-agents/:id/relist", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId!;
-      const user = await storage.getUser(userId);
-      
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
-        return res.status(403).json({ message: "Commissioner access required" });
-      }
-
+      const userId = req.session.originalUserId || req.session.userId!;
       const agentId = parseInt(req.params.id);
       const agent = await storage.getFreeAgent(agentId);
       
       if (!agent) {
         return res.status(404).json({ message: "Free agent not found" });
+      }
+      
+      // Check commissioner access for this agent's auction league
+      if (agent.auctionId && !await hasAuctionCommissionerAccess(userId, agent.auctionId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
       }
 
       // Check if auction has ended
@@ -568,14 +582,13 @@ export async function registerRoutes(
   // Bulk relist multiple expired players (commissioner or super admin only)
   app.post("/api/free-agents/bulk-relist", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId!;
-      const user = await storage.getUser(userId);
+      const userId = req.session.originalUserId || req.session.userId!;
+      const { playerIds, minimumBid, minimumYears, auctionEndTime, auctionId } = req.body;
       
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
-        return res.status(403).json({ message: "Commissioner or super admin access required" });
+      // If auctionId is provided, verify commissioner access upfront
+      if (auctionId && !await hasAuctionCommissionerAccess(userId, auctionId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
       }
-
-      const { playerIds, minimumBid, minimumYears, auctionEndTime } = req.body;
 
       if (!Array.isArray(playerIds) || playerIds.length === 0) {
         return res.status(400).json({ message: "At least one player must be selected" });
@@ -615,6 +628,12 @@ export async function registerRoutes(
             results.push({ id: playerId, success: false, error: "Player not found" });
             continue;
           }
+          
+          // Check commissioner access for this player's auction
+          if (agent.auctionId && !await hasAuctionCommissionerAccess(userId, agent.auctionId)) {
+            results.push({ id: playerId, success: false, error: "Commissioner access required" });
+            continue;
+          }
 
           // Check if auction is already active
           if (agent.isActive && agent.auctionEndTime && new Date(agent.auctionEndTime) > new Date()) {
@@ -650,15 +669,14 @@ export async function registerRoutes(
   // Create a single free agent (commissioner or super admin only)
   app.post("/api/free-agents", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId!;
-      const user = await storage.getUser(userId);
-      
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
-        return res.status(403).json({ message: "Commissioner or super admin access required" });
-      }
-
+      const userId = req.session.originalUserId || req.session.userId!;
       const { name, playerType, team, minimumBid, minimumYears, auctionEndTime, auctionId,
               avg, hr, rbi, runs, sb, ops, pa, wins, losses, era, whip, strikeouts, ip } = req.body;
+      
+      // Check commissioner access for the target auction
+      if (auctionId && !await hasAuctionCommissionerAccess(userId, auctionId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
       
       if (!name?.trim()) {
         return res.status(400).json({ message: "Player name is required" });
@@ -739,18 +757,17 @@ export async function registerRoutes(
   // Delete a free agent (commissioner or super admin only)
   app.delete("/api/free-agents/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId!;
-      const user = await storage.getUser(userId);
-      
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
-        return res.status(403).json({ message: "Commissioner or super admin access required" });
-      }
-
+      const userId = req.session.originalUserId || req.session.userId!;
       const agentId = parseInt(req.params.id);
       const agent = await storage.getFreeAgent(agentId);
       
       if (!agent) {
         return res.status(404).json({ message: "Free agent not found" });
+      }
+      
+      // Check commissioner access for this agent's auction league
+      if (agent.auctionId && !await hasAuctionCommissionerAccess(userId, agent.auctionId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
       }
 
       await storage.deleteFreeAgent(agentId);
@@ -1381,19 +1398,24 @@ export async function registerRoutes(
   // CSV Export - Auction Results
   app.get("/api/exports/auction-results.csv", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId!;
-      const user = await storage.getUser(userId);
+      const userId = req.session.originalUserId || req.session.userId!;
       
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
-        return res.status(403).json({ message: "Commissioner access required" });
-      }
-
       // Support optional auction filtering
       let results = await storage.getClosedFreeAgents();
       if (req.query.auctionId) {
         const auctionId = parseInt(req.query.auctionId);
         if (!isNaN(auctionId)) {
+          // Check commissioner access for this auction's league
+          if (!await hasAuctionCommissionerAccess(userId, auctionId)) {
+            return res.status(403).json({ message: "Commissioner access required" });
+          }
           results = results.filter(agent => agent.auctionId === auctionId);
+        }
+      } else {
+        // If no specific auction, require super admin for all-auctions export
+        const user = await storage.getUser(userId);
+        if (!user?.isSuperAdmin) {
+          return res.status(403).json({ message: "Super admin access required for cross-auction exports" });
         }
       }
       
@@ -1441,19 +1463,24 @@ export async function registerRoutes(
   // CSV Export - Final Rosters by Owner
   app.get("/api/exports/final-rosters.csv", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId!;
-      const user = await storage.getUser(userId);
+      const userId = req.session.originalUserId || req.session.userId!;
       
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
-        return res.status(403).json({ message: "Commissioner access required" });
-      }
-
       // Support optional auction filtering
       let results = await storage.getClosedFreeAgents();
       if (req.query.auctionId) {
         const auctionId = parseInt(req.query.auctionId);
         if (!isNaN(auctionId)) {
+          // Check commissioner access for this auction's league
+          if (!await hasAuctionCommissionerAccess(userId, auctionId)) {
+            return res.status(403).json({ message: "Commissioner access required" });
+          }
           results = results.filter(agent => agent.auctionId === auctionId);
+        }
+      } else {
+        // If no specific auction, require super admin for all-auctions export
+        const user = await storage.getUser(userId);
+        if (!user?.isSuperAdmin) {
+          return res.status(403).json({ message: "Super admin access required for cross-auction exports" });
         }
       }
       const allUsers = await storage.getAllUsers();
@@ -1805,23 +1832,27 @@ export async function registerRoutes(
 
   app.post("/api/auctions", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId!;
-      const user = await storage.getUser(userId);
-      
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
-        return res.status(403).json({ message: "Commissioner access required" });
-      }
-
-      const { name } = req.body;
+      const userId = req.session.originalUserId || req.session.userId!;
+      const { name, leagueId } = req.body;
       
       if (!name || typeof name !== "string" || name.trim().length === 0) {
         return res.status(400).json({ message: "Auction name is required" });
+      }
+      
+      if (!leagueId) {
+        return res.status(400).json({ message: "League ID is required" });
+      }
+      
+      // Check commissioner access for the target league
+      if (!await hasLeagueCommissionerAccess(userId, leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
       }
 
       const auction = await storage.createAuction({
         name: name.trim(),
         status: "draft",
-        createdBy: userId,
+        createdById: userId,
+        leagueId,
       });
 
       res.json(auction);
@@ -1833,14 +1864,14 @@ export async function registerRoutes(
 
   app.patch("/api/auctions/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId!;
-      const user = await storage.getUser(userId);
+      const userId = req.session.originalUserId || req.session.userId!;
+      const auctionId = parseInt(req.params.id);
       
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+      // Check commissioner access for this auction's league
+      if (!await hasAuctionCommissionerAccess(userId, auctionId)) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
-
-      const auctionId = parseInt(req.params.id);
+      
       const auction = await storage.getAuction(auctionId);
       
       if (!auction) {
@@ -1894,14 +1925,14 @@ export async function registerRoutes(
   // Update auction settings (specific endpoint for settings dialog)
   app.patch("/api/auctions/:id/settings", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId!;
-      const user = await storage.getUser(userId);
+      const userId = req.session.originalUserId || req.session.userId!;
+      const auctionId = parseInt(req.params.id);
       
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+      // Check commissioner access for this auction's league
+      if (!await hasAuctionCommissionerAccess(userId, auctionId)) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
-      const auctionId = parseInt(req.params.id);
       const auction = await storage.getAuction(auctionId);
       
       if (!auction) {
@@ -1935,13 +1966,15 @@ export async function registerRoutes(
   // Delete auction (requires password confirmation)
   app.delete("/api/auctions/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId!;
-      const user = await storage.getUser(userId);
+      const userId = req.session.originalUserId || req.session.userId!;
+      const auctionId = parseInt(req.params.id);
       
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+      // Check commissioner access for this auction's league
+      if (!await hasAuctionCommissionerAccess(userId, auctionId)) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
-
+      
+      const user = await storage.getUser(userId);
       const { password } = req.body;
       
       if (!password) {
@@ -1950,13 +1983,12 @@ export async function registerRoutes(
 
       // Verify password using bcrypt
       const bcrypt = await import("bcryptjs");
-      const isValidPassword = await bcrypt.compare(password, user.passwordHash || "");
+      const isValidPassword = await bcrypt.compare(password, user?.passwordHash || "");
       
       if (!isValidPassword) {
         return res.status(401).json({ message: "Invalid password" });
       }
 
-      const auctionId = parseInt(req.params.id);
       const auction = await storage.getAuction(auctionId);
       
       if (!auction) {
@@ -1974,13 +2006,15 @@ export async function registerRoutes(
   // Reset auction (requires password confirmation)
   app.post("/api/auctions/:id/reset", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId!;
-      const user = await storage.getUser(userId);
+      const userId = req.session.originalUserId || req.session.userId!;
+      const auctionId = parseInt(req.params.id);
       
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+      // Check commissioner access for this auction's league
+      if (!await hasAuctionCommissionerAccess(userId, auctionId)) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
-
+      
+      const user = await storage.getUser(userId);
       const { password } = req.body;
       
       if (!password) {
@@ -1989,13 +2023,11 @@ export async function registerRoutes(
 
       // Verify password using bcrypt
       const bcrypt = await import("bcryptjs");
-      const isValidPassword = await bcrypt.compare(password, user.passwordHash || "");
+      const isValidPassword = await bcrypt.compare(password, user?.passwordHash || "");
       
       if (!isValidPassword) {
         return res.status(401).json({ message: "Invalid password" });
       }
-
-      const auctionId = parseInt(req.params.id);
       const auction = await storage.getAuction(auctionId);
       
       if (!auction) {
@@ -2014,13 +2046,13 @@ export async function registerRoutes(
   app.get("/api/auctions/:id/teams", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.originalUserId || req.session.userId!;
-      const user = await storage.getUser(userId);
+      const auctionId = parseInt(req.params.id);
       
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
-        return res.status(403).json({ message: "Commissioner or Super Admin access required" });
+      // Check commissioner access for this auction's league
+      if (!await hasAuctionCommissionerAccess(userId, auctionId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
       }
 
-      const auctionId = parseInt(req.params.id);
       const teams = await storage.getAuctionTeams(auctionId);
       res.json(teams);
     } catch (error) {
@@ -2033,13 +2065,13 @@ export async function registerRoutes(
   app.get("/api/auctions/:id/available-teams", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.originalUserId || req.session.userId!;
-      const user = await storage.getUser(userId);
+      const auctionId = parseInt(req.params.id);
       
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
-        return res.status(403).json({ message: "Commissioner or Super Admin access required" });
+      // Check commissioner access for this auction's league
+      if (!await hasAuctionCommissionerAccess(userId, auctionId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
       }
 
-      const auctionId = parseInt(req.params.id);
       const availableTeams = await storage.getTeamsNotInAuction(auctionId);
       res.json(availableTeams);
     } catch (error) {
@@ -2052,13 +2084,12 @@ export async function registerRoutes(
   app.post("/api/auctions/:id/teams/enroll", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.originalUserId || req.session.userId!;
-      const user = await storage.getUser(userId);
+      const auctionId = parseInt(req.params.id);
       
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+      // Check commissioner access for this auction's league
+      if (!await hasAuctionCommissionerAccess(userId, auctionId)) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
-
-      const auctionId = parseInt(req.params.id);
       const { userIds, budget, rosterLimit, ipLimit, paLimit } = req.body;
 
       if (!Array.isArray(userIds) || userIds.length === 0) {
@@ -2088,13 +2119,12 @@ export async function registerRoutes(
   app.post("/api/auctions/:id/teams/enroll-bulk", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.originalUserId || req.session.userId!;
-      const user = await storage.getUser(userId);
+      const auctionId = parseInt(req.params.id);
       
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+      // Check commissioner access for this auction's league
+      if (!await hasAuctionCommissionerAccess(userId, auctionId)) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
-
-      const auctionId = parseInt(req.params.id);
       const { teams } = req.body;
 
       if (!Array.isArray(teams) || teams.length === 0) {
@@ -2121,14 +2151,14 @@ export async function registerRoutes(
   // Remove a team from an auction
   app.delete("/api/auctions/:id/teams/:userId", isAuthenticated, async (req: any, res) => {
     try {
-      const sessionUserId = req.session.userId!;
-      const user = await storage.getUser(sessionUserId);
+      const sessionUserId = req.session.originalUserId || req.session.userId!;
+      const auctionId = parseInt(req.params.id);
       
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+      // Check commissioner access for this auction's league
+      if (!await hasAuctionCommissionerAccess(sessionUserId, auctionId)) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
-      const auctionId = parseInt(req.params.id);
       const targetUserId = req.params.userId;
 
       const result = await storage.removeTeamFromAuction(auctionId, targetUserId);
@@ -2144,14 +2174,14 @@ export async function registerRoutes(
 
   app.patch("/api/auctions/:id/teams/:userId", isAuthenticated, async (req: any, res) => {
     try {
-      const sessionUserId = req.session.userId!;
-      const user = await storage.getUser(sessionUserId);
+      const sessionUserId = req.session.originalUserId || req.session.userId!;
+      const auctionId = parseInt(req.params.id);
       
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+      // Check commissioner access for this auction's league
+      if (!await hasAuctionCommissionerAccess(sessionUserId, auctionId)) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
-      const auctionId = parseInt(req.params.id);
       const targetUserId = req.params.userId;
       const { isActive } = req.body;
 
@@ -2166,14 +2196,14 @@ export async function registerRoutes(
   // Update per-auction team budget
   app.patch("/api/auctions/:id/teams/:userId/budget", isAuthenticated, async (req: any, res) => {
     try {
-      const sessionUserId = req.session.userId!;
-      const user = await storage.getUser(sessionUserId);
+      const sessionUserId = req.session.originalUserId || req.session.userId!;
+      const auctionId = parseInt(req.params.id);
       
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+      // Check commissioner access for this auction's league
+      if (!await hasAuctionCommissionerAccess(sessionUserId, auctionId)) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
-      const auctionId = parseInt(req.params.id);
       const targetUserId = req.params.userId;
       const { budget } = req.body;
 
@@ -2192,14 +2222,14 @@ export async function registerRoutes(
   // Update per-auction team limits
   app.patch("/api/auctions/:id/teams/:userId/limits", isAuthenticated, async (req: any, res) => {
     try {
-      const sessionUserId = req.session.userId!;
-      const user = await storage.getUser(sessionUserId);
+      const sessionUserId = req.session.originalUserId || req.session.userId!;
+      const auctionId = parseInt(req.params.id);
       
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+      // Check commissioner access for this auction's league
+      if (!await hasAuctionCommissionerAccess(sessionUserId, auctionId)) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
-      const auctionId = parseInt(req.params.id);
       const targetUserId = req.params.userId;
       const { rosterLimit, ipLimit, paLimit } = req.body;
 
@@ -2218,14 +2248,14 @@ export async function registerRoutes(
   // Reset all team budgets in an auction
   app.post("/api/auctions/:id/reset-budgets", isAuthenticated, async (req: any, res) => {
     try {
-      const sessionUserId = req.session.userId!;
-      const user = await storage.getUser(sessionUserId);
+      const sessionUserId = req.session.originalUserId || req.session.userId!;
+      const auctionId = parseInt(req.params.id);
       
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
+      // Check commissioner access for this auction's league
+      if (!await hasAuctionCommissionerAccess(sessionUserId, auctionId)) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
-      const auctionId = parseInt(req.params.id);
       const { budget } = req.body;
 
       if (typeof budget !== 'number' || budget < 0) {

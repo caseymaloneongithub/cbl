@@ -35,9 +35,15 @@ Preferred communication style: Simple, everyday language.
 
 ### Authentication & Authorization
 - **Authentication**: Email/password with bcrypt hashing (cost 12).
-- **Authorization**: Role-based (Regular users, Commissioners, Super Admin).
+- **Authorization**: Multi-tier role-based system:
+  - **Super Admin**: Global access to all leagues, can manage leagues and assign commissioners
+  - **League Commissioner**: Per-league role stored in `leagueMembers.role` column. A user can be commissioner in one league and regular owner in another.
+  - **Owner**: Regular team owner who participates in auctions within their leagues
+- **Per-League Commissioner Checks**: All commissioner operations now use league-scoped checks:
+  - `hasLeagueCommissionerAccess(userId, leagueId)`: Check if user is commissioner of a specific league
+  - `hasAuctionCommissionerAccess(userId, auctionId)`: Check if user is commissioner of the auction's parent league
 - **Session Flow**: Standard login, session creation, protected routes via middleware, logout.
-- **User Management**: Commissioners can upload users via CSV, auto-generated passwords, `mustResetPassword` flag.
+- **User Management**: League commissioners can upload users via CSV, auto-generated passwords, `mustResetPassword` flag.
 - **Password Reset Flow**: Forces users with `mustResetPassword=true` to set a new password upon login.
 
 ### Key Features & System Design
