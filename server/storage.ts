@@ -211,6 +211,8 @@ export interface IStorage {
   addLeagueMember(data: InsertLeagueMember): Promise<LeagueMember>;
   updateLeagueMember(leagueId: number, userId: string, data: Partial<InsertLeagueMember>): Promise<LeagueMember | undefined>;
   removeLeagueMember(leagueId: number, userId: string): Promise<void>;
+  isLeagueCommissioner(leagueId: number, userId: string): Promise<boolean>;
+  getLeagueIdFromAuction(auctionId: number): Promise<number | null>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2048,6 +2050,19 @@ export class DatabaseStorage implements IStorage {
         eq(leagueMembers.leagueId, leagueId),
         eq(leagueMembers.userId, userId)
       ));
+  }
+
+  async isLeagueCommissioner(leagueId: number, userId: string): Promise<boolean> {
+    const member = await this.getLeagueMember(leagueId, userId);
+    return member?.role === 'commissioner';
+  }
+
+  async getLeagueIdFromAuction(auctionId: number): Promise<number | null> {
+    const [auction] = await db
+      .select({ leagueId: auctions.leagueId })
+      .from(auctions)
+      .where(eq(auctions.id, auctionId));
+    return auction?.leagueId ?? null;
   }
 }
 
