@@ -24,6 +24,50 @@ export const sessions = pgTable(
   (table) => [index("IDX_session_expire").on(table.expire)],
 );
 
+// Leagues table - each league is an independent tenant
+export const leagues = pgTable("leagues", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  name: varchar("name", { length: 255 }).notNull(),
+  slug: varchar("slug", { length: 100 }).unique().notNull(), // URL-friendly identifier
+  timezone: varchar("timezone", { length: 50 }).default("America/New_York").notNull(),
+  createdById: varchar("created_by_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const leaguesRelations = relations(leagues, ({ one, many }) => ({
+  createdBy: one(users, {
+    fields: [leagues.createdById],
+    references: [users.id],
+  }),
+  members: many(leagueMembers),
+  auctions: many(auctions),
+}));
+
+// League members table - tracks which users belong to which leagues and their roles
+export const leagueMembers = pgTable("league_members", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  leagueId: integer("league_id").references(() => leagues.id).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  role: varchar("role", { length: 20 }).default("owner").notNull(), // 'owner', 'commissioner'
+  teamName: varchar("team_name"),
+  teamAbbreviation: varchar("team_abbreviation", { length: 3 }),
+  isArchived: boolean("is_archived").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const leagueMembersRelations = relations(leagueMembers, ({ one }) => ({
+  league: one(leagues, {
+    fields: [leagueMembers.leagueId],
+    references: [leagues.id],
+  }),
+  user: one(users, {
+    fields: [leagueMembers.userId],
+    references: [users.id],
+  }),
+}));
+
 // Users table - supports owners, commissioners, and super admins
 // Note: Budget and limits are per-auction, stored in auctionTeams table
 export const users = pgTable("users", {
@@ -51,6 +95,7 @@ export const usersRelations = relations(users, ({ many }) => ({
 // Auctions table - stores named auctions with all auction-level settings
 export const auctions = pgTable("auctions", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  leagueId: integer("league_id").references(() => leagues.id),
   name: varchar("name", { length: 255 }).notNull(),
   status: varchar("status", { length: 20 }).default("active").notNull(), // 'draft', 'active', 'closed'
   bidIncrement: real("bid_increment").default(0.10).notNull(), // Minimum bid increment as decimal (0.10 = 10%)
@@ -70,6 +115,10 @@ export const auctions = pgTable("auctions", {
 });
 
 export const auctionsRelations = relations(auctions, ({ one, many }) => ({
+  league: one(leagues, {
+    fields: [auctions.leagueId],
+    references: [leagues.id],
+  }),
   createdBy: one(users, {
     fields: [auctions.createdById],
     references: [users.id],
@@ -278,6 +327,18 @@ export const bidBundleItemsRelations = relations(bidBundleItems, ({ one }) => ({
 }));
 
 // Insert schemas
+export const insertLeagueSchema = createInsertSchema(leagues).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertLeagueMemberSchema = createInsertSchema(leagueMembers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
@@ -340,6 +401,12 @@ export const insertBidBundleItemSchema = createInsertSchema(bidBundleItems).omit
 });
 
 // Types
+export type League = typeof leagues.$inferSelect;
+export type InsertLeague = z.infer<typeof insertLeagueSchema>;
+
+export type LeagueMember = typeof leagueMembers.$inferSelect;
+export type InsertLeagueMember = z.infer<typeof insertLeagueMemberSchema>;
+
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
