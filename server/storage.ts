@@ -9,6 +9,8 @@ import {
   auctionTeams,
   bidBundles,
   bidBundleItems,
+  leagues,
+  leagueMembers,
   type User,
   type UpsertUser,
   type LeagueSettings,
@@ -32,6 +34,10 @@ import {
   type BidBundleItem,
   type InsertBidBundleItem,
   type BidBundleWithItems,
+  type League,
+  type InsertLeague,
+  type LeagueMember,
+  type InsertLeagueMember,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, lt, sql, isNull, inArray, or } from "drizzle-orm";
@@ -189,6 +195,22 @@ export interface IStorage {
   getActiveBundleItemForAgent(freeAgentId: number, userId: string): Promise<(BidBundleItem & { bundle: BidBundle }) | undefined>;
   getAllDeployedBundleItemsForAgent(freeAgentId: number): Promise<(BidBundleItem & { bundle: BidBundle })[]>;
   activateNextBundleItem(bundleId: number): Promise<BidBundleItemWithAgent | null>;
+  
+  // League operations
+  getLeague(id: number): Promise<League | undefined>;
+  getLeagueBySlug(slug: string): Promise<League | undefined>;
+  getAllLeagues(): Promise<League[]>;
+  createLeague(data: InsertLeague): Promise<League>;
+  updateLeague(id: number, data: Partial<InsertLeague>): Promise<League | undefined>;
+  getUserLeagues(userId: string): Promise<League[]>;
+  getAuctionsByLeague(leagueId: number): Promise<Auction[]>;
+  
+  // League member operations
+  getLeagueMembers(leagueId: number): Promise<(LeagueMember & { user: User })[]>;
+  getLeagueMember(leagueId: number, userId: string): Promise<LeagueMember | undefined>;
+  addLeagueMember(data: InsertLeagueMember): Promise<LeagueMember>;
+  updateLeagueMember(leagueId: number, userId: string, data: Partial<InsertLeagueMember>): Promise<LeagueMember | undefined>;
+  removeLeagueMember(leagueId: number, userId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1919,6 +1941,113 @@ export class DatabaseStorage implements IStorage {
       ...updatedItem,
       freeAgent: agent,
     };
+  }
+
+  // League operations
+  async getLeague(id: number): Promise<League | undefined> {
+    const [league] = await db.select().from(leagues).where(eq(leagues.id, id));
+    return league;
+  }
+
+  async getLeagueBySlug(slug: string): Promise<League | undefined> {
+    const [league] = await db.select().from(leagues).where(eq(leagues.slug, slug));
+    return league;
+  }
+
+  async getAllLeagues(): Promise<League[]> {
+    return db.select().from(leagues).orderBy(leagues.name);
+  }
+
+  async createLeague(data: InsertLeague): Promise<League> {
+    const [league] = await db.insert(leagues).values(data).returning();
+    return league;
+  }
+
+  async updateLeague(id: number, data: Partial<InsertLeague>): Promise<League | undefined> {
+    const [league] = await db
+      .update(leagues)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(leagues.id, id))
+      .returning();
+    return league;
+  }
+
+  async getUserLeagues(userId: string): Promise<League[]> {
+    // Get all leagues where user is a member
+    const memberLeagues = await db
+      .select({ league: leagues })
+      .from(leagueMembers)
+      .innerJoin(leagues, eq(leagueMembers.leagueId, leagues.id))
+      .where(and(
+        eq(leagueMembers.userId, userId),
+        eq(leagueMembers.isArchived, false)
+      ));
+    return memberLeagues.map(r => r.league);
+  }
+
+  async getAuctionsByLeague(leagueId: number): Promise<Auction[]> {
+    return db
+      .select()
+      .from(auctions)
+      .where(and(
+        eq(auctions.leagueId, leagueId),
+        eq(auctions.isDeleted, false)
+      ))
+      .orderBy(desc(auctions.createdAt));
+  }
+
+  // League member operations
+  async getLeagueMembers(leagueId: number): Promise<(LeagueMember & { user: User })[]> {
+    const results = await db
+      .select({
+        member: leagueMembers,
+        user: users,
+      })
+      .from(leagueMembers)
+      .innerJoin(users, eq(leagueMembers.userId, users.id))
+      .where(eq(leagueMembers.leagueId, leagueId));
+    
+    return results.map(r => ({
+      ...r.member,
+      user: r.user,
+    }));
+  }
+
+  async getLeagueMember(leagueId: number, userId: string): Promise<LeagueMember | undefined> {
+    const [member] = await db
+      .select()
+      .from(leagueMembers)
+      .where(and(
+        eq(leagueMembers.leagueId, leagueId),
+        eq(leagueMembers.userId, userId)
+      ));
+    return member;
+  }
+
+  async addLeagueMember(data: InsertLeagueMember): Promise<LeagueMember> {
+    const [member] = await db.insert(leagueMembers).values(data).returning();
+    return member;
+  }
+
+  async updateLeagueMember(leagueId: number, userId: string, data: Partial<InsertLeagueMember>): Promise<LeagueMember | undefined> {
+    const [member] = await db
+      .update(leagueMembers)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(
+        eq(leagueMembers.leagueId, leagueId),
+        eq(leagueMembers.userId, userId)
+      ))
+      .returning();
+    return member;
+  }
+
+  async removeLeagueMember(leagueId: number, userId: string): Promise<void> {
+    await db
+      .delete(leagueMembers)
+      .where(and(
+        eq(leagueMembers.leagueId, leagueId),
+        eq(leagueMembers.userId, userId)
+      ));
   }
 }
 
