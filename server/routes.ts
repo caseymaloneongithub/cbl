@@ -108,13 +108,51 @@ export async function registerRoutes(
       const userId = req.session.originalUserId || req.session.userId!;
       const user = await storage.getUser(userId);
       
-      // Allow commissioner or super admin access
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
-        return res.status(403).json({ message: "Commissioner or Super Admin access required" });
+      // Check for leagueId query parameter
+      let leagueId: number | undefined = undefined;
+      if (req.query.leagueId) {
+        const parsed = parseInt(req.query.leagueId);
+        if (!isNaN(parsed)) {
+          leagueId = parsed;
+        }
       }
-
-      const owners = await storage.getAllUsers();
-      res.json(owners);
+      
+      if (leagueId) {
+        // League-scoped: return league members
+        // Super admin can access all leagues
+        if (!user?.isSuperAdmin) {
+          const membership = await storage.getLeagueMember(leagueId, userId);
+          if (!membership) {
+            return res.status(403).json({ message: "Not a member of this league" });
+          }
+          // Only commissioners of the league can manage owners (no global commissioner bypass)
+          if (membership.role !== 'commissioner') {
+            return res.status(403).json({ message: "Commissioner access required" });
+          }
+        }
+        
+        // Return league members with sanitized user info (no sensitive fields)
+        const members = await storage.getLeagueMembers(leagueId);
+        const owners = members.map(m => ({
+          id: m.user.id,
+          email: m.user.email,
+          firstName: m.user.firstName,
+          lastName: m.user.lastName,
+          profileImageUrl: m.user.profileImageUrl,
+          teamName: m.teamName || m.user.teamName,
+          teamAbbreviation: m.teamAbbreviation || m.user.teamAbbreviation,
+          leagueRole: m.role,
+          isArchived: m.isArchived,
+        }));
+        res.json(owners);
+      } else {
+        // Legacy behavior: return all users (super admin only)
+        if (!user?.isSuperAdmin) {
+          return res.status(400).json({ message: "leagueId parameter is required" });
+        }
+        const owners = await storage.getAllUsers();
+        res.json(owners);
+      }
     } catch (error) {
       console.error("Error fetching owners:", error);
       res.status(500).json({ message: "Failed to fetch owners" });
@@ -146,17 +184,37 @@ export async function registerRoutes(
     }
   });
 
-  // Check if a team can be deleted
+  // Check if a team can be deleted (requires leagueId for league-scoped check)
   app.get("/api/owners/:id/can-delete", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.originalUserId || req.session.userId!;
       const user = await storage.getUser(userId);
       
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
-        return res.status(403).json({ message: "Commissioner or Super Admin access required" });
+      // Super admin can always access
+      if (user?.isSuperAdmin) {
+        const { id } = req.params;
+        const result = await storage.canDeleteUser(id);
+        return res.json(result);
+      }
+      
+      // For non-super-admin, require leagueId and verify commissioner role in that league
+      const leagueId = req.query.leagueId ? parseInt(req.query.leagueId) : undefined;
+      if (!leagueId || isNaN(leagueId)) {
+        return res.status(400).json({ message: "leagueId parameter is required" });
+      }
+      
+      const membership = await storage.getLeagueMember(leagueId, userId);
+      if (!membership || membership.role !== 'commissioner') {
+        return res.status(403).json({ message: "Commissioner access required for this league" });
+      }
+      
+      // Verify target user is a member of the same league
+      const { id } = req.params;
+      const targetMembership = await storage.getLeagueMember(leagueId, id);
+      if (!targetMembership) {
+        return res.status(403).json({ message: "Target user is not a member of this league" });
       }
 
-      const { id } = req.params;
       const result = await storage.canDeleteUser(id);
       res.json(result);
     } catch (error) {
@@ -165,17 +223,32 @@ export async function registerRoutes(
     }
   });
 
-  // Delete a team (only if not in any auctions)
+  // Delete a team (only if not in any auctions) - requires leagueId for league-scoped authorization
   app.delete("/api/owners/:id", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.originalUserId || req.session.userId!;
       const user = await storage.getUser(userId);
-      
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
-        return res.status(403).json({ message: "Commissioner or Super Admin access required" });
-      }
-
       const { id } = req.params;
+      
+      // Super admin can always delete
+      if (!user?.isSuperAdmin) {
+        // For non-super-admin, require leagueId and verify commissioner role
+        const leagueId = req.query.leagueId ? parseInt(req.query.leagueId) : undefined;
+        if (!leagueId || isNaN(leagueId)) {
+          return res.status(400).json({ message: "leagueId parameter is required" });
+        }
+        
+        const membership = await storage.getLeagueMember(leagueId, userId);
+        if (!membership || membership.role !== 'commissioner') {
+          return res.status(403).json({ message: "Commissioner access required for this league" });
+        }
+        
+        // Verify target user is a member of the same league
+        const targetMembership = await storage.getLeagueMember(leagueId, id);
+        if (!targetMembership) {
+          return res.status(403).json({ message: "Target user is not a member of this league" });
+        }
+      }
       
       // Verify the team can be deleted
       const { canDelete, reason } = await storage.canDeleteUser(id);
@@ -191,18 +264,33 @@ export async function registerRoutes(
     }
   });
 
-  // Archive/unarchive a team
+  // Archive/unarchive a team - requires leagueId for league-scoped authorization
   app.patch("/api/owners/:id/archive", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.originalUserId || req.session.userId!;
       const user = await storage.getUser(userId);
-      
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
-        return res.status(403).json({ message: "Commissioner or Super Admin access required" });
-      }
-
       const { id } = req.params;
       const { isArchived } = req.body;
+      
+      // Super admin can always archive
+      if (!user?.isSuperAdmin) {
+        // For non-super-admin, require leagueId and verify commissioner role
+        const leagueId = req.query.leagueId ? parseInt(req.query.leagueId) : undefined;
+        if (!leagueId || isNaN(leagueId)) {
+          return res.status(400).json({ message: "leagueId parameter is required" });
+        }
+        
+        const membership = await storage.getLeagueMember(leagueId, userId);
+        if (!membership || membership.role !== 'commissioner') {
+          return res.status(403).json({ message: "Commissioner access required for this league" });
+        }
+        
+        // Verify target user is a member of the same league
+        const targetMembership = await storage.getLeagueMember(leagueId, id);
+        if (!targetMembership) {
+          return res.status(403).json({ message: "Target user is not a member of this league" });
+        }
+      }
       
       const updated = await storage.setUserArchived(id, isArchived);
       res.json(updated);
@@ -1627,12 +1715,39 @@ export async function registerRoutes(
       const userId = req.session.originalUserId || req.session.userId!;
       const user = await storage.getUser(userId);
       
-      if (!user?.isCommissioner && !user?.isSuperAdmin) {
-        return res.status(403).json({ message: "Commissioner or Super Admin access required" });
+      // Check for leagueId query parameter
+      let leagueId: number | undefined = undefined;
+      if (req.query.leagueId) {
+        const parsed = parseInt(req.query.leagueId);
+        if (!isNaN(parsed)) {
+          leagueId = parsed;
+        }
       }
-
-      const allAuctions = await storage.getAllAuctions();
-      res.json(allAuctions);
+      
+      // If leagueId is specified, check user has access to this league
+      if (leagueId) {
+        // Super admin can access all leagues
+        if (!user?.isSuperAdmin) {
+          const membership = await storage.getLeagueMember(leagueId, userId);
+          if (!membership) {
+            return res.status(403).json({ message: "Not a member of this league" });
+          }
+          // Only commissioners of the league can access auctions (no global commissioner bypass)
+          if (membership.role !== 'commissioner') {
+            return res.status(403).json({ message: "Commissioner access required" });
+          }
+        }
+        const auctions = await storage.getAuctionsByLeague(leagueId);
+        res.json(auctions);
+      } else {
+        // No leagueId specified - only super admin can see all auctions
+        // Commissioners must specify a leagueId
+        if (!user?.isSuperAdmin) {
+          return res.status(400).json({ message: "leagueId parameter is required" });
+        }
+        const allAuctions = await storage.getAllAuctions();
+        res.json(allAuctions);
+      }
     } catch (error) {
       console.error("Error fetching auctions:", error);
       res.status(500).json({ message: "Failed to fetch auctions" });
@@ -2274,7 +2389,7 @@ export async function registerRoutes(
       let authorized = user?.isSuperAdmin;
       if (!authorized) {
         const member = await storage.getLeagueMember(leagueId, userId);
-        authorized = member?.role === 'commissioner' || member?.role === 'owner';
+        authorized = member?.role === 'commissioner';
       }
 
       if (!authorized) {
@@ -2341,7 +2456,7 @@ export async function registerRoutes(
       let authorized = user?.isSuperAdmin;
       if (!authorized) {
         const member = await storage.getLeagueMember(leagueId, userId);
-        authorized = member?.role === 'commissioner' || member?.role === 'owner';
+        authorized = member?.role === 'commissioner';
       }
 
       if (!authorized) {
@@ -2397,7 +2512,7 @@ export async function registerRoutes(
       let authorized = user?.isSuperAdmin;
       if (!authorized) {
         const member = await storage.getLeagueMember(leagueId, sessionUserId);
-        authorized = member?.role === 'commissioner' || member?.role === 'owner';
+        authorized = member?.role === 'commissioner';
       }
 
       if (!authorized) {
@@ -2440,7 +2555,7 @@ export async function registerRoutes(
       let authorized = user?.isSuperAdmin;
       if (!authorized) {
         const member = await storage.getLeagueMember(leagueId, sessionUserId);
-        authorized = member?.role === 'commissioner' || member?.role === 'owner';
+        authorized = member?.role === 'commissioner';
       }
 
       if (!authorized) {
