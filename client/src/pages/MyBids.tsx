@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
+import { useLeague } from "@/hooks/useLeague";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,12 +14,13 @@ import { BundleDialog } from "@/components/BundleDialog";
 import { formatCurrency, isAuctionClosed } from "@/lib/utils";
 import { REFRESH_INTERVAL, queryClient, apiRequest } from "@/lib/queryClient";
 import type { FreeAgentWithBids, AutoBid, FreeAgent, Auction, BidBundleWithItems, OutbidPlayer } from "@shared/schema";
-import { Gavel, Zap, Trophy, Package, Plus, Trash2, Pencil, TrendingDown } from "lucide-react";
+import { Gavel, Zap, Trophy, Package, Plus, Trash2, Pencil, TrendingDown, Globe } from "lucide-react";
 
 type AutoBidWithAgent = AutoBid & { freeAgent: FreeAgent };
 
 export default function MyBids() {
   const { isAuthenticated, isLoading: authLoading, user } = useAuth();
+  const { leagues, isLoadingLeagues } = useLeague();
   const { toast } = useToast();
   const [editingAutoBid, setEditingAutoBid] = useState<FreeAgentWithBids | null>(null);
   const [autoBidDialogOpen, setAutoBidDialogOpen] = useState(false);
@@ -149,6 +151,29 @@ export default function MyBids() {
             <Skeleton key={i} className="h-32 w-full" />
           ))}
         </div>
+      </div>
+    );
+  }
+
+  if (!isLoadingLeagues && leagues.length === 0) {
+    return (
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <Card className="max-w-lg mx-auto">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+              <Globe className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <CardTitle>No League Membership</CardTitle>
+          </CardHeader>
+          <CardContent className="text-center">
+            <p className="text-muted-foreground mb-4">
+              You are not currently a member of any league. Please contact your league administrator to be added to a league.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Once you're added to a league, you'll be able to view auctions, place bids, and manage your team.
+            </p>
+          </CardContent>
+        </Card>
       </div>
     );
   }

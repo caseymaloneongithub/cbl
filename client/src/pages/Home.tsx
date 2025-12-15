@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
+import { useLeague } from "@/hooks/useLeague";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { Users, Gavel, Trophy, Clock, DollarSign, AlertCircle } from "lucide-react";
+import { Users, Gavel, Trophy, Clock, DollarSign, AlertCircle, Globe } from "lucide-react";
 import type { FreeAgentWithBids, UserWithStats, Auction } from "@shared/schema";
 import { FreeAgentsTable } from "@/components/FreeAgentsTable";
 import { formatCurrency } from "@/lib/utils";
@@ -12,6 +13,7 @@ import { REFRESH_INTERVAL } from "@/lib/queryClient";
 
 export default function Home() {
   const { user } = useAuth();
+  const { leagues, isLoadingLeagues } = useLeague();
 
   // Fetch the active auction
   const { data: activeAuction } = useQuery<Auction | null>({
@@ -108,6 +110,30 @@ export default function Home() {
   });
 
   const activeAgents = freeAgents?.filter(a => a.isActive) || [];
+
+  // Show message if user is not part of any league
+  if (!isLoadingLeagues && leagues.length === 0) {
+    return (
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <Card className="max-w-lg mx-auto">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+              <Globe className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <CardTitle>No League Membership</CardTitle>
+          </CardHeader>
+          <CardContent className="text-center">
+            <p className="text-muted-foreground mb-4">
+              You are not currently a member of any league. Please contact your league administrator to be added to a league.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Once you're added to a league, you'll be able to view auctions, place bids, and manage your team.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useLeague } from "@/hooks/useLeague";
+import { Globe } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -38,7 +39,7 @@ import { Trophy, RefreshCcw, Loader2, Archive } from "lucide-react";
 
 export default function Results() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
-  const { selectedLeagueId, isLoadingLeagues } = useLeague();
+  const { selectedLeagueId, isLoadingLeagues, leagues } = useLeague();
   const { toast } = useToast();
   const [relistDialogOpen, setRelistDialogOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<FreeAgentWithBids | null>(null);
@@ -181,6 +182,24 @@ export default function Results() {
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <Skeleton className="h-8 w-48 mb-8" />
         <Skeleton className="h-64 w-full" />
+      </div>
+    );
+  }
+
+  if (leagues.length === 0) {
+    return (
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <Card className="max-w-lg mx-auto">
+          <CardContent className="pt-6 text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+              <Globe className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <h2 className="text-lg font-semibold mb-2">No League Membership</h2>
+            <p className="text-muted-foreground mb-4">
+              You are not currently a member of any league. Please contact your league administrator to be added to a league.
+            </p>
+          </CardContent>
+        </Card>
       </div>
     );
   }
