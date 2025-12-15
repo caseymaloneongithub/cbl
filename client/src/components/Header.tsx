@@ -12,14 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Diamond, Users, Gavel, Trophy, Settings, LogOut, Menu, UserCog, X, ChevronDown, Globe } from "lucide-react";
+import { Diamond, Users, Gavel, Trophy, Settings, LogOut, Menu, UserCog, X, Globe, Check, Building2 } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -53,8 +46,6 @@ export function Header() {
     queryKey: ["/api/owners"],
     enabled: isSuperAdmin || isImpersonating,
   });
-  
-  const showLeagueSwitcher = isAuthenticated && leagues.length > 1;
 
   const initials = user?.firstName && user?.lastName
     ? `${user.firstName[0]}${user.lastName[0]}`
@@ -104,7 +95,7 @@ export function Header() {
     <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-14 items-center justify-between gap-4">
-          {/* Logo and League Switcher */}
+          {/* Logo and Current League Name */}
           <div className="flex items-center gap-3">
             <Link href="/" className="flex items-center gap-2 hover-elevate active-elevate-2 rounded-md px-2 py-1">
               <Diamond className="h-6 w-6 text-primary" />
@@ -112,31 +103,6 @@ export function Header() {
                 {currentLeague?.name || "CBL Auctions"}
               </span>
             </Link>
-            
-            {showLeagueSwitcher && (
-              <Select 
-                value={currentLeague?.id?.toString() || ""} 
-                onValueChange={(val) => selectLeague(parseInt(val, 10))}
-              >
-                <SelectTrigger 
-                  className="w-auto min-w-[120px] h-8" 
-                  data-testid="select-league-switcher"
-                >
-                  <SelectValue placeholder="Select league" />
-                </SelectTrigger>
-                <SelectContent>
-                  {leagues.map((league) => (
-                    <SelectItem 
-                      key={league.id} 
-                      value={league.id.toString()}
-                      data-testid={`select-league-${league.id}`}
-                    >
-                      {league.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
           </div>
 
           {/* Desktop Navigation */}
@@ -200,6 +166,32 @@ export function Header() {
                   </SheetTrigger>
                   <SheetContent side="right" className="w-64">
                     <nav className="flex flex-col gap-2 mt-8">
+                      {leagues.length > 1 && (
+                        <>
+                          <div className="px-2 py-1">
+                            <span className="text-xs text-muted-foreground font-medium">Switch League:</span>
+                          </div>
+                          {leagues.map((league) => (
+                            <Button
+                              key={league.id}
+                              variant={currentLeague?.id === league.id ? "secondary" : "ghost"}
+                              className="w-full justify-start"
+                              onClick={() => {
+                                selectLeague(league.id);
+                                setMobileMenuOpen(false);
+                              }}
+                              data-testid={`mobile-switch-league-${league.id}`}
+                            >
+                              <Building2 className="h-4 w-4 mr-2" />
+                              <span className="flex-1 truncate text-left">{league.name}</span>
+                              {currentLeague?.id === league.id && (
+                                <Check className="h-4 w-4 text-primary" />
+                              )}
+                            </Button>
+                          ))}
+                          <div className="border-b my-2" />
+                        </>
+                      )}
                       {navLinks.map((link) => {
                         const Icon = link.icon;
                         const isActive = location === link.href;
@@ -278,6 +270,37 @@ export function Header() {
                               Super Admin
                             </Badge>
                           )}
+                        </div>
+                      </>
+                    )}
+                    {leagues.length > 0 && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <div className="px-2 py-1">
+                          <span className="text-xs text-muted-foreground font-medium">
+                            {leagues.length > 1 ? "Switch League:" : "Your League:"}
+                          </span>
+                        </div>
+                        <div className="max-h-32 overflow-y-auto">
+                          {leagues.map((league) => (
+                            <DropdownMenuItem
+                              key={league.id}
+                              className="cursor-pointer text-sm"
+                              onClick={() => selectLeague(league.id)}
+                              data-testid={`button-switch-league-${league.id}`}
+                            >
+                              <Building2 className="mr-2 h-4 w-4" />
+                              <span className="flex-1 truncate">{league.name}</span>
+                              {currentLeague?.id === league.id && (
+                                <Check className="ml-2 h-4 w-4 text-primary" />
+                              )}
+                              {league.role === 'commissioner' && (
+                                <Badge variant="outline" className="ml-2 text-[10px] px-1 py-0">
+                                  Comm
+                                </Badge>
+                              )}
+                            </DropdownMenuItem>
+                          ))}
                         </div>
                       </>
                     )}
