@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
+import { useLeague } from "@/hooks/useLeague";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +38,7 @@ import { Trophy, RefreshCcw, Loader2, Archive } from "lucide-react";
 
 export default function Results() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { selectedLeagueId, isLoadingLeagues } = useLeague();
   const { toast } = useToast();
   const [relistDialogOpen, setRelistDialogOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<FreeAgentWithBids | null>(null);
@@ -60,8 +62,16 @@ export default function Results() {
 
   // Fetch all auctions for the dropdown
   const { data: auctions } = useQuery<Auction[]>({
-    queryKey: ["/api/auctions"],
-    enabled: isAuthenticated,
+    queryKey: ["/api/auctions", selectedLeagueId],
+    queryFn: async () => {
+      const url = selectedLeagueId 
+        ? `/api/auctions?leagueId=${selectedLeagueId}` 
+        : "/api/auctions";
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch auctions");
+      return res.json();
+    },
+    enabled: isAuthenticated && !!selectedLeagueId,
     refetchInterval: REFRESH_INTERVAL,
   });
 
@@ -166,7 +176,7 @@ export default function Results() {
 
   const isCommissioner = user?.isCommissioner;
 
-  if (authLoading) {
+  if (authLoading || isLoadingLeagues) {
     return (
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <Skeleton className="h-8 w-48 mb-8" />

@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
+import { useLeague } from "@/hooks/useLeague";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -87,6 +88,7 @@ interface ParsedUser {
 
 export default function Commissioner() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { selectedLeagueId, currentLeague, isLeagueCommissioner, isLoadingLeagues } = useLeague();
   const { toast } = useToast();
   
   // Export state
@@ -140,13 +142,29 @@ export default function Commissioner() {
   });
 
   const { data: owners, isLoading: loadingOwners } = useQuery<User[]>({
-    queryKey: ["/api/owners"],
-    enabled: isAuthenticated && (user?.isCommissioner || user?.isSuperAdmin),
+    queryKey: ["/api/owners", selectedLeagueId],
+    queryFn: async () => {
+      const url = selectedLeagueId 
+        ? `/api/owners?leagueId=${selectedLeagueId}` 
+        : "/api/owners";
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch owners");
+      return res.json();
+    },
+    enabled: isAuthenticated && (user?.isCommissioner || user?.isSuperAdmin) && !!selectedLeagueId,
   });
 
   const { data: allAuctions, isLoading: loadingAuctions } = useQuery<Auction[]>({
-    queryKey: ["/api/auctions"],
-    enabled: isAuthenticated && (user?.isCommissioner || user?.isSuperAdmin),
+    queryKey: ["/api/auctions", selectedLeagueId],
+    queryFn: async () => {
+      const url = selectedLeagueId 
+        ? `/api/auctions?leagueId=${selectedLeagueId}` 
+        : "/api/auctions";
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch auctions");
+      return res.json();
+    },
+    enabled: isAuthenticated && (user?.isCommissioner || user?.isSuperAdmin) && !!selectedLeagueId,
   });
 
   const form = useForm<SettingsFormData>({
@@ -206,7 +224,7 @@ export default function Commissioner() {
     },
     onSuccess: () => {
       toast({ title: "Commissioner Updated" });
-      queryClient.invalidateQueries({ queryKey: ["/api/owners"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/owners", selectedLeagueId] });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -231,7 +249,7 @@ export default function Commissioner() {
         description: `${successCount} users have been created. Download credentials below.`,
       });
       setParsedUsers([]);
-      queryClient.invalidateQueries({ queryKey: ["/api/owners"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/owners", selectedLeagueId] });
     },
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {
@@ -252,14 +270,14 @@ export default function Commissioner() {
   // Auction mutations
   const createAuction = useMutation({
     mutationFn: async (name: string) => {
-      const res = await apiRequest("POST", "/api/auctions", { name });
+      const res = await apiRequest("POST", "/api/auctions", { name, leagueId: selectedLeagueId });
       return res.json();
     },
     onSuccess: () => {
       toast({ title: "Auction Created", description: "New auction has been created." });
       setCreateAuctionDialogOpen(false);
       setNewAuctionName("");
-      queryClient.invalidateQueries({ queryKey: ["/api/auctions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auctions", selectedLeagueId] });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -275,7 +293,7 @@ export default function Commissioner() {
       toast({ title: "Auction Updated" });
       setEditingAuctionId(null);
       setEditingAuctionName("");
-      queryClient.invalidateQueries({ queryKey: ["/api/auctions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auctions", selectedLeagueId] });
       queryClient.invalidateQueries({ queryKey: ["/api/auctions/active"] });
     },
     onError: (error: Error) => {
@@ -292,7 +310,7 @@ export default function Commissioner() {
       toast({ title: "Auction Deleted", description: "The auction has been permanently deleted." });
       setDeleteAuctionId(null);
       setPasswordForAction("");
-      queryClient.invalidateQueries({ queryKey: ["/api/auctions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auctions", selectedLeagueId] });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -308,7 +326,7 @@ export default function Commissioner() {
       toast({ title: "Auction Reset", description: "All bids have been cleared and players reactivated." });
       setResetAuctionId(null);
       setPasswordForAction("");
-      queryClient.invalidateQueries({ queryKey: ["/api/auctions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auctions", selectedLeagueId] });
       queryClient.invalidateQueries({ queryKey: ["/api/free-agents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/results"] });
     },
@@ -320,14 +338,21 @@ export default function Commissioner() {
   // Team deletion mutation
   const deleteTeam = useMutation({
     mutationFn: async (userId: string) => {
-      const res = await apiRequest("DELETE", `/api/owners/${userId}`);
+      const url = selectedLeagueId 
+        ? `/api/owners/${userId}?leagueId=${selectedLeagueId}` 
+        : `/api/owners/${userId}`;
+      const res = await fetch(url, { method: "DELETE", credentials: "include" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || "Failed to delete team");
+      }
       return res.json();
     },
     onSuccess: () => {
       toast({ title: "Team Deleted", description: "The team has been removed." });
       setDeleteTeamId(null);
       setDeletingTeamName("");
-      queryClient.invalidateQueries({ queryKey: ["/api/owners"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/owners", selectedLeagueId] });
     },
     onError: (error: Error) => {
       toast({ title: "Cannot Delete", description: error.message, variant: "destructive" });
@@ -339,7 +364,19 @@ export default function Commissioner() {
   // Team archive/unarchive mutation
   const archiveTeam = useMutation({
     mutationFn: async ({ userId, isArchived }: { userId: string; isArchived: boolean }) => {
-      const res = await apiRequest("PATCH", `/api/owners/${userId}/archive`, { isArchived });
+      const url = selectedLeagueId 
+        ? `/api/owners/${userId}/archive?leagueId=${selectedLeagueId}` 
+        : `/api/owners/${userId}/archive`;
+      const res = await fetch(url, { 
+        method: "PATCH", 
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isArchived })
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || "Failed to update team");
+      }
       return res.json();
     },
     onSuccess: (_, { isArchived }) => {
@@ -347,7 +384,7 @@ export default function Commissioner() {
         title: isArchived ? "Team Archived" : "Team Restored", 
         description: isArchived ? "The team has been moved to the archive." : "The team has been restored to active."
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/owners"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/owners", selectedLeagueId] });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -364,7 +401,7 @@ export default function Commissioner() {
         title: isCommissioner ? "Commissioner Assigned" : "Commissioner Removed", 
         description: isCommissioner ? "The team has been granted commissioner access." : "Commissioner access has been revoked."
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/owners"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/owners", selectedLeagueId] });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -379,7 +416,7 @@ export default function Commissioner() {
     onSuccess: () => {
       toast({ title: "Team Updated", description: "Team details have been saved." });
       setEditingTeam(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/owners"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/owners", selectedLeagueId] });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -568,7 +605,7 @@ export default function Commissioner() {
     }
   };
 
-  if (authLoading) {
+  if (authLoading || isLoadingLeagues) {
     return (
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <Skeleton className="h-8 w-64 mb-8" />
