@@ -195,9 +195,20 @@ export default function Results() {
               <Globe className="h-6 w-6 text-muted-foreground" />
             </div>
             <h2 className="text-lg font-semibold mb-2">No League Membership</h2>
-            <p className="text-muted-foreground mb-4">
-              You are not currently a member of any league. Please contact your league administrator to be added to a league.
-            </p>
+            {user?.isSuperAdmin ? (
+              <>
+                <p className="text-muted-foreground mb-4">
+                  As a super admin, you can create and manage leagues from the Commissioner page.
+                </p>
+                <a href="/commissioner" className="text-primary hover:underline font-medium">
+                  Go to Commissioner Page
+                </a>
+              </>
+            ) : (
+              <p className="text-muted-foreground mb-4">
+                You are not currently a member of any league. Please contact your league administrator to be added to a league.
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>

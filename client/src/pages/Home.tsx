@@ -123,12 +123,25 @@ export default function Home() {
             <CardTitle>No League Membership</CardTitle>
           </CardHeader>
           <CardContent className="text-center">
-            <p className="text-muted-foreground mb-4">
-              You are not currently a member of any league. Please contact your league administrator to be added to a league.
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Once you're added to a league, you'll be able to view auctions, place bids, and manage your team.
-            </p>
+            {user?.isSuperAdmin ? (
+              <>
+                <p className="text-muted-foreground mb-4">
+                  As a super admin, you can create and manage leagues from the Commissioner page.
+                </p>
+                <a href="/commissioner" className="text-primary hover:underline font-medium">
+                  Go to Commissioner Page
+                </a>
+              </>
+            ) : (
+              <>
+                <p className="text-muted-foreground mb-4">
+                  You are not currently a member of any league. Please contact your league administrator to be added to a league.
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Once you're added to a league, you'll be able to view auctions, place bids, and manage your team.
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
