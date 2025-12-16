@@ -1363,7 +1363,8 @@ export async function registerRoutes(
   app.get("/api/stats", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.userId!;
-      const stats = await storage.getUserStats(userId);
+      const auctionId = req.query.auctionId ? parseInt(req.query.auctionId) : undefined;
+      const stats = await storage.getUserStats(userId, auctionId);
       res.json(stats);
     } catch (error) {
       console.error("Error fetching stats:", error);

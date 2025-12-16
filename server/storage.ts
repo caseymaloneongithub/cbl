@@ -90,7 +90,7 @@ export interface IStorage {
   createOrUpdateAutoBid(autoBid: InsertAutoBid): Promise<AutoBid>;
   
   // Stats
-  getUserStats(userId: string): Promise<{
+  getUserStats(userId: string, auctionId?: number): Promise<{
     totalActive: number;
     myActiveBids: number;
     myWins: number;
@@ -736,7 +736,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Stats
-  async getUserStats(userId: string): Promise<{
+  async getUserStats(userId: string, auctionId?: number): Promise<{
     totalActive: number;
     myActiveBids: number;
     myWins: number;
@@ -757,35 +757,49 @@ export class DatabaseStorage implements IStorage {
     // Create end of day in Eastern: 11:59:59 PM Eastern
     const midnightEastern = new Date(`${year}-${month}-${day}T23:59:59-05:00`);
     
-    // Total active auctions
+    // Build base conditions - optionally filter by auctionId
+    const baseConditions = auctionId 
+      ? and(eq(freeAgents.isActive, true), eq(freeAgents.auctionId, auctionId), sql`${freeAgents.auctionEndTime} > ${now}`)
+      : and(eq(freeAgents.isActive, true), sql`${freeAgents.auctionEndTime} > ${now}`);
+    
+    // Total active auctions for this auction (or all if no auctionId)
     const activeAuctions = await db
       .select({ count: sql<number>`count(*)` })
       .from(freeAgents)
-      .where(and(eq(freeAgents.isActive, true), sql`${freeAgents.auctionEndTime} > ${now}`));
+      .where(baseConditions);
     
-    // User's winning bids on active auctions
+    // User's winning bids on active auctions (filtered by auctionId if provided)
     const userWinningBids = await this.getUserBids(userId);
     const activeWinningBids = userWinningBids.filter(
-      (b) => new Date(b.auctionEndTime) > now
+      (b) => new Date(b.auctionEndTime) > now && (!auctionId || b.auctionId === auctionId)
     );
     
-    // User's won players (closed auctions)
+    // User's won players (closed auctions, filtered by auctionId if provided)
+    const wonPlayersConditions = auctionId
+      ? and(eq(freeAgents.winnerId, userId), eq(freeAgents.auctionId, auctionId))
+      : eq(freeAgents.winnerId, userId);
     const wonPlayers = await db
       .select({ count: sql<number>`count(*)` })
       .from(freeAgents)
-      .where(eq(freeAgents.winnerId, userId));
+      .where(wonPlayersConditions);
     
-    // Auctions ending today (before midnight Eastern)
-    const endingToday = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(freeAgents)
-      .where(
-        and(
+    // Auctions ending today (before midnight Eastern), filtered by auctionId if provided
+    const endingTodayConditions = auctionId
+      ? and(
           eq(freeAgents.isActive, true),
+          eq(freeAgents.auctionId, auctionId),
           sql`${freeAgents.auctionEndTime} > ${now}`,
           sql`${freeAgents.auctionEndTime} <= ${midnightEastern}`
         )
-      );
+      : and(
+          eq(freeAgents.isActive, true),
+          sql`${freeAgents.auctionEndTime} > ${now}`,
+          sql`${freeAgents.auctionEndTime} <= ${midnightEastern}`
+        );
+    const endingToday = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(freeAgents)
+      .where(endingTodayConditions);
     
     return {
       totalActive: Number(activeAuctions[0]?.count || 0),

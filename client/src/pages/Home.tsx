@@ -65,7 +65,15 @@ export default function Home() {
     myWins: number;
     endingToday: number;
   }>({
-    queryKey: ["/api/stats"],
+    queryKey: ["/api/stats", activeAuction?.id],
+    queryFn: async () => {
+      const url = activeAuction?.id 
+        ? `/api/stats?auctionId=${activeAuction.id}` 
+        : "/api/stats";
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch stats");
+      return res.json();
+    },
     refetchInterval: REFRESH_INTERVAL,
   });
 
@@ -172,7 +180,7 @@ export default function Home() {
           )}
         </div>
         <p className="text-muted-foreground">
-          {user?.teamName ? `Managing ${user.teamName}` : "Ready to build your championship team"}
+          {currentLeague?.teamName ? `Managing ${currentLeague.teamName}` : "Ready to build your championship team"}
         </p>
       </div>
 
