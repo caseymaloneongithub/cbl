@@ -135,7 +135,7 @@ export interface IStorage {
   // Auctions
   getAuction(id: number): Promise<Auction | undefined>;
   getAllAuctions(): Promise<Auction[]>;
-  getActiveAuction(): Promise<Auction | undefined>;
+  getActiveAuction(leagueId?: number): Promise<Auction | undefined>;
   createAuction(auction: InsertAuction): Promise<Auction>;
   updateAuction(id: number, data: Partial<InsertAuction>): Promise<Auction>;
   deleteAuction(id: number): Promise<void>;
@@ -1138,11 +1138,15 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(auctions.createdAt));
   }
 
-  async getActiveAuction(): Promise<Auction | undefined> {
+  async getActiveAuction(leagueId?: number): Promise<Auction | undefined> {
+    const conditions = [eq(auctions.status, "active"), eq(auctions.isDeleted, false)];
+    if (leagueId) {
+      conditions.push(eq(auctions.leagueId, leagueId));
+    }
     const [auction] = await db
       .select()
       .from(auctions)
-      .where(and(eq(auctions.status, "active"), eq(auctions.isDeleted, false)))
+      .where(and(...conditions))
       .limit(1);
     return auction;
   }

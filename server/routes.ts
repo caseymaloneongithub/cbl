@@ -1815,7 +1815,8 @@ export async function registerRoutes(
 
   app.get("/api/auctions/active", isAuthenticated, async (req, res) => {
     try {
-      const activeAuction = await storage.getActiveAuction();
+      const leagueId = req.query.leagueId ? parseInt(req.query.leagueId as string) : undefined;
+      const activeAuction = await storage.getActiveAuction(leagueId);
       res.json(activeAuction || null);
     } catch (error) {
       console.error("Error fetching active auction:", error);

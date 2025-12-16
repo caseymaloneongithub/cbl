@@ -13,11 +13,20 @@ import { REFRESH_INTERVAL } from "@/lib/queryClient";
 
 export default function Home() {
   const { user } = useAuth();
-  const { leagues, isLoadingLeagues } = useLeague();
+  const { leagues, currentLeague, selectedLeagueId, isLoadingLeagues } = useLeague();
 
-  // Fetch the active auction
+  // Fetch the active auction for the current league
   const { data: activeAuction } = useQuery<Auction | null>({
-    queryKey: ["/api/auctions/active"],
+    queryKey: ["/api/auctions/active", selectedLeagueId],
+    queryFn: async () => {
+      const url = selectedLeagueId 
+        ? `/api/auctions/active?leagueId=${selectedLeagueId}` 
+        : "/api/auctions/active";
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch active auction");
+      return res.json();
+    },
+    enabled: !!selectedLeagueId,
     refetchInterval: REFRESH_INTERVAL,
   });
 
