@@ -46,6 +46,8 @@ export default function SuperAdmin() {
   const [selectedLeagueForMember, setSelectedLeagueForMember] = useState<number | null>(null);
   const [memberEmail, setMemberEmail] = useState("");
   const [memberRole, setMemberRole] = useState<"owner" | "commissioner">("owner");
+  const [memberTeamName, setMemberTeamName] = useState("");
+  const [memberTeamAbbreviation, setMemberTeamAbbreviation] = useState("");
   const [viewingLeagueId, setViewingLeagueId] = useState<number | null>(null);
 
   const { data: allLeagues, isLoading: loadingLeagues } = useQuery<League[]>({
@@ -87,10 +89,12 @@ export default function SuperAdmin() {
   });
 
   const addLeagueMember = useMutation({
-    mutationFn: async (data: { leagueId: number; email: string; role: "owner" | "commissioner" }) => {
+    mutationFn: async (data: { leagueId: number; email: string; role: "owner" | "commissioner"; teamName?: string; teamAbbreviation?: string }) => {
       const res = await apiRequest("POST", `/api/leagues/${data.leagueId}/members`, { 
         email: data.email, 
-        role: data.role 
+        role: data.role,
+        teamName: data.teamName,
+        teamAbbreviation: data.teamAbbreviation
       });
       return res.json();
     },
@@ -99,6 +103,8 @@ export default function SuperAdmin() {
       setAddMemberDialogOpen(false);
       setMemberEmail("");
       setMemberRole("owner");
+      setMemberTeamName("");
+      setMemberTeamAbbreviation("");
       setSelectedLeagueForMember(null);
       queryClient.invalidateQueries({ queryKey: ["/api/leagues", viewingLeagueId, "members"] });
     },
@@ -482,6 +488,27 @@ export default function SuperAdmin() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="member-team-name">Team Name (for this league)</Label>
+              <Input
+                id="member-team-name"
+                placeholder="e.g., Springfield Isotopes"
+                value={memberTeamName}
+                onChange={(e) => setMemberTeamName(e.target.value)}
+                data-testid="input-member-team-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="member-team-abbr">Team Abbreviation</Label>
+              <Input
+                id="member-team-abbr"
+                placeholder="e.g., SPR"
+                maxLength={3}
+                value={memberTeamAbbreviation}
+                onChange={(e) => setMemberTeamAbbreviation(e.target.value.toUpperCase())}
+                data-testid="input-member-team-abbr"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -490,6 +517,8 @@ export default function SuperAdmin() {
                 setAddMemberDialogOpen(false);
                 setMemberEmail("");
                 setMemberRole("owner");
+                setMemberTeamName("");
+                setMemberTeamAbbreviation("");
                 setSelectedLeagueForMember(null);
               }}
             >
@@ -501,7 +530,9 @@ export default function SuperAdmin() {
                   addLeagueMember.mutate({
                     leagueId: selectedLeagueForMember,
                     email: memberEmail,
-                    role: memberRole
+                    role: memberRole,
+                    teamName: memberTeamName || undefined,
+                    teamAbbreviation: memberTeamAbbreviation || undefined
                   });
                 }
               }}
