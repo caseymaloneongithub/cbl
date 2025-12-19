@@ -2533,27 +2533,33 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Commissioner or Super Admin access required" });
       }
 
-      const { userId: targetUserId, role, teamName, teamAbbreviation } = req.body;
+      const { userId: targetUserId, email, role, teamName, teamAbbreviation } = req.body;
       
-      if (!targetUserId) {
-        return res.status(400).json({ message: "User ID is required" });
+      // Look up user by userId or email
+      let targetUser;
+      if (targetUserId) {
+        targetUser = await storage.getUser(targetUserId);
+      } else if (email) {
+        targetUser = await storage.getUserByEmail(email);
+      } else {
+        return res.status(400).json({ message: "User ID or email is required" });
       }
 
-      // Check if user exists
-      const targetUser = await storage.getUser(targetUserId);
       if (!targetUser) {
         return res.status(404).json({ message: "User not found" });
       }
+      
+      const resolvedUserId = targetUser.id;
 
       // Check if user is already a member
-      const existingMember = await storage.getLeagueMember(leagueId, targetUserId);
+      const existingMember = await storage.getLeagueMember(leagueId, resolvedUserId);
       if (existingMember) {
         return res.status(400).json({ message: "User is already a member of this league" });
       }
 
       const member = await storage.addLeagueMember({
         leagueId,
-        userId: targetUserId,
+        userId: resolvedUserId,
         role: role || 'member',
         teamName: teamName || targetUser.teamName,
         teamAbbreviation: teamAbbreviation || targetUser.teamAbbreviation,
