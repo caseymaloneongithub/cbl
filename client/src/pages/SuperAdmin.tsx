@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/table";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { League, LeagueMember, User } from "@shared/schema";
-import { Plus, Users, Globe, Loader2, Crown, Trash2, UserPlus } from "lucide-react";
+import { Plus, Users, Globe, Loader2, Crown, Trash2, UserPlus, Pencil } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -49,6 +49,10 @@ export default function SuperAdmin() {
   const [memberTeamName, setMemberTeamName] = useState("");
   const [memberTeamAbbreviation, setMemberTeamAbbreviation] = useState("");
   const [viewingLeagueId, setViewingLeagueId] = useState<number | null>(null);
+  const [editMemberDialogOpen, setEditMemberDialogOpen] = useState(false);
+  const [editingMember, setEditingMember] = useState<(LeagueMember & { user?: User }) | null>(null);
+  const [editTeamName, setEditTeamName] = useState("");
+  const [editTeamAbbreviation, setEditTeamAbbreviation] = useState("");
 
   const { data: allLeagues, isLoading: loadingLeagues } = useQuery<League[]>({
     queryKey: ["/api/leagues"],
@@ -122,6 +126,27 @@ export default function SuperAdmin() {
     },
     onSuccess: () => {
       toast({ title: "Role Updated", description: "Member role has been updated." });
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues", viewingLeagueId, "members"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateMemberTeam = useMutation({
+    mutationFn: async (data: { leagueId: number; userId: string; teamName: string; teamAbbreviation: string }) => {
+      const res = await apiRequest("PATCH", `/api/leagues/${data.leagueId}/members/${data.userId}`, { 
+        teamName: data.teamName,
+        teamAbbreviation: data.teamAbbreviation
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Team Updated", description: "Team name and abbreviation have been updated." });
+      setEditMemberDialogOpen(false);
+      setEditingMember(null);
+      setEditTeamName("");
+      setEditTeamAbbreviation("");
       queryClient.invalidateQueries({ queryKey: ["/api/leagues", viewingLeagueId, "members"] });
     },
     onError: (error: Error) => {
@@ -366,6 +391,19 @@ export default function SuperAdmin() {
                           <Button
                             variant="ghost"
                             size="sm"
+                            onClick={() => {
+                              setEditingMember(member);
+                              setEditTeamName(member.teamName || "");
+                              setEditTeamAbbreviation(member.teamAbbreviation || "");
+                              setEditMemberDialogOpen(true);
+                            }}
+                            data-testid={`button-edit-member-${member.userId}`}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={() => removeLeagueMember.mutate({
                               leagueId: viewingLeagueId,
                               userId: member.userId
@@ -546,6 +584,76 @@ export default function SuperAdmin() {
                 </>
               ) : (
                 "Add Member"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editMemberDialogOpen} onOpenChange={setEditMemberDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Team Info</DialogTitle>
+            <DialogDescription>
+              Update team name and abbreviation for {editingMember?.user?.firstName || "this member"} in this league.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-team-name">Team Name</Label>
+              <Input
+                id="edit-team-name"
+                placeholder="e.g., Springfield Isotopes"
+                value={editTeamName}
+                onChange={(e) => setEditTeamName(e.target.value)}
+                data-testid="input-edit-team-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-team-abbr">Team Abbreviation</Label>
+              <Input
+                id="edit-team-abbr"
+                placeholder="e.g., SPR"
+                maxLength={3}
+                value={editTeamAbbreviation}
+                onChange={(e) => setEditTeamAbbreviation(e.target.value.toUpperCase())}
+                data-testid="input-edit-team-abbr"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setEditMemberDialogOpen(false);
+                setEditingMember(null);
+                setEditTeamName("");
+                setEditTeamAbbreviation("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (viewingLeagueId && editingMember) {
+                  updateMemberTeam.mutate({
+                    leagueId: viewingLeagueId,
+                    userId: editingMember.userId,
+                    teamName: editTeamName,
+                    teamAbbreviation: editTeamAbbreviation
+                  });
+                }
+              }}
+              disabled={updateMemberTeam.isPending}
+              data-testid="button-confirm-edit-member"
+            >
+              {updateMemberTeam.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save Changes"
               )}
             </Button>
           </DialogFooter>
