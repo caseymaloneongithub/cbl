@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/table";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { League, LeagueMember, User } from "@shared/schema";
-import { Plus, Users, Globe, Loader2, Crown, Trash2, UserPlus, Pencil } from "lucide-react";
+import { Plus, Users, Globe, Loader2, Crown, Trash2, UserPlus, Pencil, Key } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -53,6 +53,9 @@ export default function SuperAdmin() {
   const [editingMember, setEditingMember] = useState<(LeagueMember & { user?: User }) | null>(null);
   const [editTeamName, setEditTeamName] = useState("");
   const [editTeamAbbreviation, setEditTeamAbbreviation] = useState("");
+  const [setPasswordDialogOpen, setSetPasswordDialogOpen] = useState(false);
+  const [passwordMember, setPasswordMember] = useState<(LeagueMember & { user?: User }) | null>(null);
+  const [newPassword, setNewPassword] = useState("");
 
   const { data: allLeagues, isLoading: loadingLeagues } = useQuery<League[]>({
     queryKey: ["/api/leagues"],
@@ -148,6 +151,24 @@ export default function SuperAdmin() {
       setEditTeamName("");
       setEditTeamAbbreviation("");
       queryClient.invalidateQueries({ queryKey: ["/api/leagues", viewingLeagueId, "members"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const setUserPassword = useMutation({
+    mutationFn: async (data: { userId: string; password: string }) => {
+      const res = await apiRequest("POST", `/api/admin/users/${data.userId}/set-password`, { 
+        password: data.password
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Password Set", description: "User password has been updated." });
+      setSetPasswordDialogOpen(false);
+      setPasswordMember(null);
+      setNewPassword("");
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -404,6 +425,18 @@ export default function SuperAdmin() {
                           <Button
                             variant="ghost"
                             size="sm"
+                            onClick={() => {
+                              setPasswordMember(member);
+                              setNewPassword("");
+                              setSetPasswordDialogOpen(true);
+                            }}
+                            data-testid={`button-set-password-${member.userId}`}
+                          >
+                            <Key className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={() => removeLeagueMember.mutate({
                               leagueId: viewingLeagueId,
                               userId: member.userId
@@ -654,6 +687,66 @@ export default function SuperAdmin() {
                 </>
               ) : (
                 "Save Changes"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={setPasswordDialogOpen} onOpenChange={setSetPasswordDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Set Password</DialogTitle>
+            <DialogDescription>
+              Set a new password for {passwordMember?.user?.firstName || passwordMember?.user?.email || "this user"}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="new-password">New Password</Label>
+              <Input
+                id="new-password"
+                type="text"
+                placeholder="Enter new password (min 6 characters)"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                data-testid="input-new-password"
+              />
+              <p className="text-xs text-muted-foreground">
+                Password must be at least 6 characters
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSetPasswordDialogOpen(false);
+                setPasswordMember(null);
+                setNewPassword("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (passwordMember) {
+                  setUserPassword.mutate({
+                    userId: passwordMember.userId,
+                    password: newPassword
+                  });
+                }
+              }}
+              disabled={newPassword.length < 6 || setUserPassword.isPending}
+              data-testid="button-confirm-set-password"
+            >
+              {setUserPassword.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Setting...
+                </>
+              ) : (
+                "Set Password"
               )}
             </Button>
           </DialogFooter>

@@ -201,6 +201,46 @@ export async function registerRoutes(
     }
   });
 
+  // Super admin set password for any user
+  app.post("/api/admin/users/:userId/set-password", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminId = req.session.originalUserId || req.session.userId!;
+      const admin = await storage.getUser(adminId);
+      
+      if (!admin?.isSuperAdmin) {
+        return res.status(403).json({ message: "Super Admin access required" });
+      }
+
+      const { userId } = req.params;
+      const { password } = req.body;
+      
+      if (!password || password.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters" });
+      }
+
+      const targetUser = await storage.getUser(userId);
+      
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const hashedPassword = await hashPassword(password);
+      
+      // Update password without forcing reset on login
+      await storage.updateUserPassword(userId, hashedPassword, false);
+
+      res.json({ 
+        message: "Password set successfully",
+        email: targetUser.email,
+        firstName: targetUser.firstName,
+        lastName: targetUser.lastName
+      });
+    } catch (error) {
+      console.error("Error setting user password:", error);
+      res.status(500).json({ message: "Failed to set password" });
+    }
+  });
+
   // Check if a team can be deleted (requires leagueId for league-scoped check)
   app.get("/api/owners/:id/can-delete", isAuthenticated, async (req: any, res) => {
     try {
