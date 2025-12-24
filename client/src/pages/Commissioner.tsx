@@ -84,6 +84,7 @@ interface ParsedUser {
   lastName?: string;
   teamName?: string;
   teamAbbreviation?: string;
+  password?: string;
 }
 
 export default function Commissioner() {
@@ -434,6 +435,7 @@ export default function Commissioner() {
     const lastNameIdx = headers.findIndex(h => h === "last_name" || h === "lastname");
     const teamNameIdx = headers.findIndex(h => h === "team_name" || h === "teamname" || h === "team");
     const abbreviationIdx = headers.findIndex(h => h === "abbreviation" || h === "abbr" || h === "team_abbreviation" || h === "team_abbr");
+    const passwordIdx = headers.findIndex(h => h === "password" || h === "pass" || h === "pwd");
 
     if (emailIdx === -1) {
       toast({
@@ -449,12 +451,14 @@ export default function Commissioner() {
       const values = lines[i].split(",").map(v => v.trim());
       if (values[emailIdx]) {
         const abbr = abbreviationIdx !== -1 ? values[abbreviationIdx]?.toUpperCase().slice(0, 3) : undefined;
+        const password = passwordIdx !== -1 ? values[passwordIdx] : undefined;
         users.push({
           email: values[emailIdx],
           firstName: firstNameIdx !== -1 ? values[firstNameIdx] : undefined,
           lastName: lastNameIdx !== -1 ? values[lastNameIdx] : undefined,
           teamName: teamNameIdx !== -1 ? values[teamNameIdx] : undefined,
           teamAbbreviation: abbr || undefined,
+          password: password || undefined,
         });
       }
     }

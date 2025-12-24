@@ -1670,6 +1670,7 @@ export async function registerRoutes(
       lastName: z.string().optional(),
       teamName: z.string().optional(),
       teamAbbreviation: z.string().max(3).optional(),
+      password: z.string().min(6, "Password must be at least 6 characters").optional(),
     })).min(1, "At least one user is required").max(500, "Maximum 500 users per upload"),
   });
 
@@ -1706,8 +1707,10 @@ export async function registerRoutes(
             continue;
           }
 
-          const tempPassword = generateRandomPassword();
-          const passwordHash = await hashPassword(tempPassword);
+          // Use provided password or generate a random one
+          const userPassword = userData.password?.trim() || generateRandomPassword();
+          const passwordHash = await hashPassword(userPassword);
+          const passwordWasProvided = !!userData.password?.trim();
 
           await storage.createUserWithPassword({
             email,
@@ -1717,10 +1720,10 @@ export async function registerRoutes(
             teamName: userData.teamName?.trim(),
             teamAbbreviation: userData.teamAbbreviation?.trim().toUpperCase().slice(0, 3),
             isCommissioner: false,
-            mustResetPassword: true,
+            mustResetPassword: !passwordWasProvided, // Only require reset if password was auto-generated
           });
 
-          results.push({ email, password: tempPassword, success: true });
+          results.push({ email, password: passwordWasProvided ? "(set from CSV)" : userPassword, success: true });
         } catch (err: any) {
           results.push({ 
             email, 
