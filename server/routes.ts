@@ -2363,16 +2363,28 @@ export async function registerRoutes(
       }
 
       // Super admin sees all leagues, regular users see their leagues
-      let allLeagues;
+      let rawLeagues;
       if (user.isSuperAdmin) {
         // For super admin, get all leagues
-        const leaguesList = await storage.getAllLeagues();
-        allLeagues = leaguesList;
+        rawLeagues = await storage.getAllLeagues();
       } else {
-        allLeagues = await storage.getUserLeagues(userId);
+        rawLeagues = await storage.getUserLeagues(userId);
       }
       
-      res.json(allLeagues);
+      // Enrich leagues with user's membership info (role, teamName, teamAbbreviation)
+      const leaguesWithMembership = await Promise.all(
+        rawLeagues.map(async (league) => {
+          const membership = await storage.getLeagueMember(league.id, userId);
+          return {
+            ...league,
+            role: membership?.role || (user.isSuperAdmin ? 'commissioner' : 'owner'),
+            teamName: membership?.teamName || null,
+            teamAbbreviation: membership?.teamAbbreviation || null,
+          };
+        })
+      );
+      
+      res.json(leaguesWithMembership);
     } catch (error) {
       console.error("Error fetching leagues:", error);
       res.status(500).json({ message: "Failed to fetch leagues" });
