@@ -43,7 +43,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import type { LeagueSettings, User, Auction } from "@shared/schema";
+import type { LeagueSettings, User, Auction, LeagueMember } from "@shared/schema";
 import { Upload, Settings, Users, Loader2, FileSpreadsheet, Trash2, Crown, Download, DollarSign, Plus, Trophy, RotateCcw, Play, Eye, Edit2, Check, X, Archive, ArchiveRestore } from "lucide-react";
 import {
   Dialog,
@@ -167,6 +167,24 @@ export default function Commissioner() {
     },
     enabled: isAuthenticated && (user?.isCommissioner || user?.isSuperAdmin) && !!selectedLeagueId,
   });
+
+  // Fetch league members to get league-specific roles
+  const { data: leagueMembers } = useQuery<(LeagueMember & { user: User })[]>({
+    queryKey: ["/api/leagues", selectedLeagueId, "members"],
+    queryFn: async () => {
+      const res = await fetch(`/api/leagues/${selectedLeagueId}/members`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch league members");
+      return res.json();
+    },
+    enabled: isAuthenticated && (user?.isCommissioner || user?.isSuperAdmin) && !!selectedLeagueId,
+  });
+
+  // Helper to check if a user is a commissioner in the current league
+  const isLeagueCommissionerForUser = useCallback((userId: string): boolean => {
+    if (!leagueMembers) return false;
+    const member = leagueMembers.find(m => m.userId === userId);
+    return member?.role === 'commissioner';
+  }, [leagueMembers]);
 
 
   const form = useForm<SettingsFormData>({
@@ -395,15 +413,21 @@ export default function Commissioner() {
 
   const setCommissioner = useMutation({
     mutationFn: async ({ userId, isCommissioner }: { userId: string; isCommissioner: boolean }) => {
-      const res = await apiRequest("PATCH", `/api/users/${userId}/commissioner`, { isCommissioner });
+      if (!selectedLeagueId) {
+        throw new Error("No league selected");
+      }
+      const res = await apiRequest("PATCH", `/api/leagues/${selectedLeagueId}/members/${userId}`, { 
+        role: isCommissioner ? 'commissioner' : 'owner' 
+      });
       return res.json();
     },
     onSuccess: (_, { isCommissioner }) => {
       toast({ 
         title: isCommissioner ? "Commissioner Assigned" : "Commissioner Removed", 
-        description: isCommissioner ? "The team has been granted commissioner access." : "Commissioner access has been revoked."
+        description: isCommissioner ? "The team has been granted commissioner access for this league." : "Commissioner access has been revoked for this league."
       });
       queryClient.invalidateQueries({ queryKey: ["/api/owners", selectedLeagueId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues", selectedLeagueId, "members"] });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -1182,7 +1206,7 @@ export default function Commissioner() {
                                 <TableCell>
                                   {owner.isSuperAdmin ? (
                                     <Badge variant="default" className="bg-purple-600">Super Admin</Badge>
-                                  ) : owner.isCommissioner ? (
+                                  ) : isLeagueCommissionerForUser(owner.id) ? (
                                     <Badge variant="default" className="bg-amber-600">Commissioner</Badge>
                                   ) : (
                                     <span className="text-muted-foreground text-sm">Owner</span>
@@ -1207,13 +1231,13 @@ export default function Commissioner() {
                                       <Edit2 className="h-4 w-4" />
                                     </Button>
                                     {user?.isSuperAdmin && !owner.isSuperAdmin && (
-                                      owner.isCommissioner ? (
+                                      isLeagueCommissionerForUser(owner.id) ? (
                                         <Button
                                           size="sm"
                                           variant="ghost"
                                           onClick={() => setCommissioner.mutate({ userId: owner.id, isCommissioner: false })}
                                           disabled={setCommissioner.isPending}
-                                          title="Revoke Commissioner"
+                                          title="Revoke Commissioner for this league"
                                           data-testid={`button-revoke-commissioner-${owner.id}`}
                                         >
                                           <Crown className="h-4 w-4 text-amber-600" />
@@ -1224,7 +1248,7 @@ export default function Commissioner() {
                                           variant="ghost"
                                           onClick={() => setCommissioner.mutate({ userId: owner.id, isCommissioner: true })}
                                           disabled={setCommissioner.isPending}
-                                          title="Make Commissioner"
+                                          title="Make Commissioner for this league"
                                           data-testid={`button-make-commissioner-${owner.id}`}
                                         >
                                           <Crown className="h-4 w-4" />
@@ -1337,7 +1361,7 @@ export default function Commissioner() {
                                 <TableCell>
                                   {owner.isSuperAdmin ? (
                                     <Badge variant="default" className="bg-purple-600">Super Admin</Badge>
-                                  ) : owner.isCommissioner ? (
+                                  ) : isLeagueCommissionerForUser(owner.id) ? (
                                     <Badge variant="default" className="bg-amber-600">Commissioner</Badge>
                                   ) : (
                                     <span className="text-muted-foreground text-sm">Owner</span>
