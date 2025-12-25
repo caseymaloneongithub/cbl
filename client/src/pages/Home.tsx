@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useLeague } from "@/hooks/useLeague";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Progress } from "@/components/ui/progress";
+import { DualProgress } from "@/components/ui/dual-progress";
 import { Badge } from "@/components/ui/badge";
 import { Users, Gavel, Trophy, Clock, DollarSign, AlertCircle, Globe } from "lucide-react";
 import type { FreeAgentWithBids, UserWithStats, Auction } from "@shared/schema";
@@ -102,12 +102,15 @@ export default function Home() {
   const { data: limits, isLoading: loadingLimits } = useQuery<{
     rosterLimit: number | null;
     rosterUsed: number;
+    rosterCommitted: number;
     rosterAvailable: number | null;
     ipLimit: number | null;
     ipUsed: number;
+    ipCommitted: number;
     ipAvailable: number | null;
     paLimit: number | null;
     paUsed: number;
+    paCommitted: number;
     paAvailable: number | null;
   }>({
     queryKey: ["/api/limits", activeAuction?.id],
@@ -304,45 +307,68 @@ export default function Home() {
                     <span>Budget Usage</span>
                     <span>{formatCurrency(Math.floor(budget.spent + budget.committed))} / {formatCurrency(budget.budget)}</span>
                   </div>
-                  <Progress 
-                    value={((budget.spent + budget.committed) / budget.budget) * 100} 
-                    className="h-2"
+                  <DualProgress
+                    spent={budget.spent}
+                    committed={budget.committed}
+                    total={budget.budget}
+                    spentLabel="Spent"
+                    committedLabel="Committed"
                   />
+                  <div className="flex flex-wrap gap-3 text-xs mt-1">
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-3 rounded-sm bg-primary" />
+                      <span className="text-muted-foreground">Spent</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-3 rounded-sm bg-amber-500 dark:bg-amber-600" />
+                      <span className="text-muted-foreground">Committed</span>
+                    </div>
+                  </div>
                 </div>
                 
                 {/* IP and PA Limits */}
                 {limits && (limits.ipLimit !== null || limits.paLimit !== null) && (
-                  <div className="pt-3 border-t">
-                    <div className="grid grid-cols-2 gap-2 sm:gap-4 text-center">
-                      {limits.ipLimit !== null && (
-                        <div>
-                          <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">IP Limit</div>
-                          <div 
-                            className={`text-sm sm:text-lg font-bold font-mono ${limits.ipAvailable !== null && limits.ipAvailable < 50 ? 'text-destructive' : ''}`}
+                  <div className="pt-3 border-t space-y-4">
+                    {limits.ipLimit !== null && (
+                      <div>
+                        <div className="flex flex-wrap justify-between gap-1 text-xs text-muted-foreground mb-1">
+                          <span>IP Limit</span>
+                          <span 
+                            className={limits.ipAvailable !== null && limits.ipAvailable < 50 ? 'text-destructive' : ''}
                             data-testid="text-ip-limit"
                           >
-                            {limits.ipUsed} / {limits.ipLimit}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {limits.ipAvailable !== null ? `${limits.ipAvailable} remaining` : ''}
-                          </div>
+                            {limits.ipUsed} + {limits.ipCommitted} / {limits.ipLimit} ({limits.ipAvailable ?? 0} remaining)
+                          </span>
                         </div>
-                      )}
-                      {limits.paLimit !== null && (
-                        <div>
-                          <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">PA Limit</div>
-                          <div 
-                            className={`text-sm sm:text-lg font-bold font-mono ${limits.paAvailable !== null && limits.paAvailable < 100 ? 'text-destructive' : ''}`}
+                        <DualProgress
+                          spent={limits.ipUsed}
+                          committed={limits.ipCommitted}
+                          total={limits.ipLimit}
+                          spentLabel="Won IP"
+                          committedLabel="Committed IP"
+                        />
+                      </div>
+                    )}
+                    {limits.paLimit !== null && (
+                      <div>
+                        <div className="flex flex-wrap justify-between gap-1 text-xs text-muted-foreground mb-1">
+                          <span>PA Limit</span>
+                          <span 
+                            className={limits.paAvailable !== null && limits.paAvailable < 100 ? 'text-destructive' : ''}
                             data-testid="text-pa-limit"
                           >
-                            {limits.paUsed} / {limits.paLimit}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {limits.paAvailable !== null ? `${limits.paAvailable} remaining` : ''}
-                          </div>
+                            {limits.paUsed} + {limits.paCommitted} / {limits.paLimit} ({limits.paAvailable ?? 0} remaining)
+                          </span>
                         </div>
-                      )}
-                    </div>
+                        <DualProgress
+                          spent={limits.paUsed}
+                          committed={limits.paCommitted}
+                          total={limits.paLimit}
+                          spentLabel="Won PA"
+                          committedLabel="Committed PA"
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
