@@ -1696,12 +1696,15 @@ export async function registerRoutes(
 
       const { users: usersData, leagueId } = validation.data;
 
+      console.log("[Bulk Upload] Starting upload with leagueId:", leagueId, "users count:", usersData.length);
+
       // If leagueId provided, verify it exists
       if (leagueId) {
         const league = await storage.getLeague(leagueId);
         if (!league) {
           return res.status(400).json({ message: "Invalid league ID" });
         }
+        console.log("[Bulk Upload] League verified:", league.name);
       }
 
       const results: { email: string; password: string; success: boolean; error?: string }[] = [];
@@ -1711,10 +1714,12 @@ export async function registerRoutes(
         try {
           // Check if user already exists
           const existing = await storage.getUserByEmail(email);
+          console.log("[Bulk Upload] Processing:", email, "existing:", !!existing);
           if (existing) {
             // If user exists and leagueId provided, try to add them to the league
             if (leagueId) {
               const existingMember = await storage.getLeagueMember(leagueId, existing.id);
+              console.log("[Bulk Upload] Existing user", email, "existingMember:", !!existingMember);
               if (!existingMember) {
                 await storage.addLeagueMember({
                   leagueId,
@@ -1723,11 +1728,13 @@ export async function registerRoutes(
                   teamName: userData.teamName?.trim() || existing.teamName,
                   teamAbbreviation: userData.teamAbbreviation?.trim().toUpperCase().slice(0, 3) || existing.teamAbbreviation,
                 });
+                console.log("[Bulk Upload] Added existing user to league:", email);
                 results.push({ email, password: "(existing user - added to league)", success: true });
               } else {
                 results.push({ email, password: "", success: false, error: "User already in this league" });
               }
             } else {
+              console.log("[Bulk Upload] No leagueId provided, skipping existing user");
               results.push({ email, password: "", success: false, error: "User already exists" });
             }
             continue;
