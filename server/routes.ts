@@ -588,12 +588,19 @@ export async function registerRoutes(
       const userId = req.session.originalUserId || req.session.userId!;
       const { players, auctionId } = req.body;
       
+      // Validate input
+      if (!auctionId || typeof auctionId !== 'number') {
+        return res.status(400).json({ message: "Valid auction ID is required" });
+      }
+      
       if (!Array.isArray(players) || players.length === 0) {
         return res.status(400).json({ message: "No players provided" });
       }
-
-      if (!auctionId) {
-        return res.status(400).json({ message: "Auction ID is required" });
+      
+      // Basic validation: ensure each player has a name field
+      const invalidPlayers = players.filter((p: any) => !p || typeof p.name !== 'string' || !p.name.trim());
+      if (invalidPlayers.length > 0) {
+        return res.status(400).json({ message: `${invalidPlayers.length} player(s) missing required 'name' field` });
       }
       
       const auction = await storage.getAuction(auctionId);
@@ -605,8 +612,8 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
-      // Get existing players for this auction
-      const existingAgents = await storage.getActiveFreeAgents(auctionId);
+      // Get ALL players for this auction (including closed/won)
+      const existingAgents = await storage.getFreeAgentsByAuction(auctionId);
       
       const parseNum = (val: any): number | null => {
         if (val === undefined || val === null || val === "") return null;

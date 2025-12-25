@@ -441,16 +441,13 @@ export default function CommissionerAuction() {
       queryClient.invalidateQueries({ queryKey: ['/api/auctions', numericAuctionId, 'free-agents'] });
       queryClient.invalidateQueries({ queryKey: ['/api/stats'] });
       
-      // Show warnings if any
+      // Show warnings if any (informational, not destructive)
       if (data.warnings && data.warnings.length > 0) {
-        for (const warning of data.warnings) {
-          toast({
-            title: "Upload Warning",
-            description: warning,
-            variant: "destructive",
-            duration: 10000,
-          });
-        }
+        toast({
+          title: "Data Import Warnings",
+          description: data.warnings.join(" "),
+          duration: 12000,
+        });
       }
       
       toast({
@@ -480,9 +477,14 @@ export default function CommissionerAuction() {
       setParsedPlayers([]);
       queryClient.invalidateQueries({ queryKey: ['/api/free-agents'] });
       queryClient.invalidateQueries({ queryKey: ['/api/auctions', numericAuctionId, 'free-agents'] });
+      
+      const desc = data.notFoundCount > 0
+        ? `Updated stats for ${data.updatedCount} players. ${data.notFoundCount} players were not found in the auction.`
+        : `Updated stats for ${data.updatedCount} players.`;
+      
       toast({
-        title: "Stats updated",
-        description: `Updated ${data.updatedCount} of ${data.totalProcessed} players. ${data.notFoundCount} not found.`,
+        title: "Stats Updated",
+        description: desc,
       });
     },
     onError: (error: Error) => {
