@@ -235,7 +235,7 @@ export default function Commissioner() {
 
   const uploadUsers = useMutation({
     mutationFn: async (users: ParsedUser[]) => {
-      const res = await apiRequest("POST", "/api/users/bulk", { users });
+      const res = await apiRequest("POST", "/api/users/bulk", { users, leagueId: selectedLeagueId });
       return res.json();
     },
     onSuccess: (data) => {

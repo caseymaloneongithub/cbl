@@ -1672,6 +1672,7 @@ export async function registerRoutes(
       teamAbbreviation: z.string().max(3).optional(),
       password: z.string().min(6, "Password must be at least 6 characters").optional(),
     })).min(1, "At least one user is required").max(500, "Maximum 500 users per upload"),
+    leagueId: z.number().optional(),
   });
 
   // Commissioner: Bulk create users/teams via CSV
@@ -1693,7 +1694,15 @@ export async function registerRoutes(
         });
       }
 
-      const { users: usersData } = validation.data;
+      const { users: usersData, leagueId } = validation.data;
+
+      // If leagueId provided, verify it exists
+      if (leagueId) {
+        const league = await storage.getLeague(leagueId);
+        if (!league) {
+          return res.status(400).json({ message: "Invalid league ID" });
+        }
+      }
 
       const results: { email: string; password: string; success: boolean; error?: string }[] = [];
 
@@ -1703,7 +1712,24 @@ export async function registerRoutes(
           // Check if user already exists
           const existing = await storage.getUserByEmail(email);
           if (existing) {
-            results.push({ email, password: "", success: false, error: "User already exists" });
+            // If user exists and leagueId provided, try to add them to the league
+            if (leagueId) {
+              const existingMember = await storage.getLeagueMember(leagueId, existing.id);
+              if (!existingMember) {
+                await storage.addLeagueMember({
+                  leagueId,
+                  userId: existing.id,
+                  role: 'owner',
+                  teamName: userData.teamName?.trim() || existing.teamName,
+                  teamAbbreviation: userData.teamAbbreviation?.trim().toUpperCase().slice(0, 3) || existing.teamAbbreviation,
+                });
+                results.push({ email, password: "(existing user - added to league)", success: true });
+              } else {
+                results.push({ email, password: "", success: false, error: "User already in this league" });
+              }
+            } else {
+              results.push({ email, password: "", success: false, error: "User already exists" });
+            }
             continue;
           }
 
@@ -1712,7 +1738,7 @@ export async function registerRoutes(
           const passwordHash = await hashPassword(userPassword);
           const passwordWasProvided = !!userData.password?.trim();
 
-          await storage.createUserWithPassword({
+          const newUser = await storage.createUserWithPassword({
             email,
             passwordHash,
             firstName: userData.firstName?.trim(),
@@ -1722,6 +1748,17 @@ export async function registerRoutes(
             isCommissioner: false,
             mustResetPassword: !passwordWasProvided, // Only require reset if password was auto-generated
           });
+
+          // If leagueId provided, add user to the league
+          if (leagueId) {
+            await storage.addLeagueMember({
+              leagueId,
+              userId: newUser.id,
+              role: 'owner',
+              teamName: userData.teamName?.trim(),
+              teamAbbreviation: userData.teamAbbreviation?.trim().toUpperCase().slice(0, 3),
+            });
+          }
 
           results.push({ email, password: passwordWasProvided ? "(set from CSV)" : userPassword, success: true });
         } catch (err: any) {
