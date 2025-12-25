@@ -544,7 +544,33 @@ export async function registerRoutes(
       }
 
       const newAgents = await storage.createFreeAgentsBulk(agentsToCreate);
-      res.json(newAgents);
+      
+      // Check for warnings
+      const warnings: string[] = [];
+      
+      // Check if all hitters have PA = 0 or null
+      const hitters = agentsToCreate.filter(a => a.playerType === 'hitter');
+      if (hitters.length > 0) {
+        const hittersWithPA = hitters.filter(a => a.pa !== null && a.pa > 0);
+        if (hittersWithPA.length === 0) {
+          warnings.push("Warning: All hitters have PA = 0 or missing. If your CSV has a different column name for plate appearances (like 'ab'), the PA values were not imported. You may need to re-upload with a 'pa' column.");
+        }
+      }
+      
+      // Check if all pitchers have IP = 0 or null
+      const pitchers = agentsToCreate.filter(a => a.playerType === 'pitcher');
+      if (pitchers.length > 0) {
+        const pitchersWithIP = pitchers.filter(a => a.ip !== null && a.ip > 0);
+        if (pitchersWithIP.length === 0) {
+          warnings.push("Warning: All pitchers have IP = 0 or missing. The IP values were not imported correctly.");
+        }
+      }
+      
+      res.json({ 
+        players: newAgents, 
+        count: newAgents.length,
+        warnings 
+      });
     } catch (error: any) {
       console.error("Error uploading free agents:", error);
       const errorMessage = error?.message || String(error);
@@ -552,6 +578,104 @@ export async function registerRoutes(
       res.status(500).json({ 
         message: `Failed to upload free agents: ${errorMessage}`,
         code: errorCode
+      });
+    }
+  });
+
+  // Commissioner: Update stats for existing players by name (CSV re-upload)
+  app.patch("/api/free-agents/bulk-stats", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const { players, auctionId } = req.body;
+      
+      if (!Array.isArray(players) || players.length === 0) {
+        return res.status(400).json({ message: "No players provided" });
+      }
+
+      if (!auctionId) {
+        return res.status(400).json({ message: "Auction ID is required" });
+      }
+      
+      const auction = await storage.getAuction(auctionId);
+      if (!auction) {
+        return res.status(400).json({ message: "Invalid auction ID" });
+      }
+      
+      if (!await hasAuctionCommissionerAccess(userId, auctionId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      // Get existing players for this auction
+      const existingAgents = await storage.getActiveFreeAgents(auctionId);
+      
+      const parseNum = (val: any): number | null => {
+        if (val === undefined || val === null || val === "") return null;
+        const num = Number(val);
+        return isNaN(num) ? null : num;
+      };
+
+      const results: { name: string; updated: boolean; reason?: string }[] = [];
+      
+      for (const p of players) {
+        const name = p.name?.trim();
+        if (!name) {
+          results.push({ name: '(empty)', updated: false, reason: 'Missing name' });
+          continue;
+        }
+        
+        // Find matching player by name (case-insensitive)
+        const matchingAgent = existingAgents.find(
+          a => a.name.toLowerCase() === name.toLowerCase()
+        );
+        
+        if (!matchingAgent) {
+          results.push({ name, updated: false, reason: 'Player not found in auction' });
+          continue;
+        }
+        
+        // Build update object with only stats that have values
+        const statsUpdate: Record<string, number | null> = {};
+        
+        // Hitter stats
+        if (parseNum(p.pa) !== null) statsUpdate.pa = Math.floor(parseNum(p.pa)!);
+        if (parseNum(p.hr) !== null) statsUpdate.hr = Math.floor(parseNum(p.hr)!);
+        if (parseNum(p.rbi) !== null) statsUpdate.rbi = Math.floor(parseNum(p.rbi)!);
+        if (parseNum(p.runs) !== null) statsUpdate.runs = Math.floor(parseNum(p.runs)!);
+        if (parseNum(p.sb) !== null) statsUpdate.sb = Math.floor(parseNum(p.sb)!);
+        if (parseNum(p.avg) !== null) statsUpdate.avg = parseNum(p.avg);
+        if (parseNum(p.ops) !== null) statsUpdate.ops = parseNum(p.ops);
+        
+        // Pitcher stats
+        if (parseNum(p.ip) !== null) statsUpdate.ip = parseNum(p.ip);
+        if (parseNum(p.wins) !== null) statsUpdate.wins = Math.floor(parseNum(p.wins)!);
+        if (parseNum(p.losses) !== null) statsUpdate.losses = Math.floor(parseNum(p.losses)!);
+        if (parseNum(p.era) !== null) statsUpdate.era = parseNum(p.era);
+        if (parseNum(p.whip) !== null) statsUpdate.whip = parseNum(p.whip);
+        if (parseNum(p.strikeouts) !== null) statsUpdate.strikeouts = Math.floor(parseNum(p.strikeouts)!);
+        
+        if (Object.keys(statsUpdate).length === 0) {
+          results.push({ name, updated: false, reason: 'No stats to update' });
+          continue;
+        }
+        
+        // Update the player's stats
+        await storage.updateFreeAgentStats(matchingAgent.id, statsUpdate);
+        results.push({ name, updated: true });
+      }
+      
+      const updatedCount = results.filter(r => r.updated).length;
+      const notFoundCount = results.filter(r => !r.updated && r.reason === 'Player not found in auction').length;
+      
+      res.json({
+        updatedCount,
+        notFoundCount,
+        totalProcessed: players.length,
+        results: results.slice(0, 20), // Return first 20 results for debugging
+      });
+    } catch (error: any) {
+      console.error("Error updating free agent stats:", error);
+      res.status(500).json({ 
+        message: `Failed to update stats: ${error?.message || String(error)}`
       });
     }
   });

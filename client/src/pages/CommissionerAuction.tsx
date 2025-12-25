@@ -440,15 +440,55 @@ export default function CommissionerAuction() {
       queryClient.invalidateQueries({ queryKey: ['/api/free-agents'] });
       queryClient.invalidateQueries({ queryKey: ['/api/auctions', numericAuctionId, 'free-agents'] });
       queryClient.invalidateQueries({ queryKey: ['/api/stats'] });
+      
+      // Show warnings if any
+      if (data.warnings && data.warnings.length > 0) {
+        for (const warning of data.warnings) {
+          toast({
+            title: "Upload Warning",
+            description: warning,
+            variant: "destructive",
+            duration: 10000,
+          });
+        }
+      }
+      
       toast({
         title: "Upload successful",
-        description: `${data.length} players have been added to the auction.`,
+        description: `${data.count} players have been added to the auction.`,
       });
     },
     onError: (error: Error) => {
       toast({
         title: "Upload failed",
         description: error.message || "Failed to upload players.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Update stats mutation (for re-uploading CSV to update existing players)
+  const updatePlayerStats = useMutation({
+    mutationFn: async (data: { players: ParsedPlayer[] }) => {
+      const response = await apiRequest("PATCH", "/api/free-agents/bulk-stats", {
+        players: data.players,
+        auctionId: numericAuctionId,
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setParsedPlayers([]);
+      queryClient.invalidateQueries({ queryKey: ['/api/free-agents'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/auctions', numericAuctionId, 'free-agents'] });
+      toast({
+        title: "Stats updated",
+        description: `Updated ${data.updatedCount} of ${data.totalProcessed} players. ${data.notFoundCount} not found.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Update failed",
+        description: error.message || "Failed to update stats.",
         variant: "destructive",
       });
     },
@@ -1614,39 +1654,75 @@ export default function CommissionerAuction() {
                 </Table>
               </div>
 
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button className="w-full" data-testid="button-upload-players">
-                    <Upload className="h-4 w-4 mr-2" />
-                    Upload {parsedPlayers.length} Free Agents
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Confirm Upload</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This will add {parsedPlayers.length} new free agents to "{auction.name}".
-                      Players without an end time will be set to expire in 7 days.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={() => uploadPlayers.mutate({ players: parsedPlayers })}
-                      disabled={uploadPlayers.isPending}
-                    >
-                      {uploadPlayers.isPending ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Uploading...
-                        </>
-                      ) : (
-                        "Upload"
-                      )}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              <div className="flex flex-wrap gap-2">
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button className="flex-1" data-testid="button-upload-players">
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload {parsedPlayers.length} New Players
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Confirm Upload</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will add {parsedPlayers.length} new free agents to "{auction.name}".
+                        Players without an end time will be set to expire in 7 days.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => uploadPlayers.mutate({ players: parsedPlayers })}
+                        disabled={uploadPlayers.isPending}
+                      >
+                        {uploadPlayers.isPending ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Uploading...
+                          </>
+                        ) : (
+                          "Upload"
+                        )}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+                
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="outline" className="flex-1" data-testid="button-update-stats">
+                      <RefreshCcw className="h-4 w-4 mr-2" />
+                      Update Stats Only
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Update Player Stats</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will update stats (PA, IP, etc.) for existing players in "{auction.name}" that match by name.
+                        Players not found in the auction will be skipped. No new players will be created.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => updatePlayerStats.mutate({ players: parsedPlayers })}
+                        disabled={updatePlayerStats.isPending}
+                      >
+                        {updatePlayerStats.isPending ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Updating...
+                          </>
+                        ) : (
+                          "Update Stats"
+                        )}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
             </div>
           )}
         </CardContent>
