@@ -475,8 +475,12 @@ export default function CommissionerAuction() {
     },
     onSuccess: (data) => {
       setParsedPlayers([]);
+      // Invalidate all queries that might use player stats (PA, IP, etc.)
       queryClient.invalidateQueries({ queryKey: ['/api/free-agents'] });
       queryClient.invalidateQueries({ queryKey: ['/api/auctions', numericAuctionId, 'free-agents'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/limits'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/budget'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/results'] });
       
       const desc = data.notFoundCount > 0
         ? `Updated stats for ${data.updatedCount} players. ${data.notFoundCount} players were not found in the auction.`
