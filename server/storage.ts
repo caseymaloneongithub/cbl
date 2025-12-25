@@ -113,12 +113,15 @@ export interface IStorage {
   getUserLimitsInfo(userId: string, auctionId: number): Promise<{
     rosterLimit: number | null;
     rosterUsed: number;
+    rosterCommitted: number;
     rosterAvailable: number | null;
     ipLimit: number | null;
     ipUsed: number;
+    ipCommitted: number;
     ipAvailable: number | null;
     paLimit: number | null;
     paUsed: number;
+    paCommitted: number;
     paAvailable: number | null;
   }>;
   canUserBidOnPlayer(userId: string, playerId: number): Promise<{
@@ -930,12 +933,15 @@ export class DatabaseStorage implements IStorage {
   async getUserLimitsInfo(userId: string, auctionId: number): Promise<{
     rosterLimit: number | null;
     rosterUsed: number;
+    rosterCommitted: number;
     rosterAvailable: number | null;
     ipLimit: number | null;
     ipUsed: number;
+    ipCommitted: number;
     ipAvailable: number | null;
     paLimit: number | null;
     paUsed: number;
+    paCommitted: number;
     paAvailable: number | null;
   }> {
     const user = await this.getUser(userId);
@@ -969,35 +975,55 @@ export class DatabaseStorage implements IStorage {
         eq(freeAgents.auctionId, auctionId)
       ));
     
+    // Get active auctions where user is high bidder (committed but not yet won)
+    const allAgents = await this.getActiveFreeAgents(auctionId);
+    const pendingHighBids = allAgents.filter(a => a.highBidder?.id === userId);
+    
     // Calculate roster used (number of players won)
     const rosterUsed = wonAgents.length;
+    const rosterCommitted = pendingHighBids.length;
     
-    // Calculate IP used (sum of IP for pitchers won)
+    // Calculate IP used and committed
     let ipUsed = 0;
+    let ipCommitted = 0;
     for (const agent of wonAgents) {
       if (agent.playerType === 'pitcher' && agent.ip) {
         ipUsed += agent.ip;
       }
     }
+    for (const agent of pendingHighBids) {
+      if (agent.playerType === 'pitcher' && agent.ip) {
+        ipCommitted += agent.ip;
+      }
+    }
     
-    // Calculate PA used (sum of PA for hitters won)
+    // Calculate PA used and committed
     let paUsed = 0;
+    let paCommitted = 0;
     for (const agent of wonAgents) {
       if (agent.playerType === 'hitter' && agent.pa) {
         paUsed += agent.pa;
+      }
+    }
+    for (const agent of pendingHighBids) {
+      if (agent.playerType === 'hitter' && agent.pa) {
+        paCommitted += agent.pa;
       }
     }
     
     return {
       rosterLimit,
       rosterUsed,
-      rosterAvailable: rosterLimit !== null ? rosterLimit - rosterUsed : null,
+      rosterCommitted,
+      rosterAvailable: rosterLimit !== null ? rosterLimit - rosterUsed - rosterCommitted : null,
       ipLimit,
       ipUsed,
-      ipAvailable: ipLimit !== null ? ipLimit - ipUsed : null,
+      ipCommitted,
+      ipAvailable: ipLimit !== null ? ipLimit - ipUsed - ipCommitted : null,
       paLimit,
       paUsed,
-      paAvailable: paLimit !== null ? paLimit - paUsed : null,
+      paCommitted,
+      paAvailable: paLimit !== null ? paLimit - paUsed - paCommitted : null,
     };
   }
 
