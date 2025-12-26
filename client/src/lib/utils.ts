@@ -50,6 +50,13 @@ export function isAuctionClosed(endTime: Date | string): boolean {
   return end <= now;
 }
 
+export function hasAuctionStarted(startTime: Date | string | null | undefined): boolean {
+  if (!startTime) return true; // No start time means immediately available
+  const start = new Date(startTime);
+  const now = new Date();
+  return start <= now;
+}
+
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",

@@ -93,6 +93,7 @@ const addPlayerSchema = z.object({
   team: z.string().optional(),
   minimumBid: z.number().min(1, "Minimum bid must be at least $1"),
   minimumYears: z.number().min(1).max(5, "Minimum years must be 1-5"),
+  auctionStartTime: z.string().optional(),
   auctionEndTime: z.string().min(1, "Auction end time is required"),
 });
 
@@ -105,6 +106,7 @@ interface ParsedPlayer {
   team: string;
   minimumBid: number;
   minimumYears: number;
+  auctionStartTime?: string;
   auctionEndTime: string;
   avg?: number;
   hr?: number;
@@ -230,6 +232,7 @@ export default function CommissionerAuction() {
       team: "",
       minimumBid: 1,
       minimumYears: 1,
+      auctionStartTime: "",
       auctionEndTime: "",
     },
   });
@@ -705,6 +708,7 @@ export default function CommissionerAuction() {
     const teamIdx = headers.findIndex(h => h === "team" || h === "mlbteam");
     const minBidIdx = headers.findIndex(h => h === "minimum_bid" || h === "minbid" || h === "bidmindollars");
     const minYearsIdx = headers.findIndex(h => h === "minimum_years" || h === "minyears" || h === "bidminyears");
+    const startTimeIdx = headers.findIndex(h => h === "start_time" || h === "starttime" || h === "startdatetime" || h === "auction_start_time");
     const endTimeIdx = headers.findIndex(h => h === "end_time" || h === "endtime" || h === "enddatetime" || h === "auction_end_time");
 
     const avgIdx = headers.findIndex(h => h === "avg" || h === "average");
@@ -763,6 +767,7 @@ export default function CommissionerAuction() {
         team: teamIdx !== -1 ? values[teamIdx] || "" : "",
         minimumBid: minBidIdx !== -1 ? parseInt(values[minBidIdx]) || 1 : 1,
         minimumYears: minYearsIdx !== -1 ? parseInt(values[minYearsIdx]) || 1 : 1,
+        auctionStartTime: startTimeIdx !== -1 ? values[startTimeIdx] || undefined : undefined,
         auctionEndTime: endTimeIdx !== -1 ? values[endTimeIdx] || "" : "",
         avg: parseNum(values[avgIdx]),
         hr: parseNum(values[hrIdx]),
@@ -1631,6 +1636,7 @@ export default function CommissionerAuction() {
                       <TableHead>Team</TableHead>
                       <TableHead>Min Bid</TableHead>
                       <TableHead>Min Yrs</TableHead>
+                      <TableHead>Start Time</TableHead>
                       <TableHead>End Time</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1645,13 +1651,16 @@ export default function CommissionerAuction() {
                         <TableCell>{formatCurrency(player.minimumBid)}</TableCell>
                         <TableCell>{player.minimumYears}yr</TableCell>
                         <TableCell className="text-muted-foreground">
+                          {player.auctionStartTime || "Immediate"}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
                           {player.auctionEndTime || "Default"}
                         </TableCell>
                       </TableRow>
                     ))}
                     {parsedPlayers.length > 10 && (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground">
+                        <TableCell colSpan={7} className="text-center text-muted-foreground">
                           ... and {parsedPlayers.length - 10} more players
                         </TableCell>
                       </TableRow>

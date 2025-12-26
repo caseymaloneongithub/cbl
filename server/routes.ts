@@ -515,6 +515,7 @@ export async function registerRoutes(
           playerType,
           minimumBid,
           minimumYears,
+          auctionStartTime: p.auctionStartTime ? parseEasternTime(p.auctionStartTime) : null,
           auctionEndTime: p.auctionEndTime ? parseEasternTime(p.auctionEndTime) : defaultEndTime,
           isActive: true,
           auctionId: targetAuctionId,
@@ -975,6 +976,11 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Auction has ended" });
       }
 
+      // Check if auction has started (auctionStartTime is optional - null means immediately available)
+      if (agent.auctionStartTime && new Date(agent.auctionStartTime) > new Date()) {
+        return res.status(400).json({ message: "Bidding has not started yet for this player" });
+      }
+
       const { amount, years } = req.body;
       
       if (!amount || !years || years < 1 || years > 5) {
@@ -1145,8 +1151,10 @@ export async function registerRoutes(
         isActive,
       });
 
-      // If auto-bid is active, try to place an auto-bid immediately
-      if (isActive && agent.auctionId) {
+      // If auto-bid is active and auction has started, try to place an auto-bid immediately
+      // (if start time hasn't passed, auto-bid is saved but won't place a bid yet)
+      const hasStarted = !agent.auctionStartTime || new Date(agent.auctionStartTime) <= new Date();
+      if (isActive && agent.auctionId && hasStarted) {
         // Get auction for per-auction settings
         const auction = await storage.getAuction(agent.auctionId);
         const currentHighBid = await storage.getHighestBidForAgent(agentId);
@@ -2903,6 +2911,9 @@ async function processAllAutoBidsUntilStable(
   
   // Check if auction is still open
   if (new Date(agent.auctionEndTime) <= new Date()) return false;
+  
+  // Check if auction has started (auctionStartTime is optional - null means immediately available)
+  if (agent.auctionStartTime && new Date(agent.auctionStartTime) > new Date()) return false;
   
   const yearFactors = auction ? [
     auction.yearFactor1,

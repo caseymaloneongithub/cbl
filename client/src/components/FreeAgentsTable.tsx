@@ -34,7 +34,7 @@ import { CountdownTimer } from "./CountdownTimer";
 import { BidDialog } from "./BidDialog";
 import { AutoBidDialog } from "./AutoBidDialog";
 import { BidHistoryModal } from "./BidHistoryModal";
-import { formatCurrency, isAuctionClosed } from "@/lib/utils";
+import { formatCurrency, isAuctionClosed, hasAuctionStarted, formatTimeRemaining } from "@/lib/utils";
 import type { FreeAgentWithBids } from "@shared/schema";
 import { Gavel, Zap, Search, ArrowUpDown, ArrowUp, ArrowDown, X, Trash2, History } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -338,6 +338,8 @@ export function FreeAgentsTable({ freeAgents, bidIncrement = 0.10, allowAutoBidd
                 ) : (
                   filteredAndSortedAgents.map((agent) => {
                     const isClosed = isAuctionClosed(agent.auctionEndTime);
+                    const isStarted = hasAuctionStarted(agent.auctionStartTime);
+                    const canBid = isStarted && !isClosed;
                     const isHighBidder = agent.currentBid?.userId === user?.id;
                     
                     return (
@@ -417,15 +419,24 @@ export function FreeAgentsTable({ freeAgents, bidIncrement = 0.10, allowAutoBidd
                           )}
                         </TableCell>
                         <TableCell className="text-center">
-                          <CountdownTimer endTime={agent.auctionEndTime} onClose={handleAuctionClose} />
+                          {!isStarted && agent.auctionStartTime ? (
+                            <div className="flex flex-col items-center gap-0.5">
+                              <Badge variant="outline" className="text-xs text-amber-600 dark:text-amber-400">
+                                Starts in {formatTimeRemaining(agent.auctionStartTime)}
+                              </Badge>
+                            </div>
+                          ) : (
+                            <CountdownTimer endTime={agent.auctionEndTime} onClose={handleAuctionClose} />
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
                             <Button
                               variant="default"
                               size="sm"
-                              disabled={isClosed}
+                              disabled={!canBid}
                               onClick={() => handleBidClick(agent)}
+                              title={!isStarted ? "Bidding has not started yet" : isClosed ? "Auction closed" : "Place a bid"}
                               data-testid={`button-bid-${agent.id}`}
                             >
                               <Gavel className="h-4 w-4 mr-1" />
@@ -437,6 +448,7 @@ export function FreeAgentsTable({ freeAgents, bidIncrement = 0.10, allowAutoBidd
                                 size="sm"
                                 disabled={isClosed}
                                 onClick={() => handleAutoBidClick(agent)}
+                                title={!isStarted ? "Set up auto-bid (will activate when bidding starts)" : isClosed ? "Auction closed" : "Set up auto-bidding"}
                                 data-testid={`button-auto-bid-${agent.id}`}
                               >
                                 <Zap className="h-4 w-4 mr-1" />
