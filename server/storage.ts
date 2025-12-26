@@ -533,6 +533,28 @@ export class DatabaseStorage implements IStorage {
     return newAgents;
   }
 
+  async getFreeAgentsByNameAndAuction(names: string[], auctionId: number): Promise<FreeAgent[]> {
+    if (names.length === 0) return [];
+    const lowerNames = names.map(n => n.toLowerCase().trim());
+    const agents = await db
+      .select()
+      .from(freeAgents)
+      .where(and(
+        eq(freeAgents.auctionId, auctionId),
+        inArray(sql`LOWER(${freeAgents.name})`, lowerNames)
+      ));
+    return agents;
+  }
+
+  async updateFreeAgent(id: number, updates: Partial<InsertFreeAgent>): Promise<FreeAgent | undefined> {
+    const [updated] = await db
+      .update(freeAgents)
+      .set(updates)
+      .where(eq(freeAgents.id, id))
+      .returning();
+    return updated;
+  }
+
   async updateFreeAgentWinner(id: number, winnerId: string, winningBidId: number): Promise<void> {
     await db
       .update(freeAgents)

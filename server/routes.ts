@@ -468,17 +468,50 @@ export async function registerRoutes(
       const defaultEndTime = new Date();
       defaultEndTime.setDate(defaultEndTime.getDate() + 7);
 
-      // Validate and sanitize player data
+      // Helper to check if a value was explicitly provided in CSV (not blank)
+      const isProvided = (val: any): boolean => val !== undefined && val !== null && val !== "";
+      
+      // Parse stats (all optional) - returns null for blank values
+      const parseNum = (val: any): number | null => {
+        if (!isProvided(val)) return null;
+        const num = Number(val);
+        return isNaN(num) ? null : num;
+      };
+
+      // Validate and sanitize player data - track which fields were explicitly provided
       const invalidPlayers: string[] = [];
-      const agentsToCreate = players.map((p: any, index: number) => {
+      const agentsData = players.map((p: any, index: number) => {
         const name = p.name?.trim();
         if (!name) {
           invalidPlayers.push(`Row ${index + 2}: Missing player name`);
         }
         
-        // Validate minimumBid: must be a valid number >= 1
+        // Track which fields were explicitly provided for upsert logic
+        const providedFields: Record<string, boolean> = {
+          minimumBid: isProvided(p.minimumBid),
+          minimumYears: isProvided(p.minimumYears),
+          playerType: isProvided(p.playerType) || isProvided(p.type),
+          team: isProvided(p.team),
+          auctionStartTime: isProvided(p.auctionStartTime),
+          auctionEndTime: isProvided(p.auctionEndTime),
+          avg: isProvided(p.avg),
+          hr: isProvided(p.hr),
+          rbi: isProvided(p.rbi),
+          runs: isProvided(p.runs),
+          sb: isProvided(p.sb),
+          ops: isProvided(p.ops),
+          pa: isProvided(p.pa),
+          wins: isProvided(p.wins),
+          losses: isProvided(p.losses),
+          era: isProvided(p.era),
+          whip: isProvided(p.whip),
+          strikeouts: isProvided(p.strikeouts),
+          ip: isProvided(p.ip),
+        };
+        
+        // Validate minimumBid: must be a valid number >= 1 (only if provided)
         let minimumBid = 1;
-        if (p.minimumBid !== undefined && p.minimumBid !== null && p.minimumBid !== "") {
+        if (providedFields.minimumBid) {
           const parsedBid = Number(p.minimumBid);
           if (isNaN(parsedBid) || parsedBid < 1) {
             invalidPlayers.push(`Row ${index + 2} (${name || "unknown"}): Invalid minimum bid "${p.minimumBid}" - must be a number >= 1`);
@@ -487,9 +520,9 @@ export async function registerRoutes(
           }
         }
         
-        // Validate minimumYears: must be a valid number 1-5
+        // Validate minimumYears: must be a valid number 1-5 (only if provided)
         let minimumYears = 1;
-        if (p.minimumYears !== undefined && p.minimumYears !== null && p.minimumYears !== "") {
+        if (providedFields.minimumYears) {
           const parsedYears = Number(p.minimumYears);
           if (isNaN(parsedYears) || parsedYears < 1 || parsedYears > 5) {
             invalidPlayers.push(`Row ${index + 2} (${name || "unknown"}): Invalid minimum years "${p.minimumYears}" - must be 1-5`);
@@ -498,44 +531,42 @@ export async function registerRoutes(
           }
         }
         
-        // Determine player type - accepts "pitcher" or "hitter" (default to hitter)
+        // Determine player type - accepts "pitcher" or "hitter" (default to hitter for new players)
         const rawType = (p.playerType || p.type || "hitter").toLowerCase().trim();
         const playerType = rawType === "pitcher" || rawType === "p" ? "pitcher" : "hitter";
 
-        // Parse stats (all optional)
-        const parseNum = (val: any): number | null => {
-          if (val === undefined || val === null || val === "") return null;
-          const num = Number(val);
-          return isNaN(num) ? null : num;
-        };
-
         return {
-          name: name || `Unknown Player ${index}`,
-          team: p.team || null,
-          playerType,
-          minimumBid,
-          minimumYears,
-          auctionStartTime: p.auctionStartTime ? parseEasternTime(p.auctionStartTime) : null,
-          auctionEndTime: p.auctionEndTime ? parseEasternTime(p.auctionEndTime) : defaultEndTime,
-          isActive: true,
-          auctionId: targetAuctionId,
-          // Hitter stats
-          avg: parseNum(p.avg),
-          hr: parseNum(p.hr) !== null ? Math.floor(parseNum(p.hr)!) : null,
-          rbi: parseNum(p.rbi) !== null ? Math.floor(parseNum(p.rbi)!) : null,
-          runs: parseNum(p.runs) !== null ? Math.floor(parseNum(p.runs)!) : null,
-          sb: parseNum(p.sb) !== null ? Math.floor(parseNum(p.sb)!) : null,
-          ops: parseNum(p.ops),
-          pa: parseNum(p.pa) !== null ? Math.floor(parseNum(p.pa)!) : null, // Plate appearances for limit tracking
-          // Pitcher stats
-          wins: parseNum(p.wins) !== null ? Math.floor(parseNum(p.wins)!) : null,
-          losses: parseNum(p.losses) !== null ? Math.floor(parseNum(p.losses)!) : null,
-          era: parseNum(p.era),
-          whip: parseNum(p.whip),
-          strikeouts: parseNum(p.strikeouts) !== null ? Math.floor(parseNum(p.strikeouts)!) : null,
-          ip: parseNum(p.ip),
+          providedFields,
+          data: {
+            name: name || `Unknown Player ${index}`,
+            team: p.team || null,
+            playerType,
+            minimumBid,
+            minimumYears,
+            auctionStartTime: p.auctionStartTime ? parseEasternTime(p.auctionStartTime) : null,
+            auctionEndTime: p.auctionEndTime ? parseEasternTime(p.auctionEndTime) : defaultEndTime,
+            isActive: true,
+            auctionId: targetAuctionId,
+            // Hitter stats
+            avg: parseNum(p.avg),
+            hr: parseNum(p.hr) !== null ? Math.floor(parseNum(p.hr)!) : null,
+            rbi: parseNum(p.rbi) !== null ? Math.floor(parseNum(p.rbi)!) : null,
+            runs: parseNum(p.runs) !== null ? Math.floor(parseNum(p.runs)!) : null,
+            sb: parseNum(p.sb) !== null ? Math.floor(parseNum(p.sb)!) : null,
+            ops: parseNum(p.ops),
+            pa: parseNum(p.pa) !== null ? Math.floor(parseNum(p.pa)!) : null,
+            // Pitcher stats
+            wins: parseNum(p.wins) !== null ? Math.floor(parseNum(p.wins)!) : null,
+            losses: parseNum(p.losses) !== null ? Math.floor(parseNum(p.losses)!) : null,
+            era: parseNum(p.era),
+            whip: parseNum(p.whip),
+            strikeouts: parseNum(p.strikeouts) !== null ? Math.floor(parseNum(p.strikeouts)!) : null,
+            ip: parseNum(p.ip),
+          }
         };
       });
+      
+      const agentsToCreate = agentsData.map(a => a.data);
       
       // If there are validation errors, reject the entire upload
       if (invalidPlayers.length > 0) {
@@ -544,10 +575,90 @@ export async function registerRoutes(
         });
       }
 
-      const newAgents = await storage.createFreeAgentsBulk(agentsToCreate);
+      // UPSERT LOGIC: Check for existing players by name in this auction
+      const playerNames = agentsToCreate.map(a => a.name);
+      const existingAgents = await storage.getFreeAgentsByNameAndAuction(playerNames, targetAuctionId);
+      
+      // Create a map of lowercase names to existing agents for quick lookup
+      const existingMap = new Map<string, typeof existingAgents[0]>();
+      for (const agent of existingAgents) {
+        existingMap.set(agent.name.toLowerCase().trim(), agent);
+      }
+      
+      // Separate into updates and inserts - track provided fields for updates
+      const agentsToInsert: typeof agentsToCreate = [];
+      const agentsToUpdate: { id: number; data: typeof agentsToCreate[0]; providedFields: Record<string, boolean> }[] = [];
+      const skippedWonPlayers: string[] = [];
+      
+      for (let i = 0; i < agentsData.length; i++) {
+        const { data, providedFields } = agentsData[i];
+        const existing = existingMap.get(data.name.toLowerCase().trim());
+        if (existing) {
+          // Skip players that have already been won - don't allow updates
+          if (existing.winnerId) {
+            skippedWonPlayers.push(existing.name);
+            continue;
+          }
+          // Update existing player - only with explicitly provided fields
+          agentsToUpdate.push({ id: existing.id, data, providedFields });
+        } else {
+          agentsToInsert.push(data);
+        }
+      }
+      
+      // Perform inserts
+      const newAgents = agentsToInsert.length > 0 
+        ? await storage.createFreeAgentsBulk(agentsToInsert) 
+        : [];
+      
+      // Perform updates - only update fields that were explicitly provided in CSV
+      const updatedAgents: typeof existingAgents = [];
+      for (const { id, data, providedFields } of agentsToUpdate) {
+        // Build update object with only explicitly provided fields
+        const updateData: any = {};
+        
+        // Only include fields that were explicitly provided in the CSV
+        if (providedFields.team) updateData.team = data.team;
+        if (providedFields.playerType) updateData.playerType = data.playerType;
+        if (providedFields.minimumBid) updateData.minimumBid = data.minimumBid;
+        if (providedFields.minimumYears) updateData.minimumYears = data.minimumYears;
+        if (providedFields.auctionStartTime) updateData.auctionStartTime = data.auctionStartTime;
+        if (providedFields.auctionEndTime) updateData.auctionEndTime = data.auctionEndTime;
+        // Stats
+        if (providedFields.avg) updateData.avg = data.avg;
+        if (providedFields.hr) updateData.hr = data.hr;
+        if (providedFields.rbi) updateData.rbi = data.rbi;
+        if (providedFields.runs) updateData.runs = data.runs;
+        if (providedFields.sb) updateData.sb = data.sb;
+        if (providedFields.ops) updateData.ops = data.ops;
+        if (providedFields.pa) updateData.pa = data.pa;
+        if (providedFields.wins) updateData.wins = data.wins;
+        if (providedFields.losses) updateData.losses = data.losses;
+        if (providedFields.era) updateData.era = data.era;
+        if (providedFields.whip) updateData.whip = data.whip;
+        if (providedFields.strikeouts) updateData.strikeouts = data.strikeouts;
+        if (providedFields.ip) updateData.ip = data.ip;
+        
+        // Only update if there are fields to update
+        if (Object.keys(updateData).length > 0) {
+          const updated = await storage.updateFreeAgent(id, updateData);
+          if (updated) {
+            updatedAgents.push(updated);
+          }
+        }
+      }
       
       // Check for warnings
       const warnings: string[] = [];
+      
+      // Add info about updates vs inserts
+      if (updatedAgents.length > 0 || skippedWonPlayers.length > 0) {
+        let msg = `Updated ${updatedAgents.length} existing player(s), added ${newAgents.length} new player(s).`;
+        if (skippedWonPlayers.length > 0) {
+          msg += ` Skipped ${skippedWonPlayers.length} already-won player(s).`;
+        }
+        warnings.unshift(msg);
+      }
       
       // Check if all hitters have PA = 0 or null
       const hitters = agentsToCreate.filter(a => a.playerType === 'hitter');
@@ -568,8 +679,10 @@ export async function registerRoutes(
       }
       
       res.json({ 
-        players: newAgents, 
-        count: newAgents.length,
+        players: [...newAgents, ...updatedAgents], 
+        count: newAgents.length + updatedAgents.length,
+        inserted: newAgents.length,
+        updated: updatedAgents.length,
         warnings 
       });
     } catch (error: any) {
