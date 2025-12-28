@@ -1613,7 +1613,18 @@ export default function CommissionerAuction() {
 
           {/* Preview Table */}
           {parsedPlayers.length > 0 && (
-            <div className="space-y-4">
+            <div className="space-y-4 relative">
+              {/* Loading Overlay */}
+              {(uploadPlayers.isPending || updatePlayerStats.isPending) && (
+                <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-lg">
+                  <div className="flex flex-col items-center gap-2">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <p className="text-sm font-medium">
+                      {uploadPlayers.isPending ? "Uploading players..." : "Updating stats..."}
+                    </p>
+                  </div>
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-medium">
                   Preview ({parsedPlayers.length} players)
@@ -1622,6 +1633,7 @@ export default function CommissionerAuction() {
                   variant="ghost"
                   size="sm"
                   onClick={() => setParsedPlayers([])}
+                  disabled={uploadPlayers.isPending || updatePlayerStats.isPending}
                 >
                   <Trash2 className="h-4 w-4 mr-1" />
                   Clear
@@ -2222,7 +2234,16 @@ export default function CommissionerAuction() {
                 </div>
               </>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-4 relative">
+                {/* Loading Overlay */}
+                {enrollTeamsBulk.isPending && (
+                  <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-lg">
+                    <div className="flex flex-col items-center gap-2">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                      <p className="text-sm font-medium">Enrolling teams...</p>
+                    </div>
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="font-medium">
@@ -2238,6 +2259,7 @@ export default function CommissionerAuction() {
                     variant="outline" 
                     size="sm"
                     onClick={() => setParsedTeamEnrollments([])}
+                    disabled={enrollTeamsBulk.isPending}
                     data-testid="button-clear-team-csv"
                   >
                     <X className="mr-2 h-4 w-4" />
