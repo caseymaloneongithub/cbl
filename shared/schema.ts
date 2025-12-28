@@ -98,7 +98,7 @@ export const auctions = pgTable("auctions", {
   leagueId: integer("league_id").references(() => leagues.id),
   name: varchar("name", { length: 255 }).notNull(),
   status: varchar("status", { length: 20 }).default("active").notNull(), // 'draft', 'active', 'closed'
-  bidIncrement: real("bid_increment").default(0.10).notNull(), // Minimum bid increment as decimal (0.10 = 10%)
+  bidIncrement: real("bid_increment").default(0.05).notNull(), // Minimum bid increment as decimal (0.05 = 5%)
   // Year multiplier factors for contract calculations
   yearFactor1: real("year_factor_1").default(1.0).notNull(),
   yearFactor2: real("year_factor_2").default(1.25).notNull(),
