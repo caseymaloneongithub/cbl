@@ -326,9 +326,29 @@ export default function Home() {
                   </div>
                 </div>
                 
-                {/* IP and PA Limits */}
-                {limits && (limits.ipLimit !== null || limits.paLimit !== null) && (
+                {/* Roster, IP, and PA Limits */}
+                {limits && (limits.rosterLimit !== null || limits.ipLimit !== null || limits.paLimit !== null) && (
                   <div className="pt-3 border-t space-y-4">
+                    {limits.rosterLimit !== null && (
+                      <div>
+                        <div className="flex flex-wrap justify-between gap-1 text-xs text-muted-foreground mb-1">
+                          <span>Roster Limit</span>
+                          <span 
+                            className={limits.rosterAvailable !== null && limits.rosterAvailable < 3 ? 'text-destructive' : ''}
+                            data-testid="text-roster-limit"
+                          >
+                            {limits.rosterUsed} + {limits.rosterCommitted} / {limits.rosterLimit} ({limits.rosterAvailable ?? 0} remaining)
+                          </span>
+                        </div>
+                        <DualProgress
+                          spent={limits.rosterUsed}
+                          committed={limits.rosterCommitted}
+                          total={limits.rosterLimit}
+                          spentLabel="Won Players"
+                          committedLabel="Committed"
+                        />
+                      </div>
+                    )}
                     {limits.ipLimit !== null && (
                       <div>
                         <div className="flex flex-wrap justify-between gap-1 text-xs text-muted-foreground mb-1">
