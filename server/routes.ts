@@ -590,6 +590,9 @@ export async function registerRoutes(
       const agentsToUpdate: { id: number; data: typeof agentsToCreate[0]; providedFields: Record<string, boolean> }[] = [];
       const skippedWonPlayers: string[] = [];
       
+      const now = new Date();
+      const skippedExpiredPlayers: string[] = [];
+      
       for (let i = 0; i < agentsData.length; i++) {
         const { data, providedFields } = agentsData[i];
         const existing = existingMap.get(data.name.toLowerCase().trim());
@@ -597,6 +600,11 @@ export async function registerRoutes(
           // Skip players that have already been won - don't allow updates
           if (existing.winnerId) {
             skippedWonPlayers.push(existing.name);
+            continue;
+          }
+          // Skip players whose auction has already expired (even if no winner yet)
+          if (existing.auctionEndTime && new Date(existing.auctionEndTime) <= now) {
+            skippedExpiredPlayers.push(existing.name);
             continue;
           }
           // Update existing player - only with explicitly provided fields
@@ -652,10 +660,14 @@ export async function registerRoutes(
       const warnings: string[] = [];
       
       // Add info about updates vs inserts
-      if (updatedAgents.length > 0 || skippedWonPlayers.length > 0) {
+      const totalSkipped = skippedWonPlayers.length + skippedExpiredPlayers.length;
+      if (updatedAgents.length > 0 || totalSkipped > 0) {
         let msg = `Updated ${updatedAgents.length} existing player(s), added ${newAgents.length} new player(s).`;
         if (skippedWonPlayers.length > 0) {
           msg += ` Skipped ${skippedWonPlayers.length} already-won player(s).`;
+        }
+        if (skippedExpiredPlayers.length > 0) {
+          msg += ` Skipped ${skippedExpiredPlayers.length} expired auction(s).`;
         }
         warnings.unshift(msg);
       }
