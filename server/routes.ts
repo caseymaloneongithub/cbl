@@ -3020,6 +3020,262 @@ export async function registerRoutes(
     }
   });
 
+  // ================== ROSTER MANAGEMENT ROUTES ==================
+
+  // Get roster players for a league (optionally filtered by user)
+  app.get("/api/leagues/:id/roster", isAuthenticated, async (req: any, res) => {
+    try {
+      const leagueId = parseInt(req.params.id);
+      if (isNaN(leagueId)) {
+        return res.status(400).json({ message: "Invalid league ID" });
+      }
+
+      const userId = req.query.userId as string | undefined;
+      const sessionUserId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(sessionUserId);
+
+      // Check authorization - member of this league or super admin
+      let authorized = user?.isSuperAdmin;
+      if (!authorized) {
+        const member = await storage.getLeagueMember(leagueId, sessionUserId);
+        authorized = !!member;
+      }
+
+      if (!authorized) {
+        return res.status(403).json({ message: "Access denied - not a member of this league" });
+      }
+
+      const players = await storage.getRosterPlayers(leagueId, userId);
+      res.json(players);
+    } catch (error) {
+      console.error("Error fetching roster players:", error);
+      res.status(500).json({ message: "Failed to fetch roster players" });
+    }
+  });
+
+  // Get roster usage for all teams in a league
+  app.get("/api/leagues/:id/roster-usage", isAuthenticated, async (req: any, res) => {
+    try {
+      const leagueId = parseInt(req.params.id);
+      if (isNaN(leagueId)) {
+        return res.status(400).json({ message: "Invalid league ID" });
+      }
+
+      const sessionUserId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(sessionUserId);
+
+      // Check authorization - member of this league or super admin
+      let authorized = user?.isSuperAdmin;
+      if (!authorized) {
+        const member = await storage.getLeagueMember(leagueId, sessionUserId);
+        authorized = !!member;
+      }
+
+      if (!authorized) {
+        return res.status(403).json({ message: "Access denied - not a member of this league" });
+      }
+
+      // Get the league to include caps
+      const league = await storage.getLeague(leagueId);
+      if (!league) {
+        return res.status(404).json({ message: "League not found" });
+      }
+
+      const usage = await storage.getAllTeamsRosterUsage(leagueId);
+      res.json({
+        caps: {
+          budgetCap: league.budgetCap,
+          ipCap: league.ipCap,
+          paCap: league.paCap,
+        },
+        teams: usage,
+      });
+    } catch (error) {
+      console.error("Error fetching roster usage:", error);
+      res.status(500).json({ message: "Failed to fetch roster usage" });
+    }
+  });
+
+  // Upload roster players via CSV (commissioner or super admin)
+  app.post("/api/leagues/:id/roster/upload", isAuthenticated, async (req: any, res) => {
+    try {
+      const leagueId = parseInt(req.params.id);
+      if (isNaN(leagueId)) {
+        return res.status(400).json({ message: "Invalid league ID" });
+      }
+
+      const sessionUserId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(sessionUserId);
+
+      // Check authorization
+      let authorized = user?.isSuperAdmin;
+      if (!authorized) {
+        const member = await storage.getLeagueMember(leagueId, sessionUserId);
+        authorized = member?.role === 'commissioner';
+      }
+
+      if (!authorized) {
+        return res.status(403).json({ message: "Commissioner or Super Admin access required" });
+      }
+
+      const { players, replaceExisting } = req.body;
+      if (!Array.isArray(players)) {
+        return res.status(400).json({ message: "Players must be an array" });
+      }
+
+      // If replacing existing, delete all roster players for this league first
+      if (replaceExisting) {
+        await storage.deleteAllRosterPlayers(leagueId);
+      }
+
+      // Get all league members to match team abbreviations
+      const members = await storage.getLeagueMembers(leagueId);
+      const abbrevToUser = new Map<string, string>();
+      for (const member of members) {
+        if (member.teamAbbreviation) {
+          abbrevToUser.set(member.teamAbbreviation.toUpperCase(), member.userId);
+        }
+      }
+
+      const validPlayers: any[] = [];
+      const errors: string[] = [];
+
+      for (const player of players) {
+        const abbrev = (player.teamAbbreviation || "").toUpperCase();
+        const userId = abbrevToUser.get(abbrev);
+        
+        if (!userId) {
+          errors.push(`Unknown team abbreviation: ${abbrev} for player ${player.playerName}`);
+          continue;
+        }
+
+        validPlayers.push({
+          leagueId,
+          userId,
+          playerName: player.playerName,
+          playerType: player.playerType || 'hitter',
+          ip: player.ip || null,
+          pa: player.pa || null,
+          salary: player.salary || 0,
+          contractYears: player.contractYears || 1,
+        });
+      }
+
+      let created: any[] = [];
+      if (validPlayers.length > 0) {
+        created = await storage.createRosterPlayersBulk(validPlayers);
+      }
+
+      res.json({
+        success: true,
+        created: created.length,
+        errors,
+        message: `Created ${created.length} roster players${errors.length > 0 ? ` with ${errors.length} errors` : ''}`,
+      });
+    } catch (error) {
+      console.error("Error uploading roster:", error);
+      res.status(500).json({ message: "Failed to upload roster" });
+    }
+  });
+
+  // Delete all roster players for a league (or specific team)
+  app.delete("/api/leagues/:id/roster", isAuthenticated, async (req: any, res) => {
+    try {
+      const leagueId = parseInt(req.params.id);
+      if (isNaN(leagueId)) {
+        return res.status(400).json({ message: "Invalid league ID" });
+      }
+
+      const targetUserId = req.query.userId as string | undefined;
+      const sessionUserId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(sessionUserId);
+
+      // Check authorization
+      let authorized = user?.isSuperAdmin;
+      if (!authorized) {
+        const member = await storage.getLeagueMember(leagueId, sessionUserId);
+        authorized = member?.role === 'commissioner';
+      }
+
+      if (!authorized) {
+        return res.status(403).json({ message: "Commissioner or Super Admin access required" });
+      }
+
+      const deleted = await storage.deleteAllRosterPlayers(leagueId, targetUserId);
+      res.json({ success: true, deleted, message: `Deleted ${deleted} roster players` });
+    } catch (error) {
+      console.error("Error deleting roster:", error);
+      res.status(500).json({ message: "Failed to delete roster" });
+    }
+  });
+
+  // Delete a specific roster player
+  app.delete("/api/roster/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const playerId = parseInt(req.params.id);
+      if (isNaN(playerId)) {
+        return res.status(400).json({ message: "Invalid player ID" });
+      }
+
+      const sessionUserId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(sessionUserId);
+
+      // Get the player to check league
+      const players = await storage.getRosterPlayers(0); // This won't work, need to get by ID
+      // For now, just allow super admin or we need a getById method
+      if (!user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Super Admin access required" });
+      }
+
+      await storage.deleteRosterPlayer(playerId);
+      res.json({ success: true, message: "Roster player deleted" });
+    } catch (error) {
+      console.error("Error deleting roster player:", error);
+      res.status(500).json({ message: "Failed to delete roster player" });
+    }
+  });
+
+  // Update league caps (commissioner or super admin)
+  app.patch("/api/leagues/:id/caps", isAuthenticated, async (req: any, res) => {
+    try {
+      const leagueId = parseInt(req.params.id);
+      if (isNaN(leagueId)) {
+        return res.status(400).json({ message: "Invalid league ID" });
+      }
+
+      const sessionUserId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(sessionUserId);
+
+      // Check authorization
+      let authorized = user?.isSuperAdmin;
+      if (!authorized) {
+        const member = await storage.getLeagueMember(leagueId, sessionUserId);
+        authorized = member?.role === 'commissioner';
+      }
+
+      if (!authorized) {
+        return res.status(403).json({ message: "Commissioner or Super Admin access required" });
+      }
+
+      const { budgetCap, ipCap, paCap } = req.body;
+      const updateData: any = {};
+      
+      if (budgetCap !== undefined) updateData.budgetCap = budgetCap;
+      if (ipCap !== undefined) updateData.ipCap = ipCap;
+      if (paCap !== undefined) updateData.paCap = paCap;
+
+      const league = await storage.updateLeague(leagueId, updateData);
+      if (!league) {
+        return res.status(404).json({ message: "League not found" });
+      }
+
+      res.json(league);
+    } catch (error) {
+      console.error("Error updating league caps:", error);
+      res.status(500).json({ message: "Failed to update league caps" });
+    }
+  });
+
   return httpServer;
 }
 

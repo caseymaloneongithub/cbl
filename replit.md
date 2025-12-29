@@ -59,7 +59,13 @@ Preferred communication style: Simple, everyday language.
   - `allowBundledBids` (default: true): When disabled, users cannot create bid bundles for this auction
   - `extendAuctionOnBid` (default: false): When enabled, bids placed within 24 hours of auction end time automatically extend the end time by 24 hours
   - Server-side validation enforces these restrictions; frontend hides UI elements when features are disabled
-- **Commissioner Dashboard**: CSV uploads for free agents and user management, auction control (create, rename, activate, reset, delete).
+- **Commissioner Dashboard**: CSV uploads for free agents, user management, and roster management; auction control (create, rename, activate, reset, delete).
+- **Roster Management**: Track existing player contracts (player name, team abbreviation, player type, IP, PA, salary, contract years) and calculate available budgets for auctions based on league caps.
+  - League-level caps (budgetCap, ipCap, paCap) stored in `leagues` table
+  - `rosterPlayers` table stores existing contracts by team
+  - CSV upload supports flexible column headers (case-insensitive, multiple name variants)
+  - Roster usage calculated by summing IP/PA/salary from rosterPlayers per team
+  - API routes: `GET /api/leagues/:id/roster-usage`, `POST /api/leagues/:id/roster/upload`, `PATCH /api/leagues/:id/caps`, `DELETE /api/leagues/:id/roster`
 - **Budget System**: Per-auction team budgets stored in `auctionTeams` table, tracking dollar amount of bids per auction.
   - Budget calculations scope to specific auctions via `?auctionId=X` parameter
   - Home page automatically uses the active auction's ID for budget display

@@ -30,6 +30,10 @@ export const leagues = pgTable("leagues", {
   name: varchar("name", { length: 255 }).notNull(),
   slug: varchar("slug", { length: 100 }).unique().notNull(), // URL-friendly identifier
   timezone: varchar("timezone", { length: 50 }).default("America/New_York").notNull(),
+  // League-wide caps for roster management
+  budgetCap: real("budget_cap"), // Total salary cap for the league (null = no cap)
+  ipCap: real("ip_cap"), // Total innings pitched cap (null = no cap)
+  paCap: integer("pa_cap"), // Total plate appearances cap (null = no cap)
   createdById: varchar("created_by_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -64,6 +68,32 @@ export const leagueMembersRelations = relations(leagueMembers, ({ one }) => ({
   }),
   user: one(users, {
     fields: [leagueMembers.userId],
+    references: [users.id],
+  }),
+}));
+
+// Roster players table - tracks existing player contracts for each team in a league
+export const rosterPlayers = pgTable("roster_players", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  leagueId: integer("league_id").references(() => leagues.id).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(), // Team owner
+  playerName: varchar("player_name", { length: 255 }).notNull(),
+  playerType: varchar("player_type", { length: 10 }).notNull(), // 'hitter' or 'pitcher'
+  ip: real("ip"), // Innings pitched (for pitchers)
+  pa: integer("pa"), // Plate appearances (for hitters)
+  salary: real("salary").default(0).notNull(), // Annual salary
+  contractYears: integer("contract_years").default(1), // Years remaining on contract
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const rosterPlayersRelations = relations(rosterPlayers, ({ one }) => ({
+  league: one(leagues, {
+    fields: [rosterPlayers.leagueId],
+    references: [leagues.id],
+  }),
+  user: one(users, {
+    fields: [rosterPlayers.userId],
     references: [users.id],
   }),
 }));
@@ -344,6 +374,12 @@ export const insertLeagueMemberSchema = createInsertSchema(leagueMembers).omit({
   updatedAt: true,
 });
 
+export const insertRosterPlayerSchema = createInsertSchema(rosterPlayers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
@@ -411,6 +447,9 @@ export type InsertLeague = z.infer<typeof insertLeagueSchema>;
 
 export type LeagueMember = typeof leagueMembers.$inferSelect;
 export type InsertLeagueMember = z.infer<typeof insertLeagueMemberSchema>;
+
+export type RosterPlayer = typeof rosterPlayers.$inferSelect;
+export type InsertRosterPlayer = z.infer<typeof insertRosterPlayerSchema>;
 
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;

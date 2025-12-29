@@ -11,6 +11,7 @@ import {
   bidBundleItems,
   leagues,
   leagueMembers,
+  rosterPlayers,
   type User,
   type UpsertUser,
   type LeagueSettings,
@@ -38,6 +39,8 @@ import {
   type InsertLeague,
   type LeagueMember,
   type InsertLeagueMember,
+  type RosterPlayer,
+  type InsertRosterPlayer,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, lt, sql, isNull, inArray, or } from "drizzle-orm";
@@ -218,6 +221,30 @@ export interface IStorage {
   removeLeagueMember(leagueId: number, userId: string): Promise<void>;
   isLeagueCommissioner(leagueId: number, userId: string): Promise<boolean>;
   getLeagueIdFromAuction(auctionId: number): Promise<number | null>;
+  
+  // Roster player operations
+  getRosterPlayers(leagueId: number, userId?: string): Promise<(RosterPlayer & { user: User })[]>;
+  createRosterPlayer(data: InsertRosterPlayer): Promise<RosterPlayer>;
+  createRosterPlayersBulk(players: InsertRosterPlayer[]): Promise<RosterPlayer[]>;
+  updateRosterPlayer(id: number, data: Partial<InsertRosterPlayer>): Promise<RosterPlayer | undefined>;
+  deleteRosterPlayer(id: number): Promise<void>;
+  deleteAllRosterPlayers(leagueId: number, userId?: string): Promise<number>;
+  
+  // Roster cap calculations - calculates used amounts from roster players
+  getTeamRosterUsage(leagueId: number, userId: string): Promise<{
+    salaryUsed: number;
+    ipUsed: number;
+    paUsed: number;
+    playerCount: number;
+  }>;
+  getAllTeamsRosterUsage(leagueId: number): Promise<{
+    userId: string;
+    user: User;
+    salaryUsed: number;
+    ipUsed: number;
+    paUsed: number;
+    playerCount: number;
+  }[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2149,6 +2176,139 @@ export class DatabaseStorage implements IStorage {
       .from(auctions)
       .where(eq(auctions.id, auctionId));
     return auction?.leagueId ?? null;
+  }
+
+  // Roster player operations
+  async getRosterPlayers(leagueId: number, userId?: string): Promise<(RosterPlayer & { user: User })[]> {
+    const conditions = [eq(rosterPlayers.leagueId, leagueId)];
+    if (userId) {
+      conditions.push(eq(rosterPlayers.userId, userId));
+    }
+    
+    const results = await db
+      .select({
+        player: rosterPlayers,
+        user: users,
+      })
+      .from(rosterPlayers)
+      .innerJoin(users, eq(rosterPlayers.userId, users.id))
+      .where(and(...conditions))
+      .orderBy(rosterPlayers.playerName);
+    
+    return results.map(r => ({
+      ...r.player,
+      user: r.user,
+    }));
+  }
+
+  async createRosterPlayer(data: InsertRosterPlayer): Promise<RosterPlayer> {
+    const [player] = await db.insert(rosterPlayers).values(data).returning();
+    return player;
+  }
+
+  async createRosterPlayersBulk(players: InsertRosterPlayer[]): Promise<RosterPlayer[]> {
+    if (players.length === 0) return [];
+    const result = await db.insert(rosterPlayers).values(players).returning();
+    return result;
+  }
+
+  async updateRosterPlayer(id: number, data: Partial<InsertRosterPlayer>): Promise<RosterPlayer | undefined> {
+    const [player] = await db
+      .update(rosterPlayers)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(rosterPlayers.id, id))
+      .returning();
+    return player;
+  }
+
+  async deleteRosterPlayer(id: number): Promise<void> {
+    await db.delete(rosterPlayers).where(eq(rosterPlayers.id, id));
+  }
+
+  async deleteAllRosterPlayers(leagueId: number, userId?: string): Promise<number> {
+    const conditions = [eq(rosterPlayers.leagueId, leagueId)];
+    if (userId) {
+      conditions.push(eq(rosterPlayers.userId, userId));
+    }
+    const result = await db.delete(rosterPlayers).where(and(...conditions)).returning();
+    return result.length;
+  }
+
+  async getTeamRosterUsage(leagueId: number, userId: string): Promise<{
+    salaryUsed: number;
+    ipUsed: number;
+    paUsed: number;
+    playerCount: number;
+  }> {
+    const players = await db
+      .select()
+      .from(rosterPlayers)
+      .where(and(
+        eq(rosterPlayers.leagueId, leagueId),
+        eq(rosterPlayers.userId, userId)
+      ));
+    
+    let salaryUsed = 0;
+    let ipUsed = 0;
+    let paUsed = 0;
+    
+    for (const player of players) {
+      salaryUsed += player.salary || 0;
+      if (player.playerType === 'pitcher' && player.ip) {
+        ipUsed += player.ip;
+      }
+      if (player.playerType === 'hitter' && player.pa) {
+        paUsed += player.pa;
+      }
+    }
+    
+    return {
+      salaryUsed,
+      ipUsed,
+      paUsed,
+      playerCount: players.length,
+    };
+  }
+
+  async getAllTeamsRosterUsage(leagueId: number): Promise<{
+    userId: string;
+    user: User;
+    salaryUsed: number;
+    ipUsed: number;
+    paUsed: number;
+    playerCount: number;
+  }[]> {
+    // Get all league members
+    const members = await this.getLeagueMembers(leagueId);
+    
+    // Get all roster players for this league
+    const allPlayers = await db
+      .select()
+      .from(rosterPlayers)
+      .where(eq(rosterPlayers.leagueId, leagueId));
+    
+    // Group players by user and calculate usage
+    const usageByUser = new Map<string, { salaryUsed: number; ipUsed: number; paUsed: number; playerCount: number }>();
+    
+    for (const player of allPlayers) {
+      const current = usageByUser.get(player.userId) || { salaryUsed: 0, ipUsed: 0, paUsed: 0, playerCount: 0 };
+      current.salaryUsed += player.salary || 0;
+      if (player.playerType === 'pitcher' && player.ip) {
+        current.ipUsed += player.ip;
+      }
+      if (player.playerType === 'hitter' && player.pa) {
+        current.paUsed += player.pa;
+      }
+      current.playerCount += 1;
+      usageByUser.set(player.userId, current);
+    }
+    
+    // Return usage for all members (including those with no roster players)
+    return members.map(member => ({
+      userId: member.userId,
+      user: member.user,
+      ...(usageByUser.get(member.userId) || { salaryUsed: 0, ipUsed: 0, paUsed: 0, playerCount: 0 }),
+    }));
   }
 }
 
