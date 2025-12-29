@@ -2310,6 +2310,74 @@ export class DatabaseStorage implements IStorage {
       ...(usageByUser.get(member.userId) || { salaryUsed: 0, ipUsed: 0, paUsed: 0, playerCount: 0 }),
     }));
   }
+
+  // Sync auction team limits from roster usage (calculate available = league cap - roster usage)
+  async syncAuctionLimitsFromRoster(auctionId: number): Promise<{ updated: number; teams: { userId: string; budget: number; ipLimit: number | null; paLimit: number | null }[] }> {
+    // Get the auction and its league
+    const auction = await this.getAuction(auctionId);
+    if (!auction || !auction.leagueId) {
+      throw new Error("Auction or league not found");
+    }
+
+    // Get the league to access caps
+    const league = await this.getLeague(auction.leagueId);
+    if (!league) {
+      throw new Error("League not found");
+    }
+
+    // Get roster usage for all teams
+    const rosterUsage = await this.getAllTeamsRosterUsage(auction.leagueId);
+
+    // Get all auction teams
+    const teams = await db
+      .select()
+      .from(auctionTeams)
+      .where(eq(auctionTeams.auctionId, auctionId));
+
+    const updatedTeams: { userId: string; budget: number; ipLimit: number | null; paLimit: number | null }[] = [];
+
+    // Update each team's limits based on available capacity
+    for (const team of teams) {
+      const usage = rosterUsage.find(u => u.userId === team.userId);
+      // Default to zero usage if team has no roster data
+      const salaryUsed = usage?.salaryUsed ?? 0;
+      const ipUsed = usage?.ipUsed ?? 0;
+      const paUsed = usage?.paUsed ?? 0;
+      
+      // Calculate available = cap - used
+      // If cap is set, use cap minus used; otherwise use auction default (for budget) or null (for IP/PA)
+      const availableBudget = league.budgetCap !== null 
+        ? Math.max(0, league.budgetCap - salaryUsed) 
+        : auction.defaultBudget;
+      
+      const availableIp = league.ipCap !== null 
+        ? Math.max(0, league.ipCap - ipUsed) 
+        : null;
+      
+      const availablePa = league.paCap !== null 
+        ? Math.max(0, league.paCap - paUsed) 
+        : null;
+
+      await db
+        .update(auctionTeams)
+        .set({
+          budget: availableBudget,
+          ipLimit: availableIp,
+          paLimit: availablePa,
+          updatedAt: new Date(),
+        })
+        .where(eq(auctionTeams.id, team.id));
+
+      updatedTeams.push({
+        userId: team.userId,
+        budget: availableBudget,
+        ipLimit: availableIp,
+        paLimit: availablePa,
+      });
+    }
+
+    return { updated: updatedTeams.length, teams: updatedTeams };
+  }
 }
 
 export const storage = new DatabaseStorage();

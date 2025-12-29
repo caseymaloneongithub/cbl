@@ -142,6 +142,8 @@ export const auctions = pgTable("auctions", {
   allowAutoBidding: boolean("allow_auto_bidding").default(true).notNull(),
   allowBundledBids: boolean("allow_bundled_bids").default(true).notNull(),
   extendAuctionOnBid: boolean("extend_auction_on_bid").default(false).notNull(), // Push back end time 24h when bid placed within 24h
+  // Limit source: 'manual' = use uploaded/entered limits, 'roster' = derive from league caps minus roster usage
+  limitSource: varchar("limit_source", { length: 20 }).default("manual").notNull(),
   createdById: varchar("created_by_id").references(() => users.id),
   isDeleted: boolean("is_deleted").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow(),

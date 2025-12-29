@@ -2661,6 +2661,52 @@ export async function registerRoutes(
     }
   });
 
+  // Sync auction limits from roster usage (calculate available = league cap - roster usage)
+  app.post("/api/auctions/:id/sync-from-roster", isAuthenticated, async (req: any, res) => {
+    try {
+      const sessionUserId = req.session.originalUserId || req.session.userId!;
+      const auctionId = parseInt(req.params.id);
+      
+      // Check commissioner access for this auction's league
+      if (!await hasAuctionCommissionerAccess(sessionUserId, auctionId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      // Get the auction to check if it has a league
+      const auction = await storage.getAuction(auctionId);
+      if (!auction || !auction.leagueId) {
+        return res.status(404).json({ message: "Auction not found or not associated with a league" });
+      }
+
+      // Get the league to check if caps are set
+      const league = await storage.getLeague(auction.leagueId);
+      if (!league) {
+        return res.status(404).json({ message: "League not found" });
+      }
+
+      if (league.budgetCap === null && league.ipCap === null && league.paCap === null) {
+        return res.status(400).json({ 
+          message: "No league caps configured. Please set budget, IP, or PA caps in Roster Management first." 
+        });
+      }
+
+      // Sync limits from roster
+      const result = await storage.syncAuctionLimitsFromRoster(auctionId);
+      
+      // Update the auction to use roster-derived limits
+      await storage.updateAuction(auctionId, { limitSource: "roster" });
+
+      res.json({ 
+        success: true, 
+        message: `Updated limits for ${result.updated} teams based on roster usage.`,
+        teams: result.teams
+      });
+    } catch (error) {
+      console.error("Error syncing auction limits from roster:", error);
+      res.status(500).json({ message: "Failed to sync auction limits from roster" });
+    }
+  });
+
   // ================== LEAGUE MANAGEMENT ROUTES ==================
 
   // Get all leagues for the current user (or all leagues for super admin)

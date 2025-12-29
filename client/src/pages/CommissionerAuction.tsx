@@ -302,6 +302,30 @@ export default function CommissionerAuction() {
     },
   });
 
+  // Sync limits from roster mutation
+  const syncFromRoster = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", `/api/auctions/${numericAuctionId}/sync-from-roster`);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/auctions', numericAuctionId, 'teams'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/auctions', numericAuctionId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/limits'] });
+      toast({
+        title: "Limits Synced",
+        description: data.message || "Team limits have been updated based on roster usage.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to sync limits from roster.",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Enroll teams mutation
   const enrollTeams = useMutation({
     mutationFn: async (data: { userIds: string[]; budget: number; rosterLimit?: number; ipLimit?: number; paLimit?: number }) => {
@@ -1206,12 +1230,30 @@ export default function CommissionerAuction() {
             </CardTitle>
             <CardDescription>
               Manage team budgets and limits for this auction. Leave blank for unlimited.
+              {auction?.limitSource === "roster" && (
+                <Badge variant="secondary" className="ml-2">Roster-Based Limits</Badge>
+              )}
             </CardDescription>
           </div>
-          <Button onClick={() => setEnrollDialogOpen(true)} data-testid="button-enroll-teams">
-            <Plus className="mr-2 h-4 w-4" />
-            Enroll Teams
-          </Button>
+          <div className="flex gap-2 flex-wrap">
+            <Button 
+              variant="outline"
+              onClick={() => syncFromRoster.mutate()}
+              disabled={syncFromRoster.isPending}
+              data-testid="button-sync-from-roster"
+            >
+              {syncFromRoster.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCcw className="mr-2 h-4 w-4" />
+              )}
+              Sync from Roster
+            </Button>
+            <Button onClick={() => setEnrollDialogOpen(true)} data-testid="button-enroll-teams">
+              <Plus className="mr-2 h-4 w-4" />
+              Enroll Teams
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {teamsLoading ? (

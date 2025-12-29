@@ -66,6 +66,11 @@ Preferred communication style: Simple, everyday language.
   - CSV upload supports flexible column headers (case-insensitive, multiple name variants)
   - Roster usage calculated by summing IP/PA/salary from rosterPlayers per team
   - API routes: `GET /api/leagues/:id/roster-usage`, `POST /api/leagues/:id/roster/upload`, `PATCH /api/leagues/:id/caps`, `DELETE /api/leagues/:id/roster`
+- **Auction Limit Source**: Auctions can derive team limits from rosters or use manually uploaded/entered values.
+  - `limitSource` field in auctions table: "manual" (default) or "roster"
+  - "Sync from Roster" button calculates available = league cap - roster usage for each team
+  - Teams with no roster data get full league cap values
+  - API route: `POST /api/auctions/:id/sync-from-roster`
 - **Budget System**: Per-auction team budgets stored in `auctionTeams` table, tracking dollar amount of bids per auction.
   - Budget calculations scope to specific auctions via `?auctionId=X` parameter
   - Home page automatically uses the active auction's ID for budget display
