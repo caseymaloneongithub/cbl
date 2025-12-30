@@ -365,6 +365,25 @@ export const bidBundleItemsRelations = relations(bidBundleItems, ({ one }) => ({
   }),
 }));
 
+// Email opt-outs table - tracks users who have opted out of email notifications per auction
+export const emailOptOuts = pgTable("email_opt_outs", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  auctionId: integer("auction_id").references(() => auctions.id).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const emailOptOutsRelations = relations(emailOptOuts, ({ one }) => ({
+  auction: one(auctions, {
+    fields: [emailOptOuts.auctionId],
+    references: [auctions.id],
+  }),
+  user: one(users, {
+    fields: [emailOptOuts.userId],
+    references: [users.id],
+  }),
+}));
+
 // Insert schemas
 export const insertLeagueSchema = createInsertSchema(leagues).omit({
   id: true,
@@ -445,6 +464,11 @@ export const insertBidBundleItemSchema = createInsertSchema(bidBundleItems).omit
   createdAt: true,
 });
 
+export const insertEmailOptOutSchema = createInsertSchema(emailOptOuts).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type League = typeof leagues.$inferSelect;
 export type InsertLeague = z.infer<typeof insertLeagueSchema>;
@@ -485,6 +509,9 @@ export type InsertBidBundle = z.infer<typeof insertBidBundleSchema>;
 
 export type BidBundleItem = typeof bidBundleItems.$inferSelect;
 export type InsertBidBundleItem = z.infer<typeof insertBidBundleItemSchema>;
+
+export type EmailOptOut = typeof emailOptOuts.$inferSelect;
+export type InsertEmailOptOut = z.infer<typeof insertEmailOptOutSchema>;
 
 // Extended types for frontend use
 export type FreeAgentWithBids = FreeAgent & {

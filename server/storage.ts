@@ -12,6 +12,7 @@ import {
   leagues,
   leagueMembers,
   rosterPlayers,
+  emailOptOuts,
   type User,
   type UpsertUser,
   type LeagueSettings,
@@ -199,6 +200,11 @@ export interface IStorage {
   }>;
   getLeagueMembersEmails(leagueId: number): Promise<Array<{ email: string; firstName: string | null }>>;
   getLeagueCommissionerEmail(leagueId: number): Promise<{ email: string; firstName: string | null } | null>;
+  
+  // Email opt-outs
+  getEmailOptOut(auctionId: number, userId: string): Promise<boolean>;
+  setEmailOptOut(auctionId: number, userId: string, optedOut: boolean): Promise<void>;
+  getOptedOutUserIds(auctionId: number): Promise<string[]>;
   
   // Bid bundles
   getBidBundle(id: number): Promise<BidBundleWithItems | undefined>;
@@ -1836,6 +1842,43 @@ export class DatabaseStorage implements IStorage {
       ))
       .limit(1);
     return commissioner || null;
+  }
+
+  // Email opt-out operations
+  async getEmailOptOut(auctionId: number, userId: string): Promise<boolean> {
+    const [optOut] = await db
+      .select()
+      .from(emailOptOuts)
+      .where(and(
+        eq(emailOptOuts.auctionId, auctionId),
+        eq(emailOptOuts.userId, userId)
+      ))
+      .limit(1);
+    return !!optOut;
+  }
+
+  async setEmailOptOut(auctionId: number, userId: string, optedOut: boolean): Promise<void> {
+    if (optedOut) {
+      // Check if already opted out
+      const existing = await this.getEmailOptOut(auctionId, userId);
+      if (!existing) {
+        await db.insert(emailOptOuts).values({ auctionId, userId });
+      }
+    } else {
+      // Remove opt-out
+      await db.delete(emailOptOuts).where(and(
+        eq(emailOptOuts.auctionId, auctionId),
+        eq(emailOptOuts.userId, userId)
+      ));
+    }
+  }
+
+  async getOptedOutUserIds(auctionId: number): Promise<string[]> {
+    const optOuts = await db
+      .select({ userId: emailOptOuts.userId })
+      .from(emailOptOuts)
+      .where(eq(emailOptOuts.auctionId, auctionId));
+    return optOuts.map(o => o.userId);
   }
 
   private async getBid(bidId: number): Promise<Bid | undefined> {
