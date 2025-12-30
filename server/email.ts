@@ -360,7 +360,7 @@ This is an automated hourly summary from CBL Auctions.${optOutText}
 
   return sendEmail({
     to,
-    subject: `CBL Auctions - Hourly Results Summary (${results.length} closed)`,
+    subject: `CBL Auctions - Results Summary (${results.length} closed)`,
     html,
     text,
   });
