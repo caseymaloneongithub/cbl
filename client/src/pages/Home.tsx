@@ -1,15 +1,18 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useLeague } from "@/hooks/useLeague";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DualProgress } from "@/components/ui/dual-progress";
 import { Badge } from "@/components/ui/badge";
-import { Users, Gavel, Trophy, Clock, DollarSign, AlertCircle, Globe } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Users, Gavel, Trophy, Clock, DollarSign, AlertCircle, Globe, Mail } from "lucide-react";
 import type { FreeAgentWithBids, UserWithStats, Auction } from "@shared/schema";
 import { FreeAgentsTable } from "@/components/FreeAgentsTable";
 import { formatCurrency } from "@/lib/utils";
-import { REFRESH_INTERVAL } from "@/lib/queryClient";
+import { REFRESH_INTERVAL, apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Home() {
   const { user } = useAuth();
@@ -130,6 +133,44 @@ export default function Home() {
   });
 
   const activeAgents = freeAgents?.filter(a => a.isActive) || [];
+  
+  const { toast } = useToast();
+
+  // Email opt-out query - only show for league-wide notifications
+  const { data: emailOptOut, isLoading: loadingEmailOptOut } = useQuery<{ optedOut: boolean }>({
+    queryKey: ["/api/auctions", activeAuction?.id, "email-opt-out"],
+    queryFn: async () => {
+      if (!activeAuction?.id) return { optedOut: false };
+      const res = await fetch(`/api/auctions/${activeAuction.id}/email-opt-out`, { credentials: "include" });
+      if (!res.ok) return { optedOut: false };
+      return res.json();
+    },
+    enabled: !!activeAuction?.id && activeAuction?.emailNotifications === "league",
+  });
+
+  const emailOptOutMutation = useMutation({
+    mutationFn: async (optedOut: boolean) => {
+      if (!activeAuction?.id) throw new Error("No active auction");
+      await apiRequest("POST", `/api/auctions/${activeAuction.id}/email-opt-out`, { optedOut });
+      return optedOut;
+    },
+    onSuccess: (optedOut) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auctions", activeAuction?.id, "email-opt-out"] });
+      toast({
+        title: "Email preferences updated",
+        description: optedOut 
+          ? "You will no longer receive hourly auction result emails." 
+          : "You will now receive hourly auction result emails.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update email preferences",
+        variant: "destructive",
+      });
+    },
+  });
 
   // Show message if user is not part of any league
   if (!isLoadingLeagues && leagues.length === 0) {
@@ -185,6 +226,23 @@ export default function Home() {
         <p className="text-muted-foreground">
           {currentLeague?.teamName ? `Managing ${currentLeague.teamName}` : "Ready to build your championship team"}
         </p>
+        
+        {/* Email notification opt-out - only show for league-wide notifications */}
+        {activeAuction?.emailNotifications === "league" && !loadingEmailOptOut && (
+          <div className="flex items-center gap-2 mt-3 text-sm">
+            <Mail className="h-4 w-4 text-muted-foreground" />
+            <Label htmlFor="email-opt-out" className="text-muted-foreground cursor-pointer">
+              Receive hourly results emails
+            </Label>
+            <Switch
+              id="email-opt-out"
+              data-testid="switch-email-notifications"
+              checked={!emailOptOut?.optedOut}
+              disabled={emailOptOutMutation.isPending}
+              onCheckedChange={(checked) => emailOptOutMutation.mutate(!checked)}
+            />
+          </div>
+        )}
       </div>
 
       {/* Stats Cards */}
