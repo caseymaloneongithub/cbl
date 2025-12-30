@@ -2707,6 +2707,39 @@ export async function registerRoutes(
     }
   });
 
+  // Get user's email opt-out status for an auction
+  app.get("/api/auctions/:id/email-opt-out", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const auctionId = parseInt(req.params.id);
+      
+      const optedOut = await storage.getEmailOptOut(auctionId, userId);
+      res.json({ optedOut });
+    } catch (error) {
+      console.error("Error getting email opt-out status:", error);
+      res.status(500).json({ message: "Failed to get email opt-out status" });
+    }
+  });
+
+  // Toggle user's email opt-out status for an auction
+  app.post("/api/auctions/:id/email-opt-out", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const auctionId = parseInt(req.params.id);
+      const { optedOut } = req.body;
+      
+      if (typeof optedOut !== 'boolean') {
+        return res.status(400).json({ message: "optedOut must be a boolean" });
+      }
+      
+      await storage.setEmailOptOut(auctionId, userId, optedOut);
+      res.json({ success: true, optedOut });
+    } catch (error) {
+      console.error("Error setting email opt-out status:", error);
+      res.status(500).json({ message: "Failed to set email opt-out status" });
+    }
+  });
+
   // ================== LEAGUE MANAGEMENT ROUTES ==================
 
   // Get all leagues for the current user (or all leagues for super admin)

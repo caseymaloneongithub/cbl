@@ -198,7 +198,7 @@ export interface IStorage {
       leagueId: number | null;
     }>;
   }>;
-  getLeagueMembersEmails(leagueId: number): Promise<Array<{ email: string; firstName: string | null }>>;
+  getLeagueMembersEmails(leagueId: number): Promise<Array<{ email: string; firstName: string | null; userId: string }>>;
   getLeagueCommissionerEmail(leagueId: number): Promise<{ email: string; firstName: string | null } | null>;
   
   // Email opt-outs
@@ -1813,11 +1813,12 @@ export class DatabaseStorage implements IStorage {
     return { withBids, noBids };
   }
 
-  async getLeagueMembersEmails(leagueId: number): Promise<Array<{ email: string; firstName: string | null }>> {
+  async getLeagueMembersEmails(leagueId: number): Promise<Array<{ email: string; firstName: string | null; userId: string }>> {
     const members = await db
       .select({
         email: users.email,
         firstName: users.firstName,
+        odataId: users.id,
       })
       .from(leagueMembers)
       .innerJoin(users, eq(leagueMembers.userId, users.id))
@@ -1825,7 +1826,7 @@ export class DatabaseStorage implements IStorage {
         eq(leagueMembers.leagueId, leagueId),
         eq(leagueMembers.isArchived, false)
       ));
-    return members;
+    return members.map(m => ({ email: m.email, firstName: m.firstName, userId: m.odataId }));
   }
 
   async getLeagueCommissionerEmail(leagueId: number): Promise<{ email: string; firstName: string | null } | null> {

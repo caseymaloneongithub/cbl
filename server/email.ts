@@ -201,10 +201,18 @@ interface AuctionResult {
   noBids?: boolean;
 }
 
+interface AuctionResultsEmailOptions {
+  to: string;
+  recipientName: string;
+  results: AuctionResult[];
+  optOutLink?: string; // Optional link to manage email preferences
+}
+
 export async function sendAuctionResultsSummaryEmail(
   to: string,
   adminName: string,
-  results: AuctionResult[]
+  results: AuctionResult[],
+  optOutLink?: string
 ): Promise<{ success: boolean; error?: string }> {
   const withBids = results.filter(r => !r.noBids);
   const noBids = results.filter(r => r.noBids);
@@ -311,6 +319,11 @@ export async function sendAuctionResultsSummaryEmail(
     <p style="color: #999; font-size: 12px; text-align: center;">
       This is an automated hourly summary from CBL Auctions.
     </p>
+    ${optOutLink ? `
+    <p style="color: #999; font-size: 11px; text-align: center; margin-top: 10px;">
+      <a href="${optOutLink}" style="color: #666; text-decoration: underline;">Manage email preferences</a>
+    </p>
+    ` : ''}
   </div>
 </body>
 </html>
@@ -328,6 +341,8 @@ export async function sendAuctionResultsSummaryEmail(
       ).join('\n')
     : '';
 
+  const optOutText = optOutLink ? `\nTo manage your email preferences, visit: ${optOutLink}` : '';
+  
   const text = `
 Hourly Auction Results Summary - CBL Auctions
 
@@ -340,7 +355,7 @@ Won: ${withBids.length} | No Bids: ${noBids.length}
 ${withBidsText}
 ${noBidsText}
 
-This is an automated hourly summary from CBL Auctions.
+This is an automated hourly summary from CBL Auctions.${optOutText}
   `;
 
   return sendEmail({

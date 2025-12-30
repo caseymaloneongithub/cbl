@@ -254,7 +254,7 @@ async function runHourlySummaryEmail() {
       ];
       
       // Get recipients based on emailNotifications setting
-      let recipients: Array<{ email: string; firstName: string | null }> = [];
+      let recipients: Array<{ email: string; firstName: string | null; userId?: string }> = [];
       
       if (sendToSuperAdminOnly) {
         // Fallback to super admin for auctions with "none" or no league
@@ -272,11 +272,20 @@ async function runHourlySummaryEmail() {
           log(`Auction ${auctionId} no commissioner found, using super admin fallback`, "email-job");
         }
       } else if (group.emailNotifications === "league") {
-        recipients = await storage.getLeagueMembersEmails(group.leagueId!);
+        const allMembers = await storage.getLeagueMembersEmails(group.leagueId!);
+        // Filter out users who have opted out of emails for this auction
+        const optedOutUserIds = await storage.getOptedOutUserIds(auctionId);
+        const filteredMembers = allMembers.filter(m => !optedOutUserIds.includes(m.userId));
+        recipients = filteredMembers;
+        
+        if (optedOutUserIds.length > 0) {
+          log(`Auction ${auctionId}: ${optedOutUserIds.length} users opted out of emails`, "email-job");
+        }
+        
         if (recipients.length === 0 && superAdmin) {
-          // Secondary fallback to super admin if no league members found
-          recipients = [{ email: superAdmin.email, firstName: superAdmin.firstName }];
-          log(`Auction ${auctionId} no league members found, using super admin fallback`, "email-job");
+          // Secondary fallback to super admin if no league members found (after opt-outs)
+          recipients = [{ email: superAdmin.email, firstName: superAdmin.firstName, userId: superAdmin.id }];
+          log(`Auction ${auctionId} no league members found (after opt-outs), using super admin fallback`, "email-job");
         }
       }
       
@@ -285,13 +294,22 @@ async function runHourlySummaryEmail() {
         continue;
       }
       
+      // Build opt-out link for league-wide notifications
+      const appUrl = process.env.REPLIT_DEV_DOMAIN 
+        ? `https://${process.env.REPLIT_DEV_DOMAIN}` 
+        : process.env.REPLIT_DEPLOYMENT_DOMAIN 
+          ? `https://${process.env.REPLIT_DEPLOYMENT_DOMAIN}`
+          : 'https://cbl-auctions.replit.app';
+      const optOutLink = group.emailNotifications === "league" ? `${appUrl}` : undefined;
+      
       // Send email to each recipient
       for (const recipient of recipients) {
         const recipientName = recipient.firstName || "Team Owner";
         const emailResult = await sendAuctionResultsSummaryEmail(
           recipient.email,
           recipientName,
-          results
+          results,
+          optOutLink
         );
         
         if (emailResult.success) {
