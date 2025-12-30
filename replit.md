@@ -99,6 +99,11 @@ Preferred communication style: Simple, everyday language.
   - "commissioner" sends hourly results to league commissioner only
   - "league" sends hourly results to all league members
   - Configurable in Auction Settings dialog
+  - **Individual Opt-Out**: Team owners can opt out of league-wide emails via toggle on Home page
+    - `emailOptOuts` table stores per-auction opt-out preferences (auctionId, userId)
+    - API: `GET/POST /api/auctions/:id/email-opt-out`
+    - Opt-out toggle only visible when auction has `emailNotifications="league"`
+    - Email footer includes link to manage preferences for league-wide notifications
 
 ## External Dependencies
 
