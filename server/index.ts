@@ -287,6 +287,21 @@ async function runHourlySummaryEmail() {
           recipients = [{ email: superAdmin.email, firstName: superAdmin.firstName, userId: superAdmin.id }];
           log(`Auction ${auctionId} no league members found (after opt-outs), using super admin fallback`, "email-job");
         }
+      } else if (group.emailNotifications === "bidders") {
+        // Get unique bidders across all closing free agents in this auction
+        const closingFreeAgentIds = [
+          ...group.withBids.map(r => r.agent.id),
+          ...group.noBids.map(r => r.agent.id),
+        ];
+        const bidders = await storage.getBidderEmailsForFreeAgents(closingFreeAgentIds);
+        recipients = bidders;
+        log(`Auction ${auctionId}: Found ${bidders.length} unique bidders for ${closingFreeAgentIds.length} closing auctions`, "email-job");
+        
+        if (recipients.length === 0 && superAdmin) {
+          // Fallback to super admin if no bidders found
+          recipients = [{ email: superAdmin.email, firstName: superAdmin.firstName, userId: superAdmin.id }];
+          log(`Auction ${auctionId} no bidders found, using super admin fallback`, "email-job");
+        }
       }
       
       if (recipients.length === 0) {

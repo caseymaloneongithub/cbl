@@ -205,6 +205,7 @@ export interface IStorage {
   getEmailOptOut(auctionId: number, userId: string): Promise<boolean>;
   setEmailOptOut(auctionId: number, userId: string, optedOut: boolean): Promise<void>;
   getOptedOutUserIds(auctionId: number): Promise<string[]>;
+  getBidderEmailsForFreeAgents(freeAgentIds: number[]): Promise<Array<{ email: string; firstName: string | null; userId: string }>>;
   
   // Bid bundles
   getBidBundle(id: number): Promise<BidBundleWithItems | undefined>;
@@ -1880,6 +1881,22 @@ export class DatabaseStorage implements IStorage {
       .from(emailOptOuts)
       .where(eq(emailOptOuts.auctionId, auctionId));
     return optOuts.map(o => o.userId);
+  }
+
+  async getBidderEmailsForFreeAgents(freeAgentIds: number[]): Promise<Array<{ email: string; firstName: string | null; userId: string }>> {
+    if (freeAgentIds.length === 0) return [];
+    
+    const bidders = await db
+      .selectDistinct({
+        email: users.email,
+        firstName: users.firstName,
+        odataId: users.id,
+      })
+      .from(bids)
+      .innerJoin(users, eq(bids.userId, users.id))
+      .where(inArray(bids.freeAgentId, freeAgentIds));
+    
+    return bidders.map(b => ({ email: b.email, firstName: b.firstName, userId: b.odataId }));
   }
 
   private async getBid(bidId: number): Promise<Bid | undefined> {

@@ -1225,6 +1225,7 @@ export default function CommissionerAuction() {
                           <SelectContent>
                             <SelectItem value="none">No emails</SelectItem>
                             <SelectItem value="commissioner">Commissioner only</SelectItem>
+                            <SelectItem value="bidders">Bidders only</SelectItem>
                             <SelectItem value="league">Entire league</SelectItem>
                           </SelectContent>
                         </Select>

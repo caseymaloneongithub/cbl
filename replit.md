@@ -95,8 +95,9 @@ Preferred communication style: Simple, everyday language.
   - Hourly Email Summary: Per-auction email notification setting controls who receives results emails
   - "Ending Today" calculation uses Eastern Time for midnight boundary
 - **Email Notifications**: Resend integration for password reset, new user credentials, and hourly auction summaries
-  - Per-auction `emailNotifications` setting with values: "none" (default), "commissioner", or "league"
+  - Per-auction `emailNotifications` setting with values: "none" (default), "commissioner", "bidders", or "league"
   - "commissioner" sends hourly results to league commissioner only
+  - "bidders" sends hourly results only to teams who submitted bids on the closing auctions (deduplicated - one email per user even if they bid on multiple players)
   - "league" sends hourly results to all league members
   - Configurable in Auction Settings dialog
   - **Individual Opt-Out**: Team owners can opt out of league-wide emails via toggle on Home page
