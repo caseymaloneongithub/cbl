@@ -144,8 +144,8 @@ export const auctions = pgTable("auctions", {
   extendAuctionOnBid: boolean("extend_auction_on_bid").default(false).notNull(), // Push back end time 24h when bid placed within 24h
   // Limit source: 'manual' = use uploaded/entered limits, 'roster' = derive from league caps minus roster usage
   limitSource: varchar("limit_source", { length: 20 }).default("manual").notNull(),
-  // Email notification setting: 'none' = no emails, 'commissioner' = commissioner only, 'league' = all league members
-  emailNotifications: varchar("email_notifications", { length: 20 }).default("none").notNull(),
+  // Email notification setting: 'none' = no emails, 'commissioner' = commissioner only, 'bidders' = only teams who bid, 'league' = all league members
+  emailNotifications: varchar("email_notifications", { length: 20 }).default("bidders").notNull(),
   createdById: varchar("created_by_id").references(() => users.id),
   isDeleted: boolean("is_deleted").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow(),

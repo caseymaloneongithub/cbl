@@ -85,7 +85,7 @@ const settingsSchema = z.object({
   allowAutoBidding: z.boolean(),
   allowBundledBids: z.boolean(),
   extendAuctionOnBid: z.boolean(),
-  emailNotifications: z.enum(["none", "commissioner", "league"]),
+  emailNotifications: z.enum(["none", "commissioner", "bidders", "league"]),
 });
 
 const addPlayerSchema = z.object({
@@ -252,7 +252,7 @@ export default function CommissionerAuction() {
         allowAutoBidding: auction.allowAutoBidding ?? true,
         allowBundledBids: auction.allowBundledBids ?? true,
         extendAuctionOnBid: auction.extendAuctionOnBid ?? false,
-        emailNotifications: (auction.emailNotifications as "none" | "commissioner" | "league") ?? "none",
+        emailNotifications: (auction.emailNotifications as "none" | "commissioner" | "bidders" | "league") ?? "bidders",
       });
     }
   }, [auction, settingsForm]);
