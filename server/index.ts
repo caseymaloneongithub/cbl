@@ -163,7 +163,7 @@ async function runFinalization() {
   }
 }
 
-// Background job to send hourly summary email to super admin
+// Background job to send hourly summary email based on auction settings
 function startHourlySummaryEmailJob() {
   const INTERVAL_MS = 60 * 60 * 1000; // 1 hour
   
@@ -175,57 +175,134 @@ function startHourlySummaryEmailJob() {
 
 async function runHourlySummaryEmail() {
   try {
-    // Get the super admin
-    const superAdmin = await storage.getSuperAdmin();
-    if (!superAdmin) {
-      log("No super admin found, skipping hourly summary email", "email-job");
-      return;
-    }
-    
     // Get auctions that closed in the last hour
     const recentResults = await storage.getRecentlyClosedAuctions(1);
     
     const totalClosed = recentResults.withBids.length + recentResults.noBids.length;
     
-    // Only send email if there are results
+    // Only send emails if there are results
     if (totalClosed === 0) {
       log("No auctions closed in the last hour, skipping email", "email-job");
       return;
     }
     
-    // Format results for email
-    const results = [
-      ...recentResults.withBids.map(r => ({
-        playerName: r.agent.name,
-        team: r.agent.team || "N/A",
-        auctionName: r.auctionName,
-        winnerName: `${r.winner.firstName} ${r.winner.lastName}`,
-        winnerTeam: r.winner.teamName || "Unknown",
-        amount: r.winningBid.amount,
-        years: r.winningBid.years,
-        noBids: false,
-      })),
-      ...recentResults.noBids.map(r => ({
-        playerName: r.agent.name,
-        team: r.agent.team || "N/A",
-        auctionName: r.auctionName,
-        noBids: true,
-      })),
-    ];
+    // Group results by auction and email notification setting
+    const auctionGroups = new Map<number, {
+      auctionName: string;
+      emailNotifications: string;
+      leagueId: number | null;
+      withBids: typeof recentResults.withBids;
+      noBids: typeof recentResults.noBids;
+    }>();
     
-    // Send email
-    const adminName = superAdmin.firstName || "Admin";
-    const emailResult = await sendAuctionResultsSummaryEmail(
-      superAdmin.email,
-      adminName,
-      results
-    );
-    
-    if (emailResult.success) {
-      log(`Hourly summary email sent to ${superAdmin.email} (${totalClosed} auctions)`, "email-job");
-    } else {
-      log(`Failed to send hourly summary email: ${emailResult.error}`, "email-job");
+    for (const result of recentResults.withBids) {
+      if (!auctionGroups.has(result.auctionId)) {
+        auctionGroups.set(result.auctionId, {
+          auctionName: result.auctionName,
+          emailNotifications: result.emailNotifications,
+          leagueId: result.leagueId,
+          withBids: [],
+          noBids: [],
+        });
+      }
+      auctionGroups.get(result.auctionId)!.withBids.push(result);
     }
+    
+    for (const result of recentResults.noBids) {
+      if (!auctionGroups.has(result.auctionId)) {
+        auctionGroups.set(result.auctionId, {
+          auctionName: result.auctionName,
+          emailNotifications: result.emailNotifications,
+          leagueId: result.leagueId,
+          withBids: [],
+          noBids: [],
+        });
+      }
+      auctionGroups.get(result.auctionId)!.noBids.push(result);
+    }
+    
+    // Get super admin for fallback notifications
+    const superAdmin = await storage.getSuperAdmin();
+    if (!superAdmin) {
+      log("WARN: No super admin found - fallback notifications will be unavailable", "email-job");
+    }
+    
+    // Process each auction's email settings
+    const auctionEntries = Array.from(auctionGroups.entries());
+    for (const [auctionId, group] of auctionEntries) {
+      // Auctions with "none" notifications or no league get sent to super admin only
+      const sendToSuperAdminOnly = group.emailNotifications === "none" || !group.leagueId;
+      
+      // Format results for email
+      const results = [
+        ...group.withBids.map((r: typeof recentResults.withBids[0]) => ({
+          playerName: r.agent.name,
+          team: r.agent.team || "N/A",
+          auctionName: r.auctionName,
+          winnerName: `${r.winner.firstName} ${r.winner.lastName}`,
+          winnerTeam: r.winner.teamName || "Unknown",
+          amount: r.winningBid.amount,
+          years: r.winningBid.years,
+          noBids: false,
+        })),
+        ...group.noBids.map((r: typeof recentResults.noBids[0]) => ({
+          playerName: r.agent.name,
+          team: r.agent.team || "N/A",
+          auctionName: r.auctionName,
+          noBids: true,
+        })),
+      ];
+      
+      // Get recipients based on emailNotifications setting
+      let recipients: Array<{ email: string; firstName: string | null }> = [];
+      
+      if (sendToSuperAdminOnly) {
+        // Fallback to super admin for auctions with "none" or no league
+        if (superAdmin) {
+          recipients = [{ email: superAdmin.email, firstName: superAdmin.firstName }];
+          log(`Auction ${auctionId} using super admin fallback (setting: ${group.emailNotifications}, leagueId: ${group.leagueId})`, "email-job");
+        }
+      } else if (group.emailNotifications === "commissioner") {
+        const commissioner = await storage.getLeagueCommissionerEmail(group.leagueId!);
+        if (commissioner) {
+          recipients = [commissioner];
+        } else if (superAdmin) {
+          // Secondary fallback to super admin if no commissioner found
+          recipients = [{ email: superAdmin.email, firstName: superAdmin.firstName }];
+          log(`Auction ${auctionId} no commissioner found, using super admin fallback`, "email-job");
+        }
+      } else if (group.emailNotifications === "league") {
+        recipients = await storage.getLeagueMembersEmails(group.leagueId!);
+        if (recipients.length === 0 && superAdmin) {
+          // Secondary fallback to super admin if no league members found
+          recipients = [{ email: superAdmin.email, firstName: superAdmin.firstName }];
+          log(`Auction ${auctionId} no league members found, using super admin fallback`, "email-job");
+        }
+      }
+      
+      if (recipients.length === 0) {
+        log(`WARN: No recipients found for auction ${auctionId} (${group.emailNotifications}) and no super admin fallback available`, "email-job");
+        continue;
+      }
+      
+      // Send email to each recipient
+      for (const recipient of recipients) {
+        const recipientName = recipient.firstName || "Team Owner";
+        const emailResult = await sendAuctionResultsSummaryEmail(
+          recipient.email,
+          recipientName,
+          results
+        );
+        
+        if (emailResult.success) {
+          log(`Email sent to ${recipient.email} for auction ${auctionId} (${results.length} results)`, "email-job");
+        } else {
+          log(`Failed to send email to ${recipient.email}: ${emailResult.error}`, "email-job");
+        }
+      }
+    }
+    
+    log(`Processed ${auctionGroups.size} auctions for email notifications`, "email-job");
   } catch (error) {
     log(`Hourly summary email job error: ${error}`, "email-job");
   }

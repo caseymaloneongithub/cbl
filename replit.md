@@ -92,9 +92,13 @@ Preferred communication style: Simple, everyday language.
   - Free agents are required to be associated with an auction when created (via auction selector in Commissioner page)
 - **Background Jobs**:
   - Auction Finalization (every minute): Automatically sets winnerId and winningBidId for closed auctions based on highest bid
-  - Hourly Email Summary: Sends email to super admin with auction results (won players and no-bid players) if any auctions closed in the past hour
+  - Hourly Email Summary: Per-auction email notification setting controls who receives results emails
   - "Ending Today" calculation uses Eastern Time for midnight boundary
 - **Email Notifications**: Resend integration for password reset, new user credentials, and hourly auction summaries
+  - Per-auction `emailNotifications` setting with values: "none" (default), "commissioner", or "league"
+  - "commissioner" sends hourly results to league commissioner only
+  - "league" sends hourly results to all league members
+  - Configurable in Auction Settings dialog
 
 ## External Dependencies
 

@@ -85,6 +85,7 @@ const settingsSchema = z.object({
   allowAutoBidding: z.boolean(),
   allowBundledBids: z.boolean(),
   extendAuctionOnBid: z.boolean(),
+  emailNotifications: z.enum(["none", "commissioner", "league"]),
 });
 
 const addPlayerSchema = z.object({
@@ -251,6 +252,7 @@ export default function CommissionerAuction() {
         allowAutoBidding: auction.allowAutoBidding ?? true,
         allowBundledBids: auction.allowBundledBids ?? true,
         extendAuctionOnBid: auction.extendAuctionOnBid ?? false,
+        emailNotifications: (auction.emailNotifications as "none" | "commissioner" | "league") ?? "none",
       });
     }
   }, [auction, settingsForm]);
@@ -1202,6 +1204,35 @@ export default function CommissionerAuction() {
                   )}
                 />
               </div>
+              <FormField
+                control={settingsForm.control}
+                name="emailNotifications"
+                render={({ field }) => (
+                  <FormItem className="rounded-lg border p-3">
+                    <div className="flex flex-row items-center justify-between gap-4">
+                      <div className="space-y-0.5">
+                        <FormLabel>Email Notifications</FormLabel>
+                        <p className="text-xs text-muted-foreground">Who receives hourly auction results summary emails</p>
+                      </div>
+                      <FormControl>
+                        <Select
+                          value={field.value}
+                          onValueChange={field.onChange}
+                        >
+                          <SelectTrigger className="w-[180px]" data-testid="select-email-notifications">
+                            <SelectValue placeholder="Select recipients" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">No emails</SelectItem>
+                            <SelectItem value="commissioner">Commissioner only</SelectItem>
+                            <SelectItem value="league">Entire league</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
+                    </div>
+                  </FormItem>
+                )}
+              />
               <Button type="submit" disabled={updateSettings.isPending} data-testid="button-save-settings">
                 {updateSettings.isPending ? (
                   <>

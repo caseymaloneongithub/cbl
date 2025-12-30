@@ -185,12 +185,20 @@ export interface IStorage {
       winningBid: Bid;
       winner: User;
       auctionName: string;
+      auctionId: number;
+      emailNotifications: string;
+      leagueId: number | null;
     }>;
     noBids: Array<{
       agent: FreeAgent;
       auctionName: string;
+      auctionId: number;
+      emailNotifications: string;
+      leagueId: number | null;
     }>;
   }>;
+  getLeagueMembersEmails(leagueId: number): Promise<Array<{ email: string; firstName: string | null }>>;
+  getLeagueCommissionerEmail(leagueId: number): Promise<{ email: string; firstName: string | null } | null>;
   
   // Bid bundles
   getBidBundle(id: number): Promise<BidBundleWithItems | undefined>;
@@ -1730,10 +1738,16 @@ export class DatabaseStorage implements IStorage {
       winningBid: Bid;
       winner: User;
       auctionName: string;
+      auctionId: number;
+      emailNotifications: string;
+      leagueId: number | null;
     }>;
     noBids: Array<{
       agent: FreeAgent;
       auctionName: string;
+      auctionId: number;
+      emailNotifications: string;
+      leagueId: number | null;
     }>;
   }> {
     const now = new Date();
@@ -1755,17 +1769,26 @@ export class DatabaseStorage implements IStorage {
       winningBid: Bid;
       winner: User;
       auctionName: string;
+      auctionId: number;
+      emailNotifications: string;
+      leagueId: number | null;
     }> = [];
     
     const noBids: Array<{
       agent: FreeAgent;
       auctionName: string;
+      auctionId: number;
+      emailNotifications: string;
+      leagueId: number | null;
     }> = [];
     
     for (const agent of closedAgents) {
-      // Get auction name
+      // Get auction info
       const auction = await this.getAuction(agent.auctionId);
       const auctionName = auction?.name || "Unknown Auction";
+      const auctionId = agent.auctionId!;
+      const emailNotifications = auction?.emailNotifications || "none";
+      const leagueId = auction?.leagueId || null;
       
       if (agent.winnerId && agent.winningBidId) {
         // Has a winner
@@ -1773,15 +1796,46 @@ export class DatabaseStorage implements IStorage {
         const winner = await this.getUser(agent.winnerId);
         
         if (winningBid && winner) {
-          withBids.push({ agent, winningBid, winner, auctionName });
+          withBids.push({ agent, winningBid, winner, auctionName, auctionId, emailNotifications, leagueId });
         }
       } else {
         // No bids
-        noBids.push({ agent, auctionName });
+        noBids.push({ agent, auctionName, auctionId, emailNotifications, leagueId });
       }
     }
     
     return { withBids, noBids };
+  }
+
+  async getLeagueMembersEmails(leagueId: number): Promise<Array<{ email: string; firstName: string | null }>> {
+    const members = await db
+      .select({
+        email: users.email,
+        firstName: users.firstName,
+      })
+      .from(leagueMembers)
+      .innerJoin(users, eq(leagueMembers.userId, users.id))
+      .where(and(
+        eq(leagueMembers.leagueId, leagueId),
+        eq(leagueMembers.isArchived, false)
+      ));
+    return members;
+  }
+
+  async getLeagueCommissionerEmail(leagueId: number): Promise<{ email: string; firstName: string | null } | null> {
+    const [commissioner] = await db
+      .select({
+        email: users.email,
+        firstName: users.firstName,
+      })
+      .from(leagueMembers)
+      .innerJoin(users, eq(leagueMembers.userId, users.id))
+      .where(and(
+        eq(leagueMembers.leagueId, leagueId),
+        eq(leagueMembers.role, 'commissioner')
+      ))
+      .limit(1);
+    return commissioner || null;
   }
 
   private async getBid(bidId: number): Promise<Bid | undefined> {
