@@ -2330,7 +2330,8 @@ export async function registerRoutes(
         enforceBudget,
         allowAutoBidding,
         allowBundledBids,
-        extendAuctionOnBid
+        extendAuctionOnBid,
+        emailNotifications
       } = req.body;
       
       const updateData: any = {};
@@ -2345,6 +2346,7 @@ export async function registerRoutes(
       if (allowAutoBidding !== undefined) updateData.allowAutoBidding = allowAutoBidding;
       if (allowBundledBids !== undefined) updateData.allowBundledBids = allowBundledBids;
       if (extendAuctionOnBid !== undefined) updateData.extendAuctionOnBid = extendAuctionOnBid;
+      if (emailNotifications !== undefined) updateData.emailNotifications = emailNotifications;
 
       const updatedAuction = await storage.updateAuction(auctionId, updateData);
       res.json(updatedAuction);
