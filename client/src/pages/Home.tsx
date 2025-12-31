@@ -159,8 +159,8 @@ export default function Home() {
       toast({
         title: "Email preferences updated",
         description: optedOut 
-          ? "You will no longer receive hourly auction result emails." 
-          : "You will now receive hourly auction result emails.",
+          ? "You will no longer receive auction result emails." 
+          : "You will now receive auction result emails.",
       });
     },
     onError: () => {
@@ -232,7 +232,7 @@ export default function Home() {
           <div className="flex items-center gap-2 mt-3 text-sm">
             <Mail className="h-4 w-4 text-muted-foreground" />
             <Label htmlFor="email-opt-out" className="text-muted-foreground cursor-pointer">
-              Receive hourly results emails
+              Receive results emails
             </Label>
             <Switch
               id="email-opt-out"
