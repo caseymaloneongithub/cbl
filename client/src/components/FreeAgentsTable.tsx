@@ -296,6 +296,25 @@ export function FreeAgentsTable({ freeAgents, bidIncrement = 0.10, allowAutoBidd
                   </TableHead>
                   <TableHead 
                     className="font-semibold text-right cursor-pointer select-none"
+                    onClick={() => {
+                      if (playerTypeFilter === "pitcher") {
+                        handleSort("ip");
+                      } else if (playerTypeFilter === "hitter") {
+                        handleSort("pa");
+                      } else {
+                        handleSort("ip");
+                      }
+                    }}
+                  >
+                    <div className="flex items-center justify-end">
+                      {playerTypeFilter === "hitter" ? "PA" : playerTypeFilter === "pitcher" ? "IP" : "IP/PA"}
+                      {playerTypeFilter === "hitter" 
+                        ? getSortIcon("pa") 
+                        : getSortIcon("ip")}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className="font-semibold text-right cursor-pointer select-none"
                     onClick={() => handleSort("currentBid")}
                   >
                     <div className="flex items-center justify-end">
@@ -329,7 +348,7 @@ export function FreeAgentsTable({ freeAgents, bidIncrement = 0.10, allowAutoBidd
               <TableBody>
                 {filteredAndSortedAgents.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                       {hasActiveFilters 
                         ? "No players match your filters" 
                         : "No active auctions"}
@@ -374,6 +393,13 @@ export function FreeAgentsTable({ freeAgents, bidIncrement = 0.10, allowAutoBidd
                           <Badge variant="outline" className="font-mono text-xs">
                             {agent.playerType === "pitcher" ? "Pitcher" : "Hitter"}
                           </Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {agent.playerType === "pitcher" ? (
+                            agent.ip != null ? agent.ip.toFixed(1) : <span className="text-muted-foreground">-</span>
+                          ) : (
+                            agent.pa != null ? agent.pa : <span className="text-muted-foreground">-</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-right font-mono">
                           {agent.currentBid ? (
