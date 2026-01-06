@@ -20,8 +20,13 @@ import CommissionerAuction from "@/pages/CommissionerAuction";
 import SuperAdmin from "@/pages/SuperAdmin";
 
 function CommissionerRoute({ component: Component }: { component: React.ComponentType<any> }) {
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const { hasAnyCommissionerRole, isLoadingLeagues } = useLeague();
+  
+  // Redirect to landing if not authenticated
+  if (!isAuthenticated) {
+    return <Redirect to="/" />;
+  }
   
   if (isLoadingLeagues) {
     return (
@@ -40,9 +45,24 @@ function CommissionerRoute({ component: Component }: { component: React.Componen
 }
 
 function SuperAdminRoute({ component: Component }: { component: React.ComponentType<any> }) {
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
+  
+  // Redirect to landing if not authenticated
+  if (!isAuthenticated) {
+    return <Redirect to="/" />;
+  }
   
   if (!user?.isSuperAdmin) {
+    return <Redirect to="/" />;
+  }
+  
+  return <Component />;
+}
+
+function ProtectedRoute({ component: Component }: { component: React.ComponentType<any> }) {
+  const { isAuthenticated } = useAuth();
+  
+  if (!isAuthenticated) {
     return <Redirect to="/" />;
   }
   
@@ -63,24 +83,24 @@ function Router() {
   return (
     <Switch>
       <Route path="/reset-password" component={ResetPassword} />
-      {!isAuthenticated ? (
-        <Route path="/" component={Landing} />
-      ) : (
-        <>
-          <Route path="/" component={Home} />
-          <Route path="/my-bids" component={MyBids} />
-          <Route path="/results" component={Results} />
-          <Route path="/commissioner">
-            {() => <CommissionerRoute component={Commissioner} />}
-          </Route>
-          <Route path="/commissioner/auctions/:auctionId">
-            {() => <CommissionerRoute component={CommissionerAuction} />}
-          </Route>
-          <Route path="/super-admin">
-            {() => <SuperAdminRoute component={SuperAdmin} />}
-          </Route>
-        </>
-      )}
+      <Route path="/">
+        {() => isAuthenticated ? <Home /> : <Landing />}
+      </Route>
+      <Route path="/my-bids">
+        {() => <ProtectedRoute component={MyBids} />}
+      </Route>
+      <Route path="/results">
+        {() => <ProtectedRoute component={Results} />}
+      </Route>
+      <Route path="/commissioner">
+        {() => <CommissionerRoute component={Commissioner} />}
+      </Route>
+      <Route path="/commissioner/auctions/:auctionId">
+        {() => <CommissionerRoute component={CommissionerAuction} />}
+      </Route>
+      <Route path="/super-admin">
+        {() => <SuperAdminRoute component={SuperAdmin} />}
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );
