@@ -763,6 +763,7 @@ export async function registerRoutes(
               years: bidYears,
               totalValue,
               isAutoBid: false,
+              isImportedInitial: true, // Mark as imported bid - subsequent bids must have more years
             });
             bidsCreated++;
           } catch (err: any) {
@@ -1236,10 +1237,10 @@ export async function registerRoutes(
       
       const currentHighBid = await storage.getHighestBidForAgent(agentId);
       if (currentHighBid) {
-        // Subsequent bids must have more years than the current highest bid
-        if (years <= currentHighBid.years) {
+        // For imported initial bids, subsequent bids must have more years
+        if (currentHighBid.isImportedInitial && years <= currentHighBid.years) {
           return res.status(400).json({ 
-            message: `Subsequent bids must have more years than the current bid. Current bid is ${currentHighBid.years} year${currentHighBid.years === 1 ? '' : 's'}, you must bid at least ${currentHighBid.years + 1} years.` 
+            message: `This player has an imported opening bid. Subsequent bids must have more years than the current bid. Current bid is ${currentHighBid.years} year${currentHighBid.years === 1 ? '' : 's'}, you must bid at least ${currentHighBid.years + 1} years.` 
           });
         }
         
@@ -1366,11 +1367,11 @@ export async function registerRoutes(
         });
       }
       
-      // Check if years are greater than current highest bid (subsequent bids must have more years)
+      // For imported initial bids, subsequent bids must have more years
       const currentHighBid = await storage.getHighestBidForAgent(agentId);
-      if (currentHighBid && years <= currentHighBid.years) {
+      if (currentHighBid && currentHighBid.isImportedInitial && years <= currentHighBid.years) {
         return res.status(400).json({ 
-          message: `Subsequent bids must have more years than the current bid. Current bid is ${currentHighBid.years} year${currentHighBid.years === 1 ? '' : 's'}, you must bid at least ${currentHighBid.years + 1} years.` 
+          message: `This player has an imported opening bid. Subsequent bids must have more years than the current bid. Current bid is ${currentHighBid.years} year${currentHighBid.years === 1 ? '' : 's'}, you must bid at least ${currentHighBid.years + 1} years.` 
         });
       }
       
@@ -3532,8 +3533,8 @@ async function processAllAutoBidsUntilStable(
       // Skip if this user is already winning or just placed the last bid
       if (autoBid.userId === currentHighUserId || autoBid.userId === lastBidderId || !autoBid.isActive) continue;
       
-      // Subsequent bids must have more years than the current highest bid
-      if (autoBid.years <= highestBid.years) continue;
+      // For imported initial bids, subsequent bids must have more years
+      if (highestBid.isImportedInitial && autoBid.years <= highestBid.years) continue;
       
       const factor = yearFactors[autoBid.years - 1];
       const maxTotalValue = autoBid.maxAmount * factor;
@@ -3582,8 +3583,8 @@ async function processAllAutoBidsUntilStable(
         // Skip if this user is already winning
         if (bundleOwner === currentHighUserId) continue;
         
-        // Subsequent bids must have more years than the current highest bid
-        if (bundleItem.years <= highestBid.years) {
+        // For imported initial bids, subsequent bids must have more years
+        if (highestBid.isImportedInitial && bundleItem.years <= highestBid.years) {
           // Bundle item can't counter due to years restriction - mark as outbid and activate next
           await storage.updateBidBundleItem(bundleItem.id, { status: 'outbid' });
           const nextItem = await storage.activateNextBundleItem(bundleItem.bundle.id);
@@ -3718,8 +3719,8 @@ async function deployBundleItemAsAutoBid(
       return true;
     }
     
-    // Subsequent bids must have more years than the current highest bid
-    if (item.years <= highestBid.years) {
+    // For imported initial bids, subsequent bids must have more years
+    if (highestBid.isImportedInitial && item.years <= highestBid.years) {
       await storage.updateBidBundleItem(item.id, { status: 'skipped' });
       return false;
     }

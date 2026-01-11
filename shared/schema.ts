@@ -258,6 +258,7 @@ export const bids = pgTable("bids", {
   years: integer("years").notNull(),
   totalValue: real("total_value").notNull(),
   isAutoBid: boolean("is_auto_bid").default(false).notNull(),
+  isImportedInitial: boolean("is_imported_initial").default(false).notNull(), // True for bids imported via CSV
   createdAt: timestamp("created_at").defaultNow(),
 });
 
