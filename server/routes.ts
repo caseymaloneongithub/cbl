@@ -2612,7 +2612,7 @@ export async function registerRoutes(
     }
   });
 
-  // Update per-auction team limits
+  // Update per-auction team limits (and optionally budget)
   app.patch("/api/auctions/:id/teams/:userId/limits", isAuthenticated, async (req: any, res) => {
     try {
       const sessionUserId = req.session.originalUserId || req.session.userId!;
@@ -2624,13 +2624,20 @@ export async function registerRoutes(
       }
 
       const targetUserId = req.params.userId;
-      const { rosterLimit, ipLimit, paLimit } = req.body;
+      const { rosterLimit, ipLimit, paLimit, budget } = req.body;
 
-      const team = await storage.updateAuctionTeamLimits(auctionId, targetUserId, {
+      // Update limits
+      let team = await storage.updateAuctionTeamLimits(auctionId, targetUserId, {
         rosterLimit: rosterLimit ?? null,
         ipLimit: ipLimit ?? null,
         paLimit: paLimit ?? null,
       });
+      
+      // Also update budget if provided
+      if (budget !== undefined && typeof budget === 'number') {
+        team = await storage.updateAuctionTeamBudget(auctionId, targetUserId, budget);
+      }
+      
       res.json(team);
     } catch (error) {
       console.error("Error updating auction team limits:", error);
