@@ -1639,7 +1639,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Each item must have a unique priority" });
       }
 
-      // Verify all players exist and auctions are open
+      // Verify all players exist, auctions are open, and minimumYears is met
       for (const item of items) {
         const agent = await storage.getFreeAgent(item.freeAgentId);
         if (!agent) {
@@ -1651,6 +1651,11 @@ export async function registerRoutes(
         // Verify player belongs to the specified auction
         if (agent.auctionId !== auctionId) {
           return res.status(400).json({ message: `Player ${agent.name} is not in the specified auction` });
+        }
+        // Verify years meets player's minimum requirement
+        const minYears = agent.minimumYears || 1;
+        if (item.years < minYears) {
+          return res.status(400).json({ message: `${agent.name} requires at least a ${minYears}-year contract` });
         }
       }
 
@@ -1751,7 +1756,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Each item must have a unique priority" });
       }
 
-      // Verify all players exist and auctions are open
+      // Verify all players exist, auctions are open, and minimumYears is met
       for (const item of items) {
         const agent = await storage.getFreeAgent(item.freeAgentId);
         if (!agent) {
@@ -1762,6 +1767,11 @@ export async function registerRoutes(
         }
         if (agent.auctionId !== existingBundle.auctionId) {
           return res.status(400).json({ message: `Player ${agent.name} is not in the specified auction` });
+        }
+        // Verify years meets player's minimum requirement
+        const minYears = agent.minimumYears || 1;
+        if (item.years < minYears) {
+          return res.status(400).json({ message: `${agent.name} requires at least a ${minYears}-year contract` });
         }
       }
 
