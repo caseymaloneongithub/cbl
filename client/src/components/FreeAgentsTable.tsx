@@ -180,7 +180,10 @@ export function FreeAgentsTable({ freeAgents, bidIncrement = 0.10, allowAutoBidd
           comparison = (a.strikeouts ?? 0) - (b.strikeouts ?? 0);
           break;
         case "ip":
-          comparison = (a.ip ?? 0) - (b.ip ?? 0);
+          // When sorting by IP (or IP/PA combined), use IP for pitchers and PA for hitters
+          const aIpPa = a.playerType === "pitcher" ? (a.ip ?? 0) : (a.pa ?? 0);
+          const bIpPa = b.playerType === "pitcher" ? (b.ip ?? 0) : (b.pa ?? 0);
+          comparison = aIpPa - bIpPa;
           break;
       }
       
