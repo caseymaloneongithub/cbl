@@ -8,6 +8,59 @@ import { fromZonedTime } from "date-fns-tz";
 import { parse, isValid } from "date-fns";
 
 const EASTERN_TIMEZONE = "America/New_York";
+const CST_TIMEZONE = "America/Chicago";
+
+// Parse date string as CST (Central Standard Time) - used for CSV imports
+function parseCSTTime(dateString: string): Date {
+  if (!dateString || typeof dateString !== 'string') {
+    throw new Error(`Invalid date: empty or not a string`);
+  }
+  
+  const trimmed = dateString.trim();
+  if (!trimmed) {
+    throw new Error(`Invalid date: empty string`);
+  }
+  
+  // Try multiple date formats
+  const formats = [
+    "M/d/yyyy h:mm a",
+    "M/d/yyyy h:mma", 
+    "M/d/yyyy H:mm",
+    "MM/dd/yyyy h:mm a",
+    "MM/dd/yyyy h:mma",
+    "MM/dd/yyyy H:mm",
+    "yyyy-MM-dd HH:mm",
+    "yyyy-MM-dd'T'HH:mm:ss",
+    "yyyy-MM-dd'T'HH:mm",
+  ];
+  
+  for (const fmt of formats) {
+    try {
+      const parsed = parse(trimmed, fmt, new Date());
+      if (isValid(parsed) && parsed.getFullYear() > 2000) {
+        const result = fromZonedTime(parsed, CST_TIMEZONE);
+        if (isValid(result)) {
+          return result;
+        }
+      }
+    } catch (e) {
+      // Try next format
+    }
+  }
+  
+  // Try ISO format as CST
+  try {
+    const normalizedDate = trimmed.replace(" ", "T");
+    const result = fromZonedTime(normalizedDate, CST_TIMEZONE);
+    if (isValid(result) && result.getFullYear() > 2000) {
+      return result;
+    }
+  } catch (e) {
+    // Fall through to error
+  }
+  
+  throw new Error(`Invalid date format: ${dateString}`);
+}
 
 // Helper to check if user is commissioner for a specific league or super admin
 async function hasLeagueCommissionerAccess(userId: string, leagueId: number): Promise<boolean> {
@@ -543,8 +596,8 @@ export async function registerRoutes(
             playerType,
             minimumBid,
             minimumYears,
-            auctionStartTime: p.auctionStartTime ? parseEasternTime(p.auctionStartTime) : null,
-            auctionEndTime: p.auctionEndTime ? parseEasternTime(p.auctionEndTime) : defaultEndTime,
+            auctionStartTime: p.auctionStartTime ? parseCSTTime(p.auctionStartTime) : null,
+            auctionEndTime: p.auctionEndTime ? parseCSTTime(p.auctionEndTime) : defaultEndTime,
             isActive: true,
             auctionId: targetAuctionId,
             // Hitter stats
