@@ -793,9 +793,10 @@ export async function registerRoutes(
             continue;
           }
           
-          // Calculate bid amount and years from minimumBid and minimumYears
-          const bidAmount = p.minimumBid || 1;
-          const bidYears = p.minimumYears || 1;
+          // Calculate bid amount and years from bidMinDollars/bidMinYears or fall back to minimumBid/minimumYears
+          // Support multiple column name variations (case-insensitive matching done by CSV parser)
+          const bidAmount = p.bidMinDollars ?? p.bidmindollars ?? p.bid_min_dollars ?? p.minimumBid ?? p.minimumbid ?? 1;
+          const bidYears = p.bidMinYears ?? p.bidminyears ?? p.bid_min_years ?? p.minimumYears ?? p.minimumyears ?? 1;
           
           // Calculate total value using auction's year factors
           const yearFactors = [
