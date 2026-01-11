@@ -770,10 +770,10 @@ export async function registerRoutes(
         // Create a set of enrolled user IDs
         const enrolledUserIds = new Set(auctionTeams.map(t => t.userId));
         
-        // Process players with cblTeam
+        // Process players with cblTeam (support multiple column name variations)
         for (let i = 0; i < players.length; i++) {
           const p = players[i];
-          const cblTeam = p.cblTeam?.trim();
+          const cblTeam = (p.cblTeam ?? p.cblteam ?? p.cbl_team ?? p.CBLTeam ?? p.CBLTEAM)?.trim();
           if (!cblTeam) continue;
           
           const playerName = p.name?.trim().toLowerCase();
