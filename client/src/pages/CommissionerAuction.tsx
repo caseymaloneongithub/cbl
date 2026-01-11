@@ -1309,7 +1309,11 @@ export default function CommissionerAuction() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {auctionTeams.map((team) => (
+                  {[...auctionTeams].sort((a, b) => {
+                    const nameA = a.user.teamName || `${a.user.firstName || ""} ${a.user.lastName || ""}`.trim() || a.user.email;
+                    const nameB = b.user.teamName || `${b.user.firstName || ""} ${b.user.lastName || ""}`.trim() || b.user.email;
+                    return nameA.localeCompare(nameB);
+                  }).map((team) => (
                     <TableRow key={team.userId}>
                       <TableCell className="font-medium">
                         {team.user.teamName || `${team.user.firstName || ""} ${team.user.lastName || ""}`.trim() || "Unknown"}
