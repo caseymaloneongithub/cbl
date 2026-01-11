@@ -85,13 +85,14 @@ export interface IStorage {
   getBid(id: number): Promise<Bid | undefined>;
   getBidsForAgent(agentId: number): Promise<BidWithUser[]>;
   getHighestBidForAgent(agentId: number): Promise<Bid | undefined>;
-  getUserBids(userId: string): Promise<FreeAgentWithBids[]>;
+  getUserBids(userId: string, auctionId?: number): Promise<FreeAgentWithBids[]>;
   createBid(bid: InsertBid): Promise<Bid>;
   
   // Auto bids
   getAutoBid(agentId: number, userId: string): Promise<AutoBid | undefined>;
   getAutoBidsForAgent(agentId: number): Promise<AutoBid[]>;
-  getUserAutoBids(userId: string): Promise<(AutoBid & { freeAgent: FreeAgent })[]>;
+  getUserAutoBids(userId: string, auctionId?: number): Promise<(AutoBid & { freeAgent: FreeAgent })[]>;
+  getUserOutbidPlayers(userId: string, auctionId?: number): Promise<OutbidPlayer[]>;
   createOrUpdateAutoBid(autoBid: InsertAutoBid): Promise<AutoBid>;
   
   // Stats
@@ -679,7 +680,7 @@ export class DatabaseStorage implements IStorage {
     return bid;
   }
 
-  async getUserBids(userId: string): Promise<FreeAgentWithBids[]> {
+  async getUserBids(userId: string, auctionId?: number): Promise<FreeAgentWithBids[]> {
     const userBidAgentIds = await db
       .selectDistinct({ agentId: bids.freeAgentId })
       .from(bids)
@@ -689,6 +690,10 @@ export class DatabaseStorage implements IStorage {
     for (const { agentId } of userBidAgentIds) {
       const [agent] = await db.select().from(freeAgents).where(eq(freeAgents.id, agentId));
       if (agent) {
+        // Filter by auctionId if provided
+        if (auctionId !== undefined && agent.auctionId !== auctionId) {
+          continue;
+        }
         const highestBid = await this.getHighestBidForAgent(agent.id);
         if (highestBid && highestBid.userId === userId) {
           let highBidder: User | null = null;
@@ -717,7 +722,7 @@ export class DatabaseStorage implements IStorage {
     return newBid;
   }
 
-  async getUserOutbidPlayers(userId: string): Promise<OutbidPlayer[]> {
+  async getUserOutbidPlayers(userId: string, auctionId?: number): Promise<OutbidPlayer[]> {
     const userBidAgentIds = await db
       .selectDistinct({ agentId: bids.freeAgentId })
       .from(bids)
@@ -727,6 +732,10 @@ export class DatabaseStorage implements IStorage {
     for (const { agentId } of userBidAgentIds) {
       const [agent] = await db.select().from(freeAgents).where(eq(freeAgents.id, agentId));
       if (agent) {
+        // Filter by auctionId if provided
+        if (auctionId !== undefined && agent.auctionId !== auctionId) {
+          continue;
+        }
         const highestBid = await this.getHighestBidForAgent(agent.id);
         if (highestBid && highestBid.userId !== userId) {
           let highBidder: User | null = null;
@@ -775,7 +784,7 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(autoBids.maxAmount));
   }
 
-  async getUserAutoBids(userId: string): Promise<(AutoBid & { freeAgent: FreeAgent })[]> {
+  async getUserAutoBids(userId: string, auctionId?: number): Promise<(AutoBid & { freeAgent: FreeAgent })[]> {
     const userAutoBids = await db
       .select()
       .from(autoBids)
@@ -785,6 +794,10 @@ export class DatabaseStorage implements IStorage {
     for (const autoBid of userAutoBids) {
       const [agent] = await db.select().from(freeAgents).where(eq(freeAgents.id, autoBid.freeAgentId));
       if (agent) {
+        // Filter by auctionId if provided
+        if (auctionId !== undefined && agent.auctionId !== auctionId) {
+          continue;
+        }
         result.push({ ...autoBid, freeAgent: agent });
       }
     }

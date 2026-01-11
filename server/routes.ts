@@ -1545,7 +1545,8 @@ export async function registerRoutes(
   app.get("/api/my-bids", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.userId!;
-      const bids = await storage.getUserBids(userId);
+      const auctionId = req.query.auctionId ? parseInt(req.query.auctionId) : undefined;
+      const bids = await storage.getUserBids(userId, auctionId);
       res.json(bids);
     } catch (error) {
       console.error("Error fetching user bids:", error);
@@ -1556,7 +1557,8 @@ export async function registerRoutes(
   app.get("/api/my-outbid", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.userId!;
-      const outbidPlayers = await storage.getUserOutbidPlayers(userId);
+      const auctionId = req.query.auctionId ? parseInt(req.query.auctionId) : undefined;
+      const outbidPlayers = await storage.getUserOutbidPlayers(userId, auctionId);
       res.json(outbidPlayers);
     } catch (error) {
       console.error("Error fetching outbid players:", error);
@@ -1567,7 +1569,8 @@ export async function registerRoutes(
   app.get("/api/my-auto-bids", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.userId!;
-      const autoBids = await storage.getUserAutoBids(userId);
+      const auctionId = req.query.auctionId ? parseInt(req.query.auctionId) : undefined;
+      const autoBids = await storage.getUserAutoBids(userId, auctionId);
       res.json(autoBids);
     } catch (error) {
       console.error("Error fetching auto-bids:", error);

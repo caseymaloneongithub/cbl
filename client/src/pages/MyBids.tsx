@@ -57,26 +57,46 @@ export default function MyBids() {
   });
 
   const { data: myBids, isLoading: loadingBids } = useQuery<FreeAgentWithBids[]>({
-    queryKey: ["/api/my-bids"],
-    enabled: isAuthenticated,
+    queryKey: ["/api/my-bids", activeAuction?.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/my-bids?auctionId=${activeAuction?.id}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch bids");
+      return res.json();
+    },
+    enabled: isAuthenticated && !!activeAuction?.id,
     refetchInterval: REFRESH_INTERVAL,
   });
 
   const { data: myAutoBids, isLoading: loadingAutoBids } = useQuery<AutoBidWithAgent[]>({
-    queryKey: ["/api/my-auto-bids"],
-    enabled: isAuthenticated,
+    queryKey: ["/api/my-auto-bids", activeAuction?.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/my-auto-bids?auctionId=${activeAuction?.id}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch auto-bids");
+      return res.json();
+    },
+    enabled: isAuthenticated && !!activeAuction?.id,
     refetchInterval: REFRESH_INTERVAL,
   });
 
   const { data: myBundles, isLoading: loadingBundles } = useQuery<BidBundleWithItems[]>({
     queryKey: ["/api/my-bundles", activeAuction?.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/my-bundles?auctionId=${activeAuction?.id}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch bundles");
+      return res.json();
+    },
     enabled: isAuthenticated && !!activeAuction?.id,
     refetchInterval: REFRESH_INTERVAL,
   });
 
   const { data: myOutbid, isLoading: loadingOutbid } = useQuery<OutbidPlayer[]>({
-    queryKey: ["/api/my-outbid"],
-    enabled: isAuthenticated,
+    queryKey: ["/api/my-outbid", activeAuction?.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/my-outbid?auctionId=${activeAuction?.id}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch outbid players");
+      return res.json();
+    },
+    enabled: isAuthenticated && !!activeAuction?.id,
     refetchInterval: REFRESH_INTERVAL,
   });
 
