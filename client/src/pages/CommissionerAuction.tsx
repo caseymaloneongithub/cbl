@@ -126,7 +126,7 @@ interface ParsedPlayer {
 
 interface AuctionTeam {
   auctionId: number;
-  odataId: string;
+  userId: string;
   budget: number;
   rosterLimit: number | null;
   ipLimit: number | null;
@@ -382,8 +382,8 @@ export default function CommissionerAuction() {
 
   // Remove team from auction mutation
   const removeTeamFromAuction = useMutation({
-    mutationFn: async ({ auctionId, odataId }: { auctionId: number; odataId: string }) => {
-      const response = await apiRequest("DELETE", `/api/auctions/${auctionId}/teams/${odataId}`);
+    mutationFn: async ({ auctionId, userId }: { auctionId: number; userId: string }) => {
+      const response = await apiRequest("DELETE", `/api/auctions/${auctionId}/teams/${userId}`);
       return response.json();
     },
     onSuccess: () => {
@@ -407,8 +407,8 @@ export default function CommissionerAuction() {
 
   // Update team limits mutation
   const updateTeamLimits = useMutation({
-    mutationFn: async ({ odataId, limits }: { odataId: string; limits: { rosterLimit?: number | null; ipLimit?: number | null; paLimit?: number | null; budget?: number } }) => {
-      const response = await apiRequest("PATCH", `/api/auctions/${numericAuctionId}/teams/${odataId}/limits`, limits);
+    mutationFn: async ({ userId, limits }: { userId: string; limits: { rosterLimit?: number | null; ipLimit?: number | null; paLimit?: number | null; budget?: number } }) => {
+      const response = await apiRequest("PATCH", `/api/auctions/${numericAuctionId}/teams/${userId}/limits`, limits);
       return response.json();
     },
     onSuccess: () => {
@@ -1310,12 +1310,12 @@ export default function CommissionerAuction() {
                 </TableHeader>
                 <TableBody>
                   {auctionTeams.map((team) => (
-                    <TableRow key={team.odataId}>
+                    <TableRow key={team.userId}>
                       <TableCell className="font-medium">
                         {team.user.teamName || `${team.user.firstName || ""} ${team.user.lastName || ""}`.trim() || "Unknown"}
                       </TableCell>
                       <TableCell className="text-muted-foreground">{team.user.email}</TableCell>
-                      {editingLimitsUserId === team.odataId ? (
+                      {editingLimitsUserId === team.userId ? (
                         <>
                           <TableCell className="text-right">
                             <Input
@@ -1327,7 +1327,7 @@ export default function CommissionerAuction() {
                                 const numericOnly = e.target.value.replace(/[^\d]/g, '');
                                 setEditingLimits({ ...editingLimits, budget: numericOnly });
                               }}
-                              data-testid={`input-edit-budget-${team.odataId}`}
+                              data-testid={`input-edit-budget-${team.userId}`}
                             />
                           </TableCell>
                           <TableCell className="text-right">
@@ -1337,7 +1337,7 @@ export default function CommissionerAuction() {
                               placeholder="None"
                               value={editingLimits.rosterLimit}
                               onChange={(e) => setEditingLimits({ ...editingLimits, rosterLimit: e.target.value })}
-                              data-testid={`input-edit-roster-${team.odataId}`}
+                              data-testid={`input-edit-roster-${team.userId}`}
                             />
                           </TableCell>
                           <TableCell className="text-right">
@@ -1347,7 +1347,7 @@ export default function CommissionerAuction() {
                               placeholder="None"
                               value={editingLimits.ipLimit}
                               onChange={(e) => setEditingLimits({ ...editingLimits, ipLimit: e.target.value })}
-                              data-testid={`input-edit-ip-${team.odataId}`}
+                              data-testid={`input-edit-ip-${team.userId}`}
                             />
                           </TableCell>
                           <TableCell className="text-right">
@@ -1357,7 +1357,7 @@ export default function CommissionerAuction() {
                               placeholder="None"
                               value={editingLimits.paLimit}
                               onChange={(e) => setEditingLimits({ ...editingLimits, paLimit: e.target.value })}
-                              data-testid={`input-edit-pa-${team.odataId}`}
+                              data-testid={`input-edit-pa-${team.userId}`}
                             />
                           </TableCell>
                           <TableCell className="text-right">
@@ -1367,7 +1367,7 @@ export default function CommissionerAuction() {
                                 size="icon"
                                 onClick={() => {
                                   updateTeamLimits.mutate({
-                                    odataId: team.odataId,
+                                    userId: team.userId,
                                     limits: {
                                       budget: editingLimits.budget ? parseInt(editingLimits.budget) : team.budget,
                                       rosterLimit: editingLimits.rosterLimit ? parseInt(editingLimits.rosterLimit) : null,
@@ -1377,7 +1377,7 @@ export default function CommissionerAuction() {
                                   });
                                 }}
                                 disabled={updateTeamLimits.isPending}
-                                data-testid={`button-save-limits-${team.odataId}`}
+                                data-testid={`button-save-limits-${team.userId}`}
                               >
                                 <Check className="h-4 w-4 text-green-600" />
                               </Button>
@@ -1385,7 +1385,7 @@ export default function CommissionerAuction() {
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => setEditingLimitsUserId(null)}
-                                data-testid={`button-cancel-limits-${team.odataId}`}
+                                data-testid={`button-cancel-limits-${team.userId}`}
                               >
                                 <X className="h-4 w-4 text-red-600" />
                               </Button>
@@ -1404,7 +1404,7 @@ export default function CommissionerAuction() {
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => {
-                                  setEditingLimitsUserId(team.odataId);
+                                  setEditingLimitsUserId(team.userId);
                                   setEditingLimits({
                                     budget: String(team.budget),
                                     rosterLimit: team.rosterLimit ? String(team.rosterLimit) : "",
@@ -1413,12 +1413,12 @@ export default function CommissionerAuction() {
                                   });
                                 }}
                                 title="Edit limits"
-                                data-testid={`button-edit-limits-${team.odataId}`}
+                                data-testid={`button-edit-limits-${team.userId}`}
                               >
                                 <DollarSign className="h-4 w-4" />
                               </Button>
                               {!team.user.isCommissioner && !team.user.isSuperAdmin && (
-                                <Dialog open={deleteTeamId === team.odataId} onOpenChange={(open) => {
+                                <Dialog open={deleteTeamId === team.userId} onOpenChange={(open) => {
                                   if (!open) {
                                     setDeleteTeamId(null);
                                     setDeletingTeamName("");
@@ -1428,15 +1428,15 @@ export default function CommissionerAuction() {
                                     variant="ghost"
                                     size="icon"
                                     onClick={() => {
-                                      setDeleteTeamId(team.odataId);
+                                      setDeleteTeamId(team.userId);
                                       setDeletingTeamName(`${team.user.firstName || ""} ${team.user.lastName || ""}`.trim() || team.user.email);
                                     }}
                                     title="Remove from Auction"
-                                    data-testid={`button-remove-team-${team.odataId}`}
+                                    data-testid={`button-remove-team-${team.userId}`}
                                   >
                                     <Trash2 className="h-4 w-4 text-destructive" />
                                   </Button>
-                                  {deleteTeamId === team.odataId && (
+                                  {deleteTeamId === team.userId && (
                                     <DialogContent>
                                       <DialogHeader>
                                         <DialogTitle>Remove Team from Auction</DialogTitle>
@@ -1460,7 +1460,7 @@ export default function CommissionerAuction() {
                                           onClick={() => {
                                             removeTeamFromAuction.mutate({
                                               auctionId: numericAuctionId!,
-                                              odataId: team.odataId,
+                                              userId: team.userId,
                                             });
                                           }}
                                           disabled={removeTeamFromAuction.isPending}
