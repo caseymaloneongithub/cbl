@@ -1236,6 +1236,13 @@ export async function registerRoutes(
       
       const currentHighBid = await storage.getHighestBidForAgent(agentId);
       if (currentHighBid) {
+        // Subsequent bids must have more years than the current highest bid
+        if (years <= currentHighBid.years) {
+          return res.status(400).json({ 
+            message: `Subsequent bids must have more years than the current bid. Current bid is ${currentHighBid.years} year${currentHighBid.years === 1 ? '' : 's'}, you must bid at least ${currentHighBid.years + 1} years.` 
+          });
+        }
+        
         const incrementMultiplier = 1 + bidIncrement;
         
         // Subsequent bid - must beat current high bid by the auction's increment percentage
@@ -1356,6 +1363,14 @@ export async function registerRoutes(
       if (years < minimumYears) {
         return res.status(400).json({ 
           message: `This player requires at least a ${minimumYears}-year contract` 
+        });
+      }
+      
+      // Check if years are greater than current highest bid (subsequent bids must have more years)
+      const currentHighBid = await storage.getHighestBidForAgent(agentId);
+      if (currentHighBid && years <= currentHighBid.years) {
+        return res.status(400).json({ 
+          message: `Subsequent bids must have more years than the current bid. Current bid is ${currentHighBid.years} year${currentHighBid.years === 1 ? '' : 's'}, you must bid at least ${currentHighBid.years + 1} years.` 
         });
       }
       
@@ -3517,6 +3532,9 @@ async function processAllAutoBidsUntilStable(
       // Skip if this user is already winning or just placed the last bid
       if (autoBid.userId === currentHighUserId || autoBid.userId === lastBidderId || !autoBid.isActive) continue;
       
+      // Subsequent bids must have more years than the current highest bid
+      if (autoBid.years <= highestBid.years) continue;
+      
       const factor = yearFactors[autoBid.years - 1];
       const maxTotalValue = autoBid.maxAmount * factor;
       
@@ -3563,6 +3581,18 @@ async function processAllAutoBidsUntilStable(
         
         // Skip if this user is already winning
         if (bundleOwner === currentHighUserId) continue;
+        
+        // Subsequent bids must have more years than the current highest bid
+        if (bundleItem.years <= highestBid.years) {
+          // Bundle item can't counter due to years restriction - mark as outbid and activate next
+          await storage.updateBidBundleItem(bundleItem.id, { status: 'outbid' });
+          const nextItem = await storage.activateNextBundleItem(bundleItem.bundle.id);
+          if (nextItem) {
+            console.log(`[UnifiedAutoBid] Bundle item ${bundleItem.id} outbid (years), activated next: ${nextItem.id}`);
+            madeChange = true;
+          }
+          continue;
+        }
         
         const factor = yearFactors[bundleItem.years - 1];
         const maxTotalValue = bundleItem.amount * factor;
@@ -3686,6 +3716,12 @@ async function deployBundleItemAsAutoBid(
     if (highestBid.userId === userId) {
       await storage.updateBidBundleItem(item.id, { status: 'deployed', bidId: highestBid.id });
       return true;
+    }
+    
+    // Subsequent bids must have more years than the current highest bid
+    if (item.years <= highestBid.years) {
+      await storage.updateBidBundleItem(item.id, { status: 'skipped' });
+      return false;
     }
     
     // Need to beat the current highest bid
