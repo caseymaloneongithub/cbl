@@ -819,6 +819,14 @@ export async function registerRoutes(
               isAutoBid: false,
               isImportedInitial: true, // Mark as imported bid - subsequent bids must have more years
             });
+            
+            // Update the free agent's minimumYears to require more years than the imported bid
+            // This ensures UI shows correct minimum and all validators align
+            const newMinYears = bidYears + 1;
+            if (newMinYears > (agent.minimumYears || 1)) {
+              await storage.updateFreeAgent(agent.id, { minimumYears: newMinYears });
+            }
+            
             bidsCreated++;
           } catch (err: any) {
             bidErrors.push(`Row ${i + 2} (${p.name}): Failed to create bid - ${err.message || err}`);
