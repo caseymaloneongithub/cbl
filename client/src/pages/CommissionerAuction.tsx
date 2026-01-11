@@ -122,6 +122,7 @@ interface ParsedPlayer {
   whip?: number;
   strikeouts?: number;
   ip?: number;
+  cblTeam?: string;
 }
 
 interface AuctionTeam {
@@ -750,6 +751,7 @@ export default function CommissionerAuction() {
     const whipIdx = headers.findIndex(h => h === "whip");
     const strikeoutsIdx = headers.findIndex(h => h === "strikeouts" || h === "k" || h === "so");
     const ipIdx = headers.findIndex(h => h === "ip" || h === "inningspitched");
+    const cblTeamIdx = headers.findIndex(h => h === "cblteam" || h === "cbl_team" || h === "ownerteam" || h === "owner_team" || h === "biddingteam" || h === "bidding_team");
 
     if (nameIdx === -1 && (firstNameIdx === -1 || lastNameIdx === -1)) {
       toast({
@@ -808,6 +810,7 @@ export default function CommissionerAuction() {
         whip: parseNum(values[whipIdx]),
         strikeouts: parseNum(values[strikeoutsIdx]),
         ip: parseNum(values[ipIdx]),
+        cblTeam: cblTeamIdx !== -1 ? values[cblTeamIdx]?.trim() || undefined : undefined,
       });
     }
 

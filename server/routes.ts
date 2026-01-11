@@ -690,11 +690,102 @@ export async function registerRoutes(
         }
       }
       
+      // Handle cblTeam - create bids for players that have an existing bid
+      // Map player names (lowercase) to their newly created/updated agent IDs
+      const allAgents = [...newAgents, ...updatedAgents];
+      const agentByName = new Map<string, typeof allAgents[0]>();
+      for (const agent of allAgents) {
+        agentByName.set(agent.name.toLowerCase().trim(), agent);
+      }
+      
+      // Get league members to map team abbreviations to user IDs
+      let bidsCreated = 0;
+      const bidErrors: string[] = [];
+      
+      if (auction.leagueId) {
+        const leagueMembers = await storage.getLeagueMembers(auction.leagueId);
+        const auctionTeams = await storage.getAuctionTeams(targetAuctionId);
+        
+        // Create a map of team abbreviation (lowercase) to user ID
+        const abbrevToUserId = new Map<string, string>();
+        for (const member of leagueMembers) {
+          if (member.user.teamAbbreviation) {
+            abbrevToUserId.set(member.user.teamAbbreviation.toLowerCase().trim(), member.userId);
+          }
+        }
+        
+        // Create a set of enrolled user IDs
+        const enrolledUserIds = new Set(auctionTeams.map(t => t.userId));
+        
+        // Process players with cblTeam
+        for (let i = 0; i < players.length; i++) {
+          const p = players[i];
+          const cblTeam = p.cblTeam?.trim();
+          if (!cblTeam) continue;
+          
+          const playerName = p.name?.trim().toLowerCase();
+          const agent = agentByName.get(playerName);
+          if (!agent) continue; // Player wasn't created/updated (maybe skipped)
+          
+          // Find the user by team abbreviation
+          const biddingUserId = abbrevToUserId.get(cblTeam.toLowerCase());
+          if (!biddingUserId) {
+            bidErrors.push(`Row ${i + 2} (${p.name}): Team abbreviation "${cblTeam}" not found in league`);
+            continue;
+          }
+          
+          // Check if user is enrolled in this auction
+          if (!enrolledUserIds.has(biddingUserId)) {
+            bidErrors.push(`Row ${i + 2} (${p.name}): Team "${cblTeam}" is not enrolled in this auction`);
+            continue;
+          }
+          
+          // Calculate bid amount and years from minimumBid and minimumYears
+          const bidAmount = p.minimumBid || 1;
+          const bidYears = p.minimumYears || 1;
+          
+          // Calculate total value using auction's year factors
+          const yearFactors = [
+            auction.yearFactor1,
+            auction.yearFactor2,
+            auction.yearFactor3,
+            auction.yearFactor4,
+            auction.yearFactor5,
+          ];
+          const yearFactor = yearFactors[bidYears - 1] || bidYears;
+          const totalValue = Math.round(bidAmount * yearFactor);
+          
+          try {
+            await storage.createBid({
+              freeAgentId: agent.id,
+              userId: biddingUserId,
+              amount: bidAmount,
+              years: bidYears,
+              totalValue,
+              isAutoBid: false,
+            });
+            bidsCreated++;
+          } catch (err: any) {
+            bidErrors.push(`Row ${i + 2} (${p.name}): Failed to create bid - ${err.message || err}`);
+          }
+        }
+      }
+      
+      // Add bid-related warnings
+      if (bidsCreated > 0) {
+        warnings.push(`Created ${bidsCreated} bid(s) from cblTeam column.`);
+      }
+      if (bidErrors.length > 0) {
+        const maxErrors = 5;
+        warnings.push(`Bid import errors: ${bidErrors.slice(0, maxErrors).join('; ')}${bidErrors.length > maxErrors ? ` ... and ${bidErrors.length - maxErrors} more` : ''}`);
+      }
+      
       res.json({ 
         players: [...newAgents, ...updatedAgents], 
         count: newAgents.length + updatedAgents.length,
         inserted: newAgents.length,
         updated: updatedAgents.length,
+        bidsCreated,
         warnings 
       });
     } catch (error: any) {
@@ -1508,7 +1599,7 @@ export async function registerRoutes(
       );
 
       // Deploy the first active item using the unified approach
-      let currentItem = bundle.items.find(i => i.status === 'active');
+      let currentItem: typeof bundle.items[0] | undefined = bundle.items.find(i => i.status === 'active');
       while (currentItem) {
         const success = await deployBundleItemAsAutoBid(currentItem, bundle);
         if (success) {
@@ -1516,7 +1607,7 @@ export async function registerRoutes(
         }
         // Failed - try to activate next item
         const nextItem = await storage.activateNextBundleItem(bundle.id);
-        currentItem = nextItem;
+        currentItem = nextItem ?? undefined;
       }
 
       // Fetch the updated bundle with final statuses
@@ -1621,7 +1712,7 @@ export async function registerRoutes(
       );
 
       // Deploy the first active item using the unified approach
-      let currentItem = updatedBundle.items.find(i => i.status === 'active');
+      let currentItem: typeof updatedBundle.items[0] | undefined = updatedBundle.items.find(i => i.status === 'active');
       while (currentItem) {
         const success = await deployBundleItemAsAutoBid(currentItem, updatedBundle);
         if (success) {
@@ -1629,7 +1720,7 @@ export async function registerRoutes(
         }
         // Failed - try to activate next item
         const nextItem = await storage.activateNextBundleItem(updatedBundle.id);
-        currentItem = nextItem;
+        currentItem = nextItem ?? undefined;
       }
 
       // Fetch the updated bundle with final statuses
