@@ -1595,11 +1595,29 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTeamsNotInAuction(auctionId: number): Promise<User[]> {
-    // Get all non-archived users (including commissioners and super admins)
-    const allUsers = await db
-      .select()
-      .from(users)
-      .where(eq(users.isArchived, false));
+    // Get the auction to find its leagueId
+    const [auction] = await db
+      .select({ leagueId: auctions.leagueId })
+      .from(auctions)
+      .where(eq(auctions.id, auctionId));
+    
+    if (!auction) {
+      return [];
+    }
+    
+    // Get all league members with their league-specific team info
+    const members = await db
+      .select({
+        userId: leagueMembers.userId,
+        teamName: leagueMembers.teamName,
+        teamAbbreviation: leagueMembers.teamAbbreviation,
+      })
+      .from(leagueMembers)
+      .where(eq(leagueMembers.leagueId, auction.leagueId));
+    
+    if (members.length === 0) {
+      return [];
+    }
     
     // Get users already enrolled in this auction
     const enrolledTeams = await db
@@ -1609,8 +1627,39 @@ export class DatabaseStorage implements IStorage {
     
     const enrolledUserIds = new Set(enrolledTeams.map(t => t.userId));
     
-    // Return users not enrolled
-    return allUsers.filter(u => !enrolledUserIds.has(u.id));
+    // Get non-enrolled member user IDs
+    const notEnrolledMemberIds = members
+      .filter(m => !enrolledUserIds.has(m.userId))
+      .map(m => m.userId);
+    
+    if (notEnrolledMemberIds.length === 0) {
+      return [];
+    }
+    
+    // Get user details for non-enrolled members
+    const memberUsers = await db
+      .select()
+      .from(users)
+      .where(and(
+        inArray(users.id, notEnrolledMemberIds),
+        eq(users.isArchived, false)
+      ));
+    
+    // Create a map of league-specific team info
+    const leagueTeamInfo = new Map(members.map(m => [m.userId, { 
+      teamName: m.teamName, 
+      teamAbbreviation: m.teamAbbreviation 
+    }]));
+    
+    // Return users with their league-specific team info
+    return memberUsers.map(u => {
+      const leagueInfo = leagueTeamInfo.get(u.id);
+      return {
+        ...u,
+        teamName: leagueInfo?.teamName || u.teamName,
+        teamAbbreviation: leagueInfo?.teamAbbreviation || u.teamAbbreviation,
+      };
+    });
   }
 
   async getUserEnrolledAuctions(userId: string): Promise<Auction[]> {
