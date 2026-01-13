@@ -1562,6 +1562,12 @@ export async function registerRoutes(
         }
       }
 
+      // Check if user is enrolled in this auction
+      const canBidResult = await storage.canUserBidOnPlayer(userId, agentId);
+      if (!canBidResult.canBid) {
+        return res.status(400).json({ message: canBidResult.reason || "You cannot bid on this player" });
+      }
+
       const { maxAmount, years, isActive } = req.body;
       
       // Check if auto-bid meets minimum years requirement

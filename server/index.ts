@@ -223,6 +223,13 @@ async function deployPendingAutoBids() {
           continue;
         }
         
+        // Check if user is enrolled in the auction
+        const canBidResult = await storage.canUserBidOnPlayer(pending.userId, pending.freeAgentId);
+        if (!canBidResult.canBid) {
+          log(`Auto-bid for ${agent.name} skipped: ${canBidResult.reason}`, "auction-job");
+          continue;
+        }
+        
         // Calculate total value
         const yearFactor = yearFactors[pending.years - 1] || 1;
         const totalValue = bidAmount * yearFactor;
