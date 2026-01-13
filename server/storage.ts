@@ -564,15 +564,74 @@ export class DatabaseStorage implements IStorage {
       }
     }
     
-    // Assemble the enriched results
-    return agents.map(agent => ({
-      ...agent,
-      currentBid: highestBidMap.get(agent.id) || null,
-      highBidder: highestBidMap.has(agent.id) 
-        ? bidderMap.get(highestBidMap.get(agent.id)!.userId) || null 
-        : null,
-      bidCount: bidCountMap.get(agent.id) || 0,
-    }));
+    // Batch query 4: Get league-specific team names for bidders
+    // First, get the unique auction IDs to look up their leagues
+    const auctionIds = [...new Set(agents.map(a => a.auctionId))];
+    const leagueIdsByAuction = new Map<number, number>();
+    if (auctionIds.length > 0) {
+      const auctionsResult = await db
+        .select({ id: auctions.id, leagueId: auctions.leagueId })
+        .from(auctions)
+        .where(inArray(auctions.id, auctionIds));
+      for (const a of auctionsResult) {
+        leagueIdsByAuction.set(a.id, a.leagueId);
+      }
+    }
+    
+    // Now get league members for all bidder+league combinations
+    const leagueMemberMap = new Map<string, { teamName: string | null; teamAbbreviation: string | null }>();
+    if (bidderIds.size > 0 && leagueIdsByAuction.size > 0) {
+      const uniqueLeagueIds = [...new Set(leagueIdsByAuction.values())];
+      const bidderIdsArray = Array.from(bidderIds);
+      const membersResult = await db
+        .select({
+          userId: leagueMembers.userId,
+          leagueId: leagueMembers.leagueId,
+          teamName: leagueMembers.teamName,
+          teamAbbreviation: leagueMembers.teamAbbreviation,
+        })
+        .from(leagueMembers)
+        .where(and(
+          inArray(leagueMembers.userId, bidderIdsArray),
+          inArray(leagueMembers.leagueId, uniqueLeagueIds)
+        ));
+      
+      for (const m of membersResult) {
+        // Key by "userId-leagueId" to handle users in multiple leagues
+        leagueMemberMap.set(`${m.userId}-${m.leagueId}`, {
+          teamName: m.teamName,
+          teamAbbreviation: m.teamAbbreviation,
+        });
+      }
+    }
+    
+    // Assemble the enriched results with league-specific team info
+    return agents.map(agent => {
+      const currentBid = highestBidMap.get(agent.id) || null;
+      let highBidder = currentBid ? bidderMap.get(currentBid.userId) || null : null;
+      
+      // Override with league-specific team info if available
+      if (highBidder && currentBid) {
+        const leagueId = leagueIdsByAuction.get(agent.auctionId);
+        if (leagueId) {
+          const leagueMember = leagueMemberMap.get(`${currentBid.userId}-${leagueId}`);
+          if (leagueMember) {
+            highBidder = {
+              ...highBidder,
+              teamName: leagueMember.teamName || highBidder.teamName,
+              teamAbbreviation: leagueMember.teamAbbreviation || highBidder.teamAbbreviation,
+            };
+          }
+        }
+      }
+      
+      return {
+        ...agent,
+        currentBid,
+        highBidder,
+        bidCount: bidCountMap.get(agent.id) || 0,
+      };
+    });
   }
 
   async createFreeAgent(agent: InsertFreeAgent): Promise<FreeAgent> {
