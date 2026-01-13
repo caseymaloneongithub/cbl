@@ -6,6 +6,7 @@ import { insertBidSchema, insertAutoBidSchema } from "@shared/schema";
 import { z } from "zod";
 import { fromZonedTime } from "date-fns-tz";
 import { parse, isValid } from "date-fns";
+import { syncPlayerStatsFromMLB, testMLBConnection } from "./mlb-api";
 
 const EASTERN_TIMEZONE = "America/New_York";
 const CST_TIMEZONE = "America/Chicago";
@@ -963,6 +964,120 @@ export async function registerRoutes(
       console.error("Error updating free agent stats:", error);
       res.status(500).json({ 
         message: `Failed to update stats: ${error?.message || String(error)}`
+      });
+    }
+  });
+
+  // Commissioner: Sync stats from MLB API for free agents in an auction
+  app.post("/api/free-agents/sync-mlb-stats", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const { auctionId, season } = req.body;
+      
+      if (!auctionId || typeof auctionId !== 'number') {
+        return res.status(400).json({ message: "Valid auction ID is required" });
+      }
+      
+      if (!season || typeof season !== 'number' || season < 2000 || season > 2030) {
+        return res.status(400).json({ message: "Valid season year is required (2000-2030)" });
+      }
+      
+      const auction = await storage.getAuction(auctionId);
+      if (!auction) {
+        return res.status(400).json({ message: "Invalid auction ID" });
+      }
+      
+      if (!await hasAuctionCommissionerAccess(userId, auctionId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+      
+      // Test MLB API connection first
+      const isConnected = await testMLBConnection();
+      if (!isConnected) {
+        return res.status(503).json({ message: "Unable to connect to MLB Stats API. Please try again later." });
+      }
+      
+      // Get all free agents in this auction
+      const freeAgents = await storage.getFreeAgentsByAuction(auctionId);
+      if (freeAgents.length === 0) {
+        return res.status(400).json({ message: "No free agents found in this auction" });
+      }
+      
+      const playerNames = freeAgents.map(a => a.name);
+      
+      // Fetch stats from MLB API
+      console.log(`[MLB Sync] Fetching ${season} stats for ${playerNames.length} players in auction ${auctionId}`);
+      const syncResults = await syncPlayerStatsFromMLB(playerNames, season);
+      
+      // Update players with found stats
+      let updatedCount = 0;
+      let notFoundCount = 0;
+      const notFoundPlayers: string[] = [];
+      const updatedPlayers: { name: string; mlbName: string; stats: string }[] = [];
+      
+      for (const result of syncResults) {
+        if (!result.found || !result.stats) {
+          notFoundCount++;
+          notFoundPlayers.push(result.playerName);
+          continue;
+        }
+        
+        // Find matching free agent
+        const agent = freeAgents.find(a => a.name.toLowerCase() === result.playerName.toLowerCase());
+        if (!agent) continue;
+        
+        // Build stats update object (only include non-null values)
+        const statsUpdate: Record<string, number | null> = {};
+        const stats = result.stats;
+        
+        if (stats.playerType === "hitter") {
+          if (stats.pa !== undefined) statsUpdate.pa = stats.pa;
+          if (stats.hr !== undefined) statsUpdate.hr = stats.hr;
+          if (stats.rbi !== undefined) statsUpdate.rbi = stats.rbi;
+          if (stats.runs !== undefined) statsUpdate.runs = stats.runs;
+          if (stats.sb !== undefined) statsUpdate.sb = stats.sb;
+          if (stats.avg !== undefined) statsUpdate.avg = stats.avg;
+          if (stats.ops !== undefined) statsUpdate.ops = stats.ops;
+        } else {
+          if (stats.ip !== undefined) statsUpdate.ip = stats.ip;
+          if (stats.wins !== undefined) statsUpdate.wins = stats.wins;
+          if (stats.losses !== undefined) statsUpdate.losses = stats.losses;
+          if (stats.era !== undefined) statsUpdate.era = stats.era;
+          if (stats.whip !== undefined) statsUpdate.whip = stats.whip;
+          if (stats.strikeouts !== undefined) statsUpdate.strikeouts = stats.strikeouts;
+        }
+        
+        if (Object.keys(statsUpdate).length > 0) {
+          await storage.updateFreeAgentStats(agent.id, statsUpdate);
+          updatedCount++;
+          
+          // Build summary of updated stats
+          const statsSummary = Object.entries(statsUpdate)
+            .map(([k, v]) => `${k}: ${v}`)
+            .join(", ");
+          
+          updatedPlayers.push({
+            name: result.playerName,
+            mlbName: result.mlbName || result.playerName,
+            stats: statsSummary,
+          });
+        }
+      }
+      
+      console.log(`[MLB Sync] Updated ${updatedCount}/${freeAgents.length} players, ${notFoundCount} not found`);
+      
+      res.json({
+        season,
+        totalPlayers: freeAgents.length,
+        updatedCount,
+        notFoundCount,
+        notFoundPlayers: notFoundPlayers.slice(0, 50), // Limit to first 50
+        updatedPlayers: updatedPlayers.slice(0, 20), // Show first 20 updates
+      });
+    } catch (error: any) {
+      console.error("Error syncing MLB stats:", error);
+      res.status(500).json({ 
+        message: `Failed to sync MLB stats: ${error?.message || String(error)}`
       });
     }
   });
