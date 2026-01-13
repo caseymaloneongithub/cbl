@@ -158,8 +158,93 @@ async function runFinalization() {
         }
       }
     }
+    
+    // Deploy pending auto-bids for auctions that just started
+    await deployPendingAutoBids();
+    
   } catch (error) {
     log(`Finalization job error: ${error}`, "auction-job");
+  }
+}
+
+// Deploy auto-bids on players whose auctions have just started
+async function deployPendingAutoBids() {
+  try {
+    const pendingAutoBids = await storage.getPendingAutoBidsForStartedAuctions();
+    
+    if (pendingAutoBids.length === 0) {
+      return;
+    }
+    
+    log(`Deploying ${pendingAutoBids.length} pending auto-bid(s) for started auctions`, "auction-job");
+    
+    for (const pending of pendingAutoBids) {
+      try {
+        // Get the free agent details
+        const agent = await storage.getFreeAgent(pending.freeAgentId);
+        if (!agent) {
+          log(`Free agent ${pending.freeAgentId} not found`, "auction-job");
+          continue;
+        }
+        
+        // Get auction for per-auction settings
+        const auction = await storage.getAuction(pending.auctionId);
+        if (!auction) {
+          log(`Auction ${pending.auctionId} not found`, "auction-job");
+          continue;
+        }
+        
+        // Get current highest bid
+        const currentHighBid = await storage.getHighestBidForAgent(pending.freeAgentId);
+        
+        const yearFactors = [
+          auction.yearFactor1,
+          auction.yearFactor2,
+          auction.yearFactor3,
+          auction.yearFactor4,
+          auction.yearFactor5,
+        ];
+        
+        // Calculate the bid amount to place
+        let bidAmount: number;
+        if (!currentHighBid) {
+          // No bids yet - place opening bid at minimum
+          bidAmount = agent.minimumBid || 1;
+        } else {
+          // Outbid the current high bid
+          const minIncrement = auction.bidIncrement || 0.05;
+          const increment = Math.max(1, Math.ceil(currentHighBid.amount * minIncrement));
+          bidAmount = currentHighBid.amount + increment;
+        }
+        
+        // Check if our max is enough
+        if (bidAmount > pending.maxAmount) {
+          log(`Auto-bid for ${agent.name} skipped: required $${bidAmount} exceeds max $${pending.maxAmount}`, "auction-job");
+          continue;
+        }
+        
+        // Calculate total value
+        const yearFactor = yearFactors[pending.years - 1] || 1;
+        const totalValue = bidAmount * yearFactor;
+        
+        // Place the bid
+        await storage.createBid({
+          freeAgentId: pending.freeAgentId,
+          userId: pending.userId,
+          amount: bidAmount,
+          years: pending.years,
+          totalValue,
+          isAutoBid: true,
+        });
+        
+        log(`Deployed auto-bid for ${agent.name}: $${bidAmount} x ${pending.years}yr by user ${pending.userId}`, "auction-job");
+        
+      } catch (error) {
+        log(`Error deploying auto-bid ${pending.autoBidId}: ${error}`, "auction-job");
+      }
+    }
+  } catch (error) {
+    log(`Error in deployPendingAutoBids: ${error}`, "auction-job");
   }
 }
 

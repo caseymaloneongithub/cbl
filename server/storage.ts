@@ -179,6 +179,16 @@ export interface IStorage {
     activatedBundleItems: Array<{ bundleId: number; itemId: number; freeAgentId: number; userId: string; auctionId: number }>;
   }>;
   
+  // Get pending auto-bids on players whose auctions just started (for background job)
+  getPendingAutoBidsForStartedAuctions(): Promise<Array<{
+    autoBidId: number;
+    freeAgentId: number;
+    userId: string;
+    maxAmount: number;
+    years: number;
+    auctionId: number;
+  }>>;
+  
   // Admin operations
   getSuperAdmin(): Promise<User | undefined>;
   getRecentlyClosedAuctions(hoursAgo: number): Promise<{
@@ -1741,6 +1751,84 @@ export class DatabaseStorage implements IStorage {
     }
     
     return { finalized, errors, activatedBundleItems };
+  }
+
+  async getPendingAutoBidsForStartedAuctions(): Promise<Array<{
+    autoBidId: number;
+    freeAgentId: number;
+    userId: string;
+    maxAmount: number;
+    years: number;
+    auctionId: number;
+  }>> {
+    const now = new Date();
+    
+    // Find active auto-bids on players where:
+    // 1. The auction has started (auctionStartTime <= now OR auctionStartTime is null)
+    // 2. The auction has not ended (auctionEndTime > now)
+    // 3. No bid has been placed yet by this user on this player
+    const results = await db
+      .select({
+        autoBidId: autoBids.id,
+        freeAgentId: autoBids.freeAgentId,
+        userId: autoBids.userId,
+        maxAmount: autoBids.maxAmount,
+        years: autoBids.years,
+        auctionId: freeAgents.auctionId,
+      })
+      .from(autoBids)
+      .innerJoin(freeAgents, eq(autoBids.freeAgentId, freeAgents.id))
+      .where(
+        and(
+          eq(autoBids.isActive, true),
+          // Auction has started (null means immediately available)
+          or(
+            isNull(freeAgents.auctionStartTime),
+            sql`${freeAgents.auctionStartTime} <= ${now}`
+          ),
+          // Auction has not ended
+          sql`${freeAgents.auctionEndTime} > ${now}`,
+          // Player is still active (no winner yet)
+          isNull(freeAgents.winnerId)
+        )
+      );
+    
+    // Filter out auto-bids where the user has already placed a bid
+    const pendingAutoBids: Array<{
+      autoBidId: number;
+      freeAgentId: number;
+      userId: string;
+      maxAmount: number;
+      years: number;
+      auctionId: number;
+    }> = [];
+    
+    for (const result of results) {
+      // Check if this user has already placed a bid on this player
+      const existingBid = await db
+        .select({ id: bids.id })
+        .from(bids)
+        .where(
+          and(
+            eq(bids.freeAgentId, result.freeAgentId),
+            eq(bids.userId, result.userId)
+          )
+        )
+        .limit(1);
+      
+      if (existingBid.length === 0 && result.auctionId) {
+        pendingAutoBids.push({
+          autoBidId: result.autoBidId,
+          freeAgentId: result.freeAgentId,
+          userId: result.userId,
+          maxAmount: result.maxAmount,
+          years: result.years,
+          auctionId: result.auctionId,
+        });
+      }
+    }
+    
+    return pendingAutoBids;
   }
 
   async getSuperAdmin(): Promise<User | undefined> {

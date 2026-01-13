@@ -92,6 +92,7 @@ Preferred communication style: Simple, everyday language.
   - Free agents are required to be associated with an auction when created (via auction selector in Commissioner page)
 - **Background Jobs**:
   - Auction Finalization (every minute): Automatically sets winnerId and winningBidId for closed auctions based on highest bid
+  - Auto-Bid Deployment (every minute): Deploys pending auto-bids when a player's auction start time arrives. If a user creates an auto-bid on a player whose auction hasn't started yet, the bid will automatically deploy within 1 minute of the auction starting.
   - Hourly Email Summary: Per-auction email notification setting controls who receives results emails
   - "Ending Today" calculation uses Eastern Time for midnight boundary
 - **MLB Stats Integration**: Commissioners can sync player statistics directly from MLB's official Stats API
