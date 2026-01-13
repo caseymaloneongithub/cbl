@@ -972,7 +972,7 @@ export async function registerRoutes(
   app.post("/api/free-agents/sync-mlb-stats", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.originalUserId || req.session.userId!;
-      const { auctionId, season } = req.body;
+      const { auctionId, season, selectedStats } = req.body;
       
       if (!auctionId || typeof auctionId !== 'number') {
         return res.status(400).json({ message: "Valid auction ID is required" });
@@ -981,6 +981,12 @@ export async function registerRoutes(
       if (!season || typeof season !== 'number' || season < 2000 || season > 2030) {
         return res.status(400).json({ message: "Valid season year is required (2000-2030)" });
       }
+      
+      // Validate selectedStats - default to all stats if not provided
+      const allStats = ["pa", "hr", "rbi", "runs", "sb", "avg", "ops", "ip", "wins", "losses", "era", "whip", "strikeouts"];
+      const statsToSync: string[] = Array.isArray(selectedStats) && selectedStats.length > 0
+        ? selectedStats.filter((s: string) => allStats.includes(s))
+        : allStats;
       
       const auction = await storage.getAuction(auctionId);
       if (!auction) {
@@ -1026,25 +1032,25 @@ export async function registerRoutes(
         const agent = freeAgents.find(a => a.name.toLowerCase() === result.playerName.toLowerCase());
         if (!agent) continue;
         
-        // Build stats update object (only include non-null values)
+        // Build stats update object (only include selected stats with non-null values)
         const statsUpdate: Record<string, number | null> = {};
         const stats = result.stats;
         
         if (stats.playerType === "hitter") {
-          if (stats.pa !== undefined) statsUpdate.pa = stats.pa;
-          if (stats.hr !== undefined) statsUpdate.hr = stats.hr;
-          if (stats.rbi !== undefined) statsUpdate.rbi = stats.rbi;
-          if (stats.runs !== undefined) statsUpdate.runs = stats.runs;
-          if (stats.sb !== undefined) statsUpdate.sb = stats.sb;
-          if (stats.avg !== undefined) statsUpdate.avg = stats.avg;
-          if (stats.ops !== undefined) statsUpdate.ops = stats.ops;
+          if (statsToSync.includes("pa") && stats.pa !== undefined) statsUpdate.pa = stats.pa;
+          if (statsToSync.includes("hr") && stats.hr !== undefined) statsUpdate.hr = stats.hr;
+          if (statsToSync.includes("rbi") && stats.rbi !== undefined) statsUpdate.rbi = stats.rbi;
+          if (statsToSync.includes("runs") && stats.runs !== undefined) statsUpdate.runs = stats.runs;
+          if (statsToSync.includes("sb") && stats.sb !== undefined) statsUpdate.sb = stats.sb;
+          if (statsToSync.includes("avg") && stats.avg !== undefined) statsUpdate.avg = stats.avg;
+          if (statsToSync.includes("ops") && stats.ops !== undefined) statsUpdate.ops = stats.ops;
         } else {
-          if (stats.ip !== undefined) statsUpdate.ip = stats.ip;
-          if (stats.wins !== undefined) statsUpdate.wins = stats.wins;
-          if (stats.losses !== undefined) statsUpdate.losses = stats.losses;
-          if (stats.era !== undefined) statsUpdate.era = stats.era;
-          if (stats.whip !== undefined) statsUpdate.whip = stats.whip;
-          if (stats.strikeouts !== undefined) statsUpdate.strikeouts = stats.strikeouts;
+          if (statsToSync.includes("ip") && stats.ip !== undefined) statsUpdate.ip = stats.ip;
+          if (statsToSync.includes("wins") && stats.wins !== undefined) statsUpdate.wins = stats.wins;
+          if (statsToSync.includes("losses") && stats.losses !== undefined) statsUpdate.losses = stats.losses;
+          if (statsToSync.includes("era") && stats.era !== undefined) statsUpdate.era = stats.era;
+          if (statsToSync.includes("whip") && stats.whip !== undefined) statsUpdate.whip = stats.whip;
+          if (statsToSync.includes("strikeouts") && stats.strikeouts !== undefined) statsUpdate.strikeouts = stats.strikeouts;
         }
         
         if (Object.keys(statsUpdate).length > 0) {

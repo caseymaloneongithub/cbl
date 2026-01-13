@@ -97,13 +97,14 @@ Preferred communication style: Simple, everyday language.
 - **MLB Stats Integration**: Commissioners can sync player statistics directly from MLB's official Stats API
   - "Sync from MLB" button in Commissioner page fetches stats for all players in an auction
   - Select season year (last 10 years available) to pull appropriate stats
+  - **Stat selection**: Choose which specific stats to update via checkboxes (can select individual stats or use Select All/Clear All)
   - Fuzzy name matching handles player name variations (e.g., "Mike Trout" vs "Trout, Michael")
   - Batch processing (5 players at a time with 100ms delays) respects API rate limits
   - Results dialog shows: updated players with stats summary, players not found in MLB database
-  - Stats synced for hitters: PA, HR, RBI, Runs, SB, AVG, OPS
-  - Stats synced for pitchers: IP, Wins, Losses, ERA, WHIP, Strikeouts
+  - Available hitter stats: PA, HR, RBI, Runs, SB, AVG, OPS
+  - Available pitcher stats: IP, Wins, Losses, ERA, WHIP, Strikeouts
   - Players not found need manual stats update via CSV upload
-  - API route: `POST /api/free-agents/sync-mlb-stats`
+  - API route: `POST /api/free-agents/sync-mlb-stats` (accepts optional `selectedStats` array)
   - Implementation: `server/mlb-api.ts` (no API key required - free public API)
 - **Email Notifications**: Resend integration for password reset, new user credentials, and hourly auction summaries
   - Per-auction `emailNotifications` setting with values: "none", "commissioner", "bidders" (default), or "league"

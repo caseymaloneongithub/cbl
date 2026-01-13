@@ -199,6 +199,10 @@ export default function CommissionerAuction() {
     updatedPlayers: { name: string; mlbName: string; stats: string }[];
   } | null>(null);
   const [mlbResultsDialogOpen, setMlbResultsDialogOpen] = useState(false);
+  const [mlbSelectedStats, setMlbSelectedStats] = useState<string[]>([
+    "pa", "hr", "rbi", "runs", "sb", "avg", "ops", // hitter stats
+    "ip", "wins", "losses", "era", "whip", "strikeouts" // pitcher stats
+  ]);
 
   // Fetch auction details
   const { data: auction, isLoading: auctionLoading } = useQuery<Auction>({
@@ -545,10 +549,11 @@ export default function CommissionerAuction() {
 
   // MLB API sync mutation
   const syncMLBStats = useMutation({
-    mutationFn: async (data: { season: number }) => {
+    mutationFn: async (data: { season: number; selectedStats: string[] }) => {
       const response = await apiRequest("POST", "/api/free-agents/sync-mlb-stats", {
         auctionId: numericAuctionId,
         season: data.season,
+        selectedStats: data.selectedStats,
       });
       return response.json();
     },
@@ -2483,12 +2488,12 @@ export default function CommissionerAuction() {
 
       {/* MLB Stats Sync Dialog */}
       <Dialog open={mlbSyncDialogOpen} onOpenChange={setMlbSyncDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Sync Stats from MLB</DialogTitle>
             <DialogDescription>
-              Fetch PA, IP, and other stats from MLB's official stats database for all players in this auction.
-              This will update existing player stats but won't add new players.
+              Fetch stats from MLB's official database for all players in this auction.
+              Select which stats you want to update.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -2509,17 +2514,93 @@ export default function CommissionerAuction() {
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-sm text-muted-foreground">
-                Choose the MLB season to fetch stats from (e.g., 2024 for last year's stats).
-              </p>
             </div>
             
-            <div className="bg-muted/50 rounded-lg p-4 space-y-2">
-              <p className="text-sm font-medium">Stats that will be updated:</p>
-              <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
-                <li><strong>Hitters:</strong> PA, HR, RBI, Runs, SB, AVG, OPS</li>
-                <li><strong>Pitchers:</strong> IP, Wins, Losses, ERA, WHIP, K</li>
-              </ul>
+            <div className="space-y-3">
+              <Label>Hitter Stats</Label>
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { key: "pa", label: "PA" },
+                  { key: "hr", label: "HR" },
+                  { key: "rbi", label: "RBI" },
+                  { key: "runs", label: "Runs" },
+                  { key: "sb", label: "SB" },
+                  { key: "avg", label: "AVG" },
+                  { key: "ops", label: "OPS" },
+                ].map((stat) => (
+                  <div key={stat.key} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`stat-${stat.key}`}
+                      checked={mlbSelectedStats.includes(stat.key)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setMlbSelectedStats([...mlbSelectedStats, stat.key]);
+                        } else {
+                          setMlbSelectedStats(mlbSelectedStats.filter(s => s !== stat.key));
+                        }
+                      }}
+                      data-testid={`checkbox-stat-${stat.key}`}
+                    />
+                    <Label htmlFor={`stat-${stat.key}`} className="text-sm cursor-pointer">
+                      {stat.label}
+                    </Label>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            <div className="space-y-3">
+              <Label>Pitcher Stats</Label>
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { key: "ip", label: "IP" },
+                  { key: "wins", label: "W" },
+                  { key: "losses", label: "L" },
+                  { key: "era", label: "ERA" },
+                  { key: "whip", label: "WHIP" },
+                  { key: "strikeouts", label: "K" },
+                ].map((stat) => (
+                  <div key={stat.key} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`stat-${stat.key}`}
+                      checked={mlbSelectedStats.includes(stat.key)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setMlbSelectedStats([...mlbSelectedStats, stat.key]);
+                        } else {
+                          setMlbSelectedStats(mlbSelectedStats.filter(s => s !== stat.key));
+                        }
+                      }}
+                      data-testid={`checkbox-stat-${stat.key}`}
+                    />
+                    <Label htmlFor={`stat-${stat.key}`} className="text-sm cursor-pointer">
+                      {stat.label}
+                    </Label>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            <div className="flex gap-2 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setMlbSelectedStats([
+                  "pa", "hr", "rbi", "runs", "sb", "avg", "ops",
+                  "ip", "wins", "losses", "era", "whip", "strikeouts"
+                ])}
+                data-testid="button-select-all-stats"
+              >
+                Select All
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setMlbSelectedStats([])}
+                data-testid="button-clear-stats"
+              >
+                Clear All
+              </Button>
             </div>
           </div>
           <DialogFooter>
@@ -2527,8 +2608,8 @@ export default function CommissionerAuction() {
               Cancel
             </Button>
             <Button
-              onClick={() => syncMLBStats.mutate({ season: mlbSyncSeason })}
-              disabled={syncMLBStats.isPending}
+              onClick={() => syncMLBStats.mutate({ season: mlbSyncSeason, selectedStats: mlbSelectedStats })}
+              disabled={syncMLBStats.isPending || mlbSelectedStats.length === 0}
               data-testid="button-confirm-mlb-sync"
             >
               {syncMLBStats.isPending ? (
