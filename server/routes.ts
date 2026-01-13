@@ -1705,6 +1705,54 @@ export async function registerRoutes(
     }
   });
 
+  // Super admin endpoint to manually trigger auto-bid competition
+  app.post("/api/free-agents/:id/trigger-competition", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Only super admins can trigger auto-bid competition" });
+      }
+      
+      const agentId = parseInt(req.params.id);
+      
+      const agent = await storage.getFreeAgent(agentId);
+      if (!agent) {
+        return res.status(404).json({ message: "Free agent not found" });
+      }
+      
+      // Check if auction has started
+      if (agent.auctionStartTime && new Date(agent.auctionStartTime) > new Date()) {
+        return res.status(400).json({ message: "Auction has not started yet" });
+      }
+      
+      // Check if auction is still open
+      if (new Date(agent.auctionEndTime) <= new Date()) {
+        return res.status(400).json({ message: "Auction has already ended" });
+      }
+      
+      // Get auction for settings
+      const auction = agent.auctionId ? await storage.getAuction(agent.auctionId) : null;
+      
+      // Trigger the competition with empty excludeUserId to allow all auto-bids to compete
+      const triggered = await processAllAutoBidsUntilStable(agentId, "", auction);
+      
+      // Get updated bid count
+      const bids = await storage.getBidsForAgent(agentId);
+      
+      res.json({ 
+        success: true, 
+        triggered,
+        message: triggered ? "Auto-bid competition triggered successfully" : "No auto-bids needed to compete",
+        bidCount: bids.length
+      });
+    } catch (error) {
+      console.error("Error triggering auto-bid competition:", error);
+      res.status(500).json({ message: "Failed to trigger competition" });
+    }
+  });
+
   // My bids
   app.get("/api/my-bids", isAuthenticated, async (req: any, res) => {
     try {

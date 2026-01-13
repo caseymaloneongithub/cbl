@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -15,13 +15,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CountdownTimer } from "./CountdownTimer";
 import { formatCurrency } from "@/lib/utils";
 import type { FreeAgentWithBids, BidWithUser } from "@shared/schema";
 import { useAuth } from "@/hooks/useAuth";
 import { formatDistanceToNow } from "date-fns";
-import { Clock } from "lucide-react";
+import { Clock, Zap } from "lucide-react";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface BidHistoryModalProps {
   agent: FreeAgentWithBids | null;
@@ -31,10 +34,33 @@ interface BidHistoryModalProps {
 
 export function BidHistoryModal({ agent, open, onOpenChange }: BidHistoryModalProps) {
   const { user } = useAuth();
+  const { toast } = useToast();
   
   const { data: bids, isLoading } = useQuery<BidWithUser[]>({
     queryKey: ['/api/free-agents', agent?.id, 'bids'],
     enabled: open && !!agent?.id,
+  });
+
+  const triggerCompetitionMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", `/api/free-agents/${agent?.id}/trigger-competition`);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: data.triggered ? "Competition Triggered" : "No Changes",
+        description: data.message,
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/free-agents', agent?.id, 'bids'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/free-agents'] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
   });
 
   if (!agent) return null;
@@ -134,14 +160,28 @@ export function BidHistoryModal({ agent, open, onOpenChange }: BidHistoryModalPr
         </div>
 
         <div className="border-t pt-4 mt-2">
-          <div className="flex justify-between text-sm text-muted-foreground">
+          <div className="flex justify-between items-center text-sm text-muted-foreground">
             <span>Total bids: {sortedBids.length}</span>
-            <span>
-              {agent.currentBid 
-                ? `Current: ${formatCurrency(agent.currentBid.amount)} / ${agent.currentBid.years}yr`
-                : `Minimum: ${formatCurrency(agent.minimumBid)}`
-              }
-            </span>
+            <div className="flex items-center gap-4">
+              {user?.isSuperAdmin && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => triggerCompetitionMutation.mutate()}
+                  disabled={triggerCompetitionMutation.isPending}
+                  data-testid="button-trigger-competition"
+                >
+                  <Zap className="h-4 w-4 mr-1" />
+                  {triggerCompetitionMutation.isPending ? "Running..." : "Trigger Auto-Bid Competition"}
+                </Button>
+              )}
+              <span>
+                {agent.currentBid 
+                  ? `Current: ${formatCurrency(agent.currentBid.amount)} / ${agent.currentBid.years}yr`
+                  : `Minimum: ${formatCurrency(agent.minimumBid)}`
+                }
+              </span>
+            </div>
           </div>
         </div>
       </DialogContent>
