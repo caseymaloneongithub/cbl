@@ -186,6 +186,19 @@ export default function CommissionerAuction() {
   const [bulkRelistEndDate, setBulkRelistEndDate] = useState<Date | undefined>(undefined);
   const [bulkRelistEndHour, setBulkRelistEndHour] = useState("20");
   const [bulkRelistEndMinute, setBulkRelistEndMinute] = useState("00");
+  
+  // MLB API sync state
+  const [mlbSyncDialogOpen, setMlbSyncDialogOpen] = useState(false);
+  const [mlbSyncSeason, setMlbSyncSeason] = useState(new Date().getFullYear() - 1);
+  const [mlbSyncResults, setMlbSyncResults] = useState<{
+    season: number;
+    totalPlayers: number;
+    updatedCount: number;
+    notFoundCount: number;
+    notFoundPlayers: string[];
+    updatedPlayers: { name: string; mlbName: string; stats: string }[];
+  } | null>(null);
+  const [mlbResultsDialogOpen, setMlbResultsDialogOpen] = useState(false);
 
   // Fetch auction details
   const { data: auction, isLoading: auctionLoading } = useQuery<Auction>({
@@ -525,6 +538,37 @@ export default function CommissionerAuction() {
       toast({
         title: "Update failed",
         description: error.message || "Failed to update stats.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // MLB API sync mutation
+  const syncMLBStats = useMutation({
+    mutationFn: async (data: { season: number }) => {
+      const response = await apiRequest("POST", "/api/free-agents/sync-mlb-stats", {
+        auctionId: numericAuctionId,
+        season: data.season,
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setMlbSyncDialogOpen(false);
+      // Invalidate all queries that might use player stats
+      queryClient.invalidateQueries({ queryKey: ['/api/free-agents'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/auctions', numericAuctionId, 'free-agents'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/limits'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/budget'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/results'] });
+      
+      // Store results for display
+      setMlbSyncResults(data);
+      setMlbResultsDialogOpen(true);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "MLB Sync Failed",
+        description: error.message || "Failed to sync stats from MLB API.",
         variant: "destructive",
       });
     },
@@ -1652,13 +1696,25 @@ export default function CommissionerAuction() {
       {/* CSV Upload Section */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Upload className="h-5 w-5" />
-            Upload Free Agents (CSV)
-          </CardTitle>
-          <CardDescription>
-            Upload a CSV file with player data for this auction
-          </CardDescription>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Upload className="h-5 w-5" />
+                Upload Free Agents (CSV)
+              </CardTitle>
+              <CardDescription>
+                Upload a CSV file with player data, or sync stats from MLB
+              </CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => setMlbSyncDialogOpen(true)}
+              data-testid="button-mlb-sync"
+            >
+              <RefreshCcw className="h-4 w-4 mr-2" />
+              Sync from MLB
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Drop Zone */}
@@ -2421,6 +2477,149 @@ export default function CommissionerAuction() {
                 )}
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* MLB Stats Sync Dialog */}
+      <Dialog open={mlbSyncDialogOpen} onOpenChange={setMlbSyncDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Sync Stats from MLB</DialogTitle>
+            <DialogDescription>
+              Fetch PA, IP, and other stats from MLB's official stats database for all players in this auction.
+              This will update existing player stats but won't add new players.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="mlb-season">Season Year</Label>
+              <Select 
+                value={mlbSyncSeason.toString()} 
+                onValueChange={(val) => setMlbSyncSeason(parseInt(val))}
+              >
+                <SelectTrigger data-testid="select-mlb-season">
+                  <SelectValue placeholder="Select season" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
+                    <SelectItem key={year} value={year.toString()}>
+                      {year}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-sm text-muted-foreground">
+                Choose the MLB season to fetch stats from (e.g., 2024 for last year's stats).
+              </p>
+            </div>
+            
+            <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+              <p className="text-sm font-medium">Stats that will be updated:</p>
+              <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
+                <li><strong>Hitters:</strong> PA, HR, RBI, Runs, SB, AVG, OPS</li>
+                <li><strong>Pitchers:</strong> IP, Wins, Losses, ERA, WHIP, K</li>
+              </ul>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMlbSyncDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => syncMLBStats.mutate({ season: mlbSyncSeason })}
+              disabled={syncMLBStats.isPending}
+              data-testid="button-confirm-mlb-sync"
+            >
+              {syncMLBStats.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Syncing...
+                </>
+              ) : (
+                <>
+                  <RefreshCcw className="mr-2 h-4 w-4" />
+                  Sync {mlbSyncSeason} Stats
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* MLB Sync Results Dialog */}
+      <Dialog open={mlbResultsDialogOpen} onOpenChange={setMlbResultsDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>MLB Stats Sync Complete</DialogTitle>
+            <DialogDescription>
+              {mlbSyncResults && (
+                <>
+                  Synced {mlbSyncResults.season} stats: Updated {mlbSyncResults.updatedCount} of {mlbSyncResults.totalPlayers} players.
+                  {mlbSyncResults.notFoundCount > 0 && ` ${mlbSyncResults.notFoundCount} players not found in MLB database.`}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {mlbSyncResults && (
+            <div className="space-y-4 py-4">
+              {mlbSyncResults.notFoundCount > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-amber-600 dark:text-amber-500">
+                    <AlertCircle className="h-4 w-4" />
+                    <span className="font-medium">Players Not Found ({mlbSyncResults.notFoundCount})</span>
+                  </div>
+                  <div className="bg-amber-50 dark:bg-amber-950/20 rounded-lg p-3 max-h-40 overflow-y-auto">
+                    <div className="flex flex-wrap gap-2">
+                      {mlbSyncResults.notFoundPlayers.map((name, i) => (
+                        <Badge key={i} variant="outline" className="text-amber-700 dark:text-amber-400 border-amber-300">
+                          {name}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    These players may need their stats updated manually via CSV upload.
+                  </p>
+                </div>
+              )}
+              
+              {mlbSyncResults.updatedPlayers.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-green-600 dark:text-green-500">
+                    <Check className="h-4 w-4" />
+                    <span className="font-medium">Successfully Updated ({mlbSyncResults.updatedCount})</span>
+                  </div>
+                  <div className="bg-muted/50 rounded-lg max-h-60 overflow-y-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Player</TableHead>
+                          <TableHead>MLB Name</TableHead>
+                          <TableHead>Stats Updated</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {mlbSyncResults.updatedPlayers.map((p, i) => (
+                          <TableRow key={i}>
+                            <TableCell className="font-medium">{p.name}</TableCell>
+                            <TableCell className="text-muted-foreground">{p.mlbName}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{p.stats}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          
+          <DialogFooter>
+            <Button onClick={() => setMlbResultsDialogOpen(false)}>
+              Close
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
