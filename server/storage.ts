@@ -723,6 +723,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getBidsForAgent(agentId: number): Promise<BidWithUser[]> {
+    // First get the free agent to determine its auction and league
+    const [agent] = await db.select().from(freeAgents).where(eq(freeAgents.id, agentId));
+    if (!agent) return [];
+    
+    // Get the auction to find the league
+    const [auction] = agent.auctionId 
+      ? await db.select().from(auctions).where(eq(auctions.id, agent.auctionId))
+      : [null];
+    const leagueId = auction?.leagueId;
+    
     const agentBids = await db
       .select()
       .from(bids)
@@ -733,6 +743,21 @@ export class DatabaseStorage implements IStorage {
     for (const bid of agentBids) {
       const [user] = await db.select().from(users).where(eq(users.id, bid.userId));
       if (user) {
+        // Get league-specific team info if we have a leagueId
+        if (leagueId) {
+          const [member] = await db
+            .select()
+            .from(leagueMembers)
+            .where(and(
+              eq(leagueMembers.leagueId, leagueId),
+              eq(leagueMembers.userId, bid.userId)
+            ));
+          if (member) {
+            // Override user-level team info with league-specific info
+            user.teamName = member.teamName || user.teamName;
+            user.teamAbbreviation = member.teamAbbreviation || user.teamAbbreviation;
+          }
+        }
         result.push({ ...bid, user });
       }
     }
