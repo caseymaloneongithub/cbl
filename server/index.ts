@@ -1,5 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
-import { registerRoutes, deployBundleItemAsAutoBid } from "./routes";
+import { registerRoutes, deployBundleItemAsAutoBid, processAllAutoBidsUntilStable } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { storage } from "./storage";
@@ -245,6 +245,12 @@ async function deployPendingAutoBids() {
         });
         
         log(`Deployed auto-bid for ${agent.name}: $${bidAmount} x ${pending.years}yr by user ${pending.userId}`, "auction-job");
+        
+        // Trigger auto-bid competition so other auto-bids can outbid this one
+        const competitionResult = await processAllAutoBidsUntilStable(pending.freeAgentId, pending.userId, auction);
+        if (competitionResult) {
+          log(`Auto-bid competition triggered for ${agent.name}`, "auction-job");
+        }
         
       } catch (error) {
         log(`Error deploying auto-bid ${pending.autoBidId}: ${error}`, "auction-job");
