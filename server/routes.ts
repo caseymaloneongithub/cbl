@@ -3762,7 +3762,10 @@ async function processAllAutoBidsUntilStable(
     // Process regular auto-bids first
     for (const autoBid of autoBids) {
       // Skip if this user is already winning or just placed the last bid
-      if (autoBid.userId === currentHighUserId || autoBid.userId === lastBidderId || !autoBid.isActive) continue;
+      if (autoBid.userId === currentHighUserId || autoBid.userId === lastBidderId || !autoBid.isActive) {
+        console.log(`[UnifiedAutoBid] Skipping user ${autoBid.userId}: isHighBidder=${autoBid.userId === currentHighUserId}, isLastBidder=${autoBid.userId === lastBidderId}, active=${autoBid.isActive}`);
+        continue;
+      }
       
       // For imported initial bids, subsequent bids must have more years AND at least match the dollar amount
       if (highestBid.isImportedInitial) {
@@ -3772,6 +3775,8 @@ async function processAllAutoBidsUntilStable(
       
       const factor = yearFactors[autoBid.years - 1];
       const maxTotalValue = autoBid.maxAmount * factor;
+      
+      console.log(`[UnifiedAutoBid] Evaluating user ${autoBid.userId}: maxAmount=${autoBid.maxAmount}, years=${autoBid.years}, factor=${factor}, maxTotalValue=${maxTotalValue}, requiredTotalValue=${requiredTotalValue}`);
       
       if (maxTotalValue >= requiredTotalValue) {
         // Can counter - calculate bid amount
