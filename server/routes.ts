@@ -3761,14 +3761,25 @@ async function processAllAutoBidsUntilStable(
   excludeUserId: string,
   auction: any
 ): Promise<boolean> {
+  console.log(`[UnifiedAutoBid] START processing for agent ${agentId}, excludeUserId=${excludeUserId}`);
+  
   const agent = await storage.getFreeAgent(agentId);
-  if (!agent) return false;
+  if (!agent) {
+    console.log(`[UnifiedAutoBid] Agent ${agentId} not found, exiting`);
+    return false;
+  }
   
   // Check if auction is still open
-  if (new Date(agent.auctionEndTime) <= new Date()) return false;
+  if (new Date(agent.auctionEndTime) <= new Date()) {
+    console.log(`[UnifiedAutoBid] Agent ${agentId} auction ended, exiting`);
+    return false;
+  }
   
   // Check if auction has started (auctionStartTime is optional - null means immediately available)
-  if (agent.auctionStartTime && new Date(agent.auctionStartTime) > new Date()) return false;
+  if (agent.auctionStartTime && new Date(agent.auctionStartTime) > new Date()) {
+    console.log(`[UnifiedAutoBid] Agent ${agentId} auction not started yet, exiting`);
+    return false;
+  }
   
   const yearFactors = auction ? [
     auction.yearFactor1,
@@ -3780,6 +3791,8 @@ async function processAllAutoBidsUntilStable(
   
   const bidIncrement = auction?.bidIncrement ?? 0.10;
   const enforceBudget = auction?.enforceBudget ?? true;
+  
+  console.log(`[UnifiedAutoBid] Agent ${agentId}: bidIncrement=${bidIncrement}, enforceBudget=${enforceBudget}, yearFactors=${JSON.stringify(yearFactors)}`);
   
   let passesWithNoChange = 0;
   const maxIterations = 100; // Safety limit
@@ -3795,11 +3808,16 @@ async function processAllAutoBidsUntilStable(
     
     // Get current highest bid
     const highestBid = await storage.getHighestBidForAgent(agentId);
-    if (!highestBid) break; // No bids to respond to
+    if (!highestBid) {
+      console.log(`[UnifiedAutoBid] No highest bid found, breaking loop`);
+      break; // No bids to respond to
+    }
     
     const currentHighUserId = highestBid.userId;
     const currentTotalValue = highestBid.totalValue;
     const requiredTotalValue = currentTotalValue * (1 + bidIncrement);
+    
+    console.log(`[UnifiedAutoBid] Iteration ${iterations}: highBidder=${currentHighUserId}, totalValue=${currentTotalValue}, required=${requiredTotalValue}, lastBidder=${lastBidderId}`);
     
     // Get all regular auto-bids for this player
     const autoBids = await storage.getAutoBidsForAgent(agentId);
@@ -3950,8 +3968,10 @@ async function processAllAutoBidsUntilStable(
     if (madeChange) {
       passesWithNoChange = 0;
       anyChangesMade = true;
+      console.log(`[UnifiedAutoBid] Iteration ${iterations} made change, resetting passesWithNoChange to 0`);
     } else {
       passesWithNoChange++;
+      console.log(`[UnifiedAutoBid] Iteration ${iterations} no change, passesWithNoChange=${passesWithNoChange}`);
     }
   }
   
@@ -3959,6 +3979,7 @@ async function processAllAutoBidsUntilStable(
     console.error(`[UnifiedAutoBid] Hit max iterations (${maxIterations}) for agent ${agentId}`);
   }
   
+  console.log(`[UnifiedAutoBid] END for agent ${agentId}: totalIterations=${iterations}, anyChangesMade=${anyChangesMade}`);
   return anyChangesMade;
 }
 
