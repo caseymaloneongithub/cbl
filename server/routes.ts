@@ -901,6 +901,17 @@ export async function registerRoutes(
         const num = Number(val);
         return isNaN(num) ? null : num;
       };
+      
+      // Normalize names to handle accents, tildes, and special characters
+      const normalizeName = (name: string): string => {
+        return name
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "") // Remove accent marks
+          .toLowerCase()
+          .replace(/[^a-z\s]/g, "") // Remove non-letter characters
+          .replace(/\s+/g, " ")
+          .trim();
+      };
 
       const results: { name: string; updated: boolean; reason?: string }[] = [];
       
@@ -911,9 +922,10 @@ export async function registerRoutes(
           continue;
         }
         
-        // Find matching player by name (case-insensitive)
+        // Find matching player by normalized name (handles accents, tildes, special chars)
+        const normalizedInputName = normalizeName(name);
         const matchingAgent = existingAgents.find(
-          a => a.name.toLowerCase() === name.toLowerCase()
+          a => normalizeName(a.name) === normalizedInputName
         );
         
         if (!matchingAgent) {
