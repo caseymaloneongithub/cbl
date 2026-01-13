@@ -964,11 +964,14 @@ export async function registerRoutes(
       }
       
       const updatedCount = results.filter(r => r.updated).length;
-      const notFoundCount = results.filter(r => !r.updated && r.reason === 'Player not found in auction').length;
+      const notFoundResults = results.filter(r => !r.updated && r.reason === 'Player not found in auction');
+      const notFoundCount = notFoundResults.length;
+      const notFoundPlayers = notFoundResults.map(r => r.name);
       
       res.json({
         updatedCount,
         notFoundCount,
+        notFoundPlayers,
         totalProcessed: players.length,
         results: results.slice(0, 20), // Return first 20 results for debugging
       });

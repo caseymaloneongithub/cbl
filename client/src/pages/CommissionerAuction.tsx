@@ -187,6 +187,14 @@ export default function CommissionerAuction() {
   const [bulkRelistEndHour, setBulkRelistEndHour] = useState("20");
   const [bulkRelistEndMinute, setBulkRelistEndMinute] = useState("00");
   
+  // CSV stats update results state
+  const [csvUpdateResults, setCsvUpdateResults] = useState<{
+    updatedCount: number;
+    notFoundCount: number;
+    notFoundPlayers: string[];
+  } | null>(null);
+  const [csvUpdateResultsDialogOpen, setCsvUpdateResultsDialogOpen] = useState(false);
+  
   // MLB API sync state
   const [mlbSyncDialogOpen, setMlbSyncDialogOpen] = useState(false);
   const [mlbSyncSeason, setMlbSyncSeason] = useState(new Date().getFullYear() - 1);
@@ -529,14 +537,16 @@ export default function CommissionerAuction() {
       queryClient.invalidateQueries({ queryKey: ['/api/budget'] });
       queryClient.invalidateQueries({ queryKey: ['/api/results'] });
       
-      const desc = data.notFoundCount > 0
-        ? `Updated stats for ${data.updatedCount} players. ${data.notFoundCount} players were not found in the auction.`
-        : `Updated stats for ${data.updatedCount} players.`;
-      
-      toast({
-        title: "Stats Updated",
-        description: desc,
-      });
+      // Show dialog if there are not found players
+      if (data.notFoundCount > 0) {
+        setCsvUpdateResults(data);
+        setCsvUpdateResultsDialogOpen(true);
+      } else {
+        toast({
+          title: "Stats Updated",
+          description: `Updated stats for ${data.updatedCount} players.`,
+        });
+      }
     },
     onError: (error: Error) => {
       toast({
@@ -2699,6 +2709,50 @@ export default function CommissionerAuction() {
           
           <DialogFooter>
             <Button onClick={() => setMlbResultsDialogOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* CSV Stats Update Results Dialog */}
+      <Dialog open={csvUpdateResultsDialogOpen} onOpenChange={setCsvUpdateResultsDialogOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Stats Update Complete</DialogTitle>
+            <DialogDescription>
+              {csvUpdateResults && (
+                <>
+                  Updated stats for {csvUpdateResults.updatedCount} players.
+                  {csvUpdateResults.notFoundCount > 0 && ` ${csvUpdateResults.notFoundCount} players were not found.`}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {csvUpdateResults && csvUpdateResults.notFoundCount > 0 && (
+            <div className="space-y-2 py-4">
+              <div className="flex items-center gap-2 text-amber-600 dark:text-amber-500">
+                <AlertCircle className="h-4 w-4" />
+                <span className="font-medium">Players Not Found ({csvUpdateResults.notFoundCount})</span>
+              </div>
+              <div className="bg-amber-50 dark:bg-amber-950/20 rounded-lg p-3 max-h-60 overflow-y-auto">
+                <div className="flex flex-wrap gap-2">
+                  {csvUpdateResults.notFoundPlayers.map((name, i) => (
+                    <Badge key={i} variant="outline" className="text-amber-700 dark:text-amber-400 border-amber-300">
+                      {name}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                These players were not found in the auction. Check for name spelling differences.
+              </p>
+            </div>
+          )}
+          
+          <DialogFooter>
+            <Button onClick={() => setCsvUpdateResultsDialogOpen(false)}>
               Close
             </Button>
           </DialogFooter>
