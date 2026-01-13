@@ -94,6 +94,17 @@ Preferred communication style: Simple, everyday language.
   - Auction Finalization (every minute): Automatically sets winnerId and winningBidId for closed auctions based on highest bid
   - Hourly Email Summary: Per-auction email notification setting controls who receives results emails
   - "Ending Today" calculation uses Eastern Time for midnight boundary
+- **MLB Stats Integration**: Commissioners can sync player statistics directly from MLB's official Stats API
+  - "Sync from MLB" button in Commissioner page fetches stats for all players in an auction
+  - Select season year (last 10 years available) to pull appropriate stats
+  - Fuzzy name matching handles player name variations (e.g., "Mike Trout" vs "Trout, Michael")
+  - Batch processing (5 players at a time with 100ms delays) respects API rate limits
+  - Results dialog shows: updated players with stats summary, players not found in MLB database
+  - Stats synced for hitters: PA, HR, RBI, Runs, SB, AVG, OPS
+  - Stats synced for pitchers: IP, Wins, Losses, ERA, WHIP, Strikeouts
+  - Players not found need manual stats update via CSV upload
+  - API route: `POST /api/free-agents/sync-mlb-stats`
+  - Implementation: `server/mlb-api.ts` (no API key required - free public API)
 - **Email Notifications**: Resend integration for password reset, new user credentials, and hourly auction summaries
   - Per-auction `emailNotifications` setting with values: "none", "commissioner", "bidders" (default), or "league"
   - "commissioner" sends hourly results to league commissioner only
