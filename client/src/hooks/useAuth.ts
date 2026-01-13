@@ -56,6 +56,8 @@ export function useAuth() {
       return res.json();
     },
     onSuccess: () => {
+      // Clear selected league so the impersonated user's leagues are loaded fresh
+      localStorage.removeItem("selectedLeagueId");
       queryClient.clear();
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
     },
@@ -67,6 +69,8 @@ export function useAuth() {
       return res.json();
     },
     onSuccess: () => {
+      // Clear selected league so the original user's leagues are loaded fresh
+      localStorage.removeItem("selectedLeagueId");
       queryClient.clear();
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
     },
