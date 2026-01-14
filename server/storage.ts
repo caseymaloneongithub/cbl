@@ -2666,9 +2666,14 @@ export class DatabaseStorage implements IStorage {
     }
     
     // Return usage for all members (including those with no roster players)
+    // Override user's team info with league-specific values
     return members.map(member => ({
       userId: member.userId,
-      user: member.user,
+      user: {
+        ...member.user,
+        teamName: member.teamName || member.user.teamName,
+        teamAbbreviation: member.teamAbbreviation || member.user.teamAbbreviation,
+      },
       ...(usageByUser.get(member.userId) || { salaryUsed: 0, ipUsed: 0, paUsed: 0, playerCount: 0 }),
     }));
   }

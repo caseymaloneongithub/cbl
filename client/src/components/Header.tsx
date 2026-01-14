@@ -43,8 +43,8 @@ export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const { data: allUsers } = useQuery<User[]>({
-    queryKey: ["/api/owners"],
-    enabled: isSuperAdmin || isImpersonating,
+    queryKey: ["/api/owners", { leagueId: currentLeague?.id }],
+    enabled: (isSuperAdmin || isImpersonating) && !!currentLeague?.id,
   });
 
   const initials = user?.firstName && user?.lastName
