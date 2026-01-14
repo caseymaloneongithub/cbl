@@ -1570,6 +1570,16 @@ export async function registerRoutes(
 
       const { maxAmount, years, isActive } = req.body;
       
+      // Check if auction has started
+      const hasStarted = !agent.auctionStartTime || new Date(agent.auctionStartTime) <= new Date();
+      
+      // Only allow canceling auto-bids BEFORE auction starts
+      if (!isActive && hasStarted) {
+        return res.status(400).json({ 
+          message: "Cannot cancel auto-bid after the auction has started" 
+        });
+      }
+      
       // Only validate bid details if the auto-bid is being activated (not just canceled)
       if (isActive) {
         // Check if auto-bid meets minimum years requirement
@@ -1606,7 +1616,6 @@ export async function registerRoutes(
 
       // If auto-bid is active and auction has started, try to place an auto-bid immediately
       // (if start time hasn't passed, auto-bid is saved but won't place a bid yet)
-      const hasStarted = !agent.auctionStartTime || new Date(agent.auctionStartTime) <= new Date();
       if (isActive && agent.auctionId && hasStarted) {
         // Get auction for per-auction settings
         const auction = await storage.getAuction(agent.auctionId);
