@@ -1452,17 +1452,30 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Auction teams
-  async getAuctionTeams(auctionId: number): Promise<(AuctionTeam & { user: User })[]> {
+  async getAuctionTeams(auctionId: number): Promise<(AuctionTeam & { user: User & { leagueTeamName?: string } })[]> {
+    // First get the auction to find its leagueId
+    const [auction] = await db.select().from(auctions).where(eq(auctions.id, auctionId));
+    const leagueId = auction?.leagueId;
+    
     const teams = await db
       .select()
       .from(auctionTeams)
       .where(eq(auctionTeams.auctionId, auctionId));
     
-    const result: (AuctionTeam & { user: User })[] = [];
+    const result: (AuctionTeam & { user: User & { leagueTeamName?: string } })[] = [];
     for (const team of teams) {
       const [user] = await db.select().from(users).where(eq(users.id, team.userId));
       if (user) {
-        result.push({ ...team, user });
+        // Get league-specific team name if auction has a league
+        let leagueTeamName: string | undefined;
+        if (leagueId) {
+          const [leagueMember] = await db
+            .select()
+            .from(leagueMembers)
+            .where(and(eq(leagueMembers.leagueId, leagueId), eq(leagueMembers.userId, team.userId)));
+          leagueTeamName = leagueMember?.teamName ?? undefined;
+        }
+        result.push({ ...team, user: { ...user, leagueTeamName } });
       }
     }
     return result;
