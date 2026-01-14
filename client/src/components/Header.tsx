@@ -75,7 +75,7 @@ export function Header() {
             <div className="flex items-center gap-2 text-sm font-medium">
               <UserCog className="h-4 w-4" />
               <span>
-                Viewing as: <strong>{user?.firstName} {user?.lastName}</strong> ({user?.teamName || user?.email})
+                Viewing as: <strong>{user?.firstName} {user?.lastName}</strong> ({currentLeague?.teamName || user?.teamName || user?.email})
               </span>
             </div>
             <Button
