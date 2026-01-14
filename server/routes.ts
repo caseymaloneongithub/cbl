@@ -1573,11 +1573,17 @@ export async function registerRoutes(
       // Check if auction has started
       const hasStarted = !agent.auctionStartTime || new Date(agent.auctionStartTime) <= new Date();
       
-      // Only allow canceling auto-bids BEFORE auction starts
+      // Only allow canceling auto-bids if user has no active bids on this player
       if (!isActive && hasStarted) {
-        return res.status(400).json({ 
-          message: "Cannot cancel auto-bid after the auction has started" 
-        });
+        // Check if user has any bids on this player
+        const userBids = await storage.getBidsForAgent(agentId);
+        const userHasBid = userBids.some(bid => bid.userId === userId);
+        
+        if (userHasBid) {
+          return res.status(400).json({ 
+            message: "Cannot cancel auto-bid - you have an active bid on this player" 
+          });
+        }
       }
       
       // Only validate bid details if the auto-bid is being activated (not just canceled)
