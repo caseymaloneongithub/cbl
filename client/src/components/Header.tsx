@@ -43,7 +43,14 @@ export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const { data: allUsers } = useQuery<User[]>({
-    queryKey: ["/api/owners", { leagueId: currentLeague?.id }],
+    queryKey: ["/api/owners", currentLeague?.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/owners?leagueId=${currentLeague?.id}`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch users");
+      return res.json();
+    },
     enabled: (isSuperAdmin || isImpersonating) && !!currentLeague?.id,
   });
 
