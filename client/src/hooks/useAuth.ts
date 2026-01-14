@@ -56,7 +56,8 @@ export function useAuth() {
       return res.json();
     },
     onSuccess: () => {
-      // Clear selected league so the impersonated user's leagues are loaded fresh
+      // Clear all cached data and local storage
+      queryClient.clear();
       localStorage.removeItem("selectedLeagueId");
       // Full page refresh to ensure all state is reset
       window.location.reload();
@@ -69,7 +70,8 @@ export function useAuth() {
       return res.json();
     },
     onSuccess: () => {
-      // Clear selected league so the original user's leagues are loaded fresh
+      // Clear all cached data and local storage
+      queryClient.clear();
       localStorage.removeItem("selectedLeagueId");
       // Full page refresh to ensure all state is reset
       window.location.reload();
