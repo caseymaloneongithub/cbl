@@ -3140,7 +3140,8 @@ export async function registerRoutes(
   // Get all leagues for the current user (or all leagues for super admin)
   app.get("/api/leagues", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.originalUserId || req.session.userId!;
+      // Use impersonated user's ID if impersonating, otherwise the logged-in user
+      const userId = req.session.userId!;
       const user = await storage.getUser(userId);
       
       if (!user) {
