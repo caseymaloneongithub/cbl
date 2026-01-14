@@ -1769,7 +1769,7 @@ export default function Commissioner() {
                   {rosterUsage.teams.map((team) => (
                     <TableRow key={team.userId}>
                       <TableCell>
-                        <div className="font-medium">{team.user.teamName || `${team.user.firstName} ${team.user.lastName}`}</div>
+                        <div className="font-medium">{team.user.teamName || `${team.user.firstName || ""} ${team.user.lastName || ""}`.trim() || "Unknown"}</div>
                         {team.user.teamAbbreviation && (
                           <div className="text-xs text-muted-foreground">{team.user.teamAbbreviation}</div>
                         )}

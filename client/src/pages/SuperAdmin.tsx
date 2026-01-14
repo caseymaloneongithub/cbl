@@ -365,7 +365,7 @@ export default function SuperAdmin() {
                         {member.user?.firstName || ""} {member.user?.lastName || ""}
                       </TableCell>
                       <TableCell>
-                        {member.teamName || member.user?.teamName || "-"}
+                        {member.teamName || "-"}
                       </TableCell>
                       <TableCell>
                         {member.role === "commissioner" ? (
