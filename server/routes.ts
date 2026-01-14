@@ -1570,26 +1570,29 @@ export async function registerRoutes(
 
       const { maxAmount, years, isActive } = req.body;
       
-      // Check if auto-bid meets minimum years requirement
-      const minimumYears = agent.minimumYears || 1;
-      if (years < minimumYears) {
-        return res.status(400).json({ 
-          message: `This player requires at least a ${minimumYears}-year contract` 
-        });
-      }
-      
-      // For imported initial bids, subsequent bids must have more years AND at least match the dollar amount
-      const currentHighBid = await storage.getHighestBidForAgent(agentId);
-      if (currentHighBid && currentHighBid.isImportedInitial) {
-        if (years <= currentHighBid.years) {
+      // Only validate bid details if the auto-bid is being activated (not just canceled)
+      if (isActive) {
+        // Check if auto-bid meets minimum years requirement
+        const minimumYears = agent.minimumYears || 1;
+        if (years < minimumYears) {
           return res.status(400).json({ 
-            message: `This player has an imported opening bid. Subsequent bids must have more years than the current bid. Current bid is ${currentHighBid.years} year${currentHighBid.years === 1 ? '' : 's'}, you must bid at least ${currentHighBid.years + 1} years.` 
+            message: `This player requires at least a ${minimumYears}-year contract` 
           });
         }
-        if (maxAmount < currentHighBid.amount) {
-          return res.status(400).json({ 
-            message: `This player has an imported opening bid of $${currentHighBid.amount}. Your max amount must be at least $${currentHighBid.amount}.` 
-          });
+        
+        // For imported initial bids, subsequent bids must have more years AND at least match the dollar amount
+        const currentHighBid = await storage.getHighestBidForAgent(agentId);
+        if (currentHighBid && currentHighBid.isImportedInitial) {
+          if (years <= currentHighBid.years) {
+            return res.status(400).json({ 
+              message: `This player has an imported opening bid. Subsequent bids must have more years than the current bid. Current bid is ${currentHighBid.years} year${currentHighBid.years === 1 ? '' : 's'}, you must bid at least ${currentHighBid.years + 1} years.` 
+            });
+          }
+          if (maxAmount < currentHighBid.amount) {
+            return res.status(400).json({ 
+              message: `This player has an imported opening bid of $${currentHighBid.amount}. Your max amount must be at least $${currentHighBid.amount}.` 
+            });
+          }
         }
       }
       
