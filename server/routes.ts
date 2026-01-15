@@ -2185,7 +2185,7 @@ export async function registerRoutes(
         agent.currentBid?.years || 0,
         agent.currentBid?.totalValue || 0,
         agent.bidCount,
-        agent.highBidder ? `"${agent.highBidder.firstName || ''} ${agent.highBidder.lastName || ''}".trim()` : "",
+        agent.highBidder ? `"${((agent.highBidder.firstName || '') + ' ' + (agent.highBidder.lastName || '')).trim()}"` : "",
         agent.highBidder?.email ? `"${agent.highBidder.email}"` : "",
         agent.highBidder?.teamAbbreviation || ""
       ]);
@@ -2247,7 +2247,7 @@ export async function registerRoutes(
         if (agent.highBidder && agent.currentBid) {
           const owner = allUsers.find(u => u.id === agent.currentBid?.userId);
           rows.push([
-            `"${(owner?.firstName || '') + ' ' + (owner?.lastName || '')}".trim()`,
+            `"${((owner?.firstName || '') + ' ' + (owner?.lastName || '')).trim()}"`,
             owner?.email ? `"${owner.email}"` : "",
             owner?.teamName ? `"${owner.teamName.replace(/"/g, '""')}"` : "",
             owner?.teamAbbreviation || "",
