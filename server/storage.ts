@@ -191,7 +191,7 @@ export interface IStorage {
   
   // Admin operations
   getSuperAdmin(): Promise<User | undefined>;
-  getRecentlyClosedAuctions(hoursAgo: number): Promise<{
+  getUnemailedClosedAuctions(): Promise<{
     withBids: Array<{
       agent: FreeAgent;
       winningBid: Bid;
@@ -209,6 +209,7 @@ export interface IStorage {
       leagueId: number | null;
     }>;
   }>;
+  markFreeAgentsAsEmailed(freeAgentIds: number[]): Promise<void>;
   getLeagueMembersEmails(leagueId: number): Promise<Array<{ email: string; firstName: string | null; userId: string }>>;
   getLeagueCommissionerEmail(leagueId: number): Promise<{ email: string; firstName: string | null } | null>;
   
@@ -1986,7 +1987,7 @@ export class DatabaseStorage implements IStorage {
     return superAdmin;
   }
 
-  async getRecentlyClosedAuctions(hoursAgo: number): Promise<{
+  async getUnemailedClosedAuctions(): Promise<{
     withBids: Array<{
       agent: FreeAgent;
       winningBid: Bid;
@@ -2005,16 +2006,16 @@ export class DatabaseStorage implements IStorage {
     }>;
   }> {
     const now = new Date();
-    const cutoff = new Date(now.getTime() - hoursAgo * 60 * 60 * 1000);
     
-    // Get all auctions that closed in the time window
+    // Get all auctions that have closed and haven't been emailed yet
+    // This ensures we never miss any auctions, regardless of timing issues
     const closedAgents = await db
       .select()
       .from(freeAgents)
       .where(
         and(
           sql`${freeAgents.auctionEndTime} <= ${now}`,
-          sql`${freeAgents.auctionEndTime} > ${cutoff}`
+          isNull(freeAgents.resultEmailedAt)
         )
       );
     
@@ -2059,6 +2060,15 @@ export class DatabaseStorage implements IStorage {
     }
     
     return { withBids, noBids };
+  }
+
+  async markFreeAgentsAsEmailed(freeAgentIds: number[]): Promise<void> {
+    if (freeAgentIds.length === 0) return;
+    
+    await db
+      .update(freeAgents)
+      .set({ resultEmailedAt: new Date() })
+      .where(inArray(freeAgents.id, freeAgentIds));
   }
 
   async getLeagueMembersEmails(leagueId: number): Promise<Array<{ email: string; firstName: string | null; userId: string }>> {

@@ -234,6 +234,7 @@ export const freeAgents = pgTable("free_agents", {
   whip: real("whip"),         // Walks + hits per inning pitched
   strikeouts: integer("strikeouts"), // Strikeouts
   ip: real("ip"),             // Innings pitched
+  resultEmailedAt: timestamp("result_emailed_at"), // When the result email was sent (null = not yet emailed)
 });
 
 export const freeAgentsRelations = relations(freeAgents, ({ one, many }) => ({

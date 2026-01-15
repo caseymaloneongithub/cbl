@@ -273,16 +273,23 @@ function startHourlySummaryEmailJob() {
 
 async function runHourlySummaryEmail() {
   try {
-    // Get auctions that closed in the last hour
-    const recentResults = await storage.getRecentlyClosedAuctions(1);
+    // Get all closed auctions that haven't been emailed yet
+    // This ensures we never miss any auctions, regardless of timing issues
+    const recentResults = await storage.getUnemailedClosedAuctions();
     
     const totalClosed = recentResults.withBids.length + recentResults.noBids.length;
     
     // Only send emails if there are results
     if (totalClosed === 0) {
-      log("No auctions closed in the last hour, skipping email", "email-job");
+      log("No unemailed closed auctions found, skipping", "email-job");
       return;
     }
+    
+    // Collect all free agent IDs to mark as emailed after processing
+    const allFreeAgentIds: number[] = [
+      ...recentResults.withBids.map(r => r.agent.id),
+      ...recentResults.noBids.map(r => r.agent.id),
+    ];
     
     // Group results by auction and email notification setting
     const auctionGroups = new Map<number, {
@@ -432,6 +439,11 @@ async function runHourlySummaryEmail() {
         }
       }
     }
+    
+    // Mark all processed free agents as emailed (even if some emails failed)
+    // This prevents re-processing the same auctions on next run
+    await storage.markFreeAgentsAsEmailed(allFreeAgentIds);
+    log(`Marked ${allFreeAgentIds.length} free agents as emailed`, "email-job");
     
     log(`Processed ${auctionGroups.size} auctions for email notifications`, "email-job");
   } catch (error) {
