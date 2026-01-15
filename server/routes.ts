@@ -2161,34 +2161,30 @@ export async function registerRoutes(
       }
       
       const headers = [
-        "Player ID",
-        "Player Name", 
-        "Type",
         "Team",
-        "Auction End Time",
-        "Winning Bid ($/yr)",
-        "Contract Years",
-        "Total Contract Value",
-        "Bid Count",
-        "Winner Name",
-        "Winner Email",
-        "Winner Team Abbr"
+        "Last Name",
+        "First Name",
+        "MLB Team",
+        "Years",
+        "Salary"
       ];
 
-      const rows = results.map(agent => [
-        agent.id,
-        `"${agent.name.replace(/"/g, '""')}"`,
-        agent.playerType === "pitcher" ? "Pitcher" : "Hitter",
-        agent.team ? `"${agent.team.replace(/"/g, '""')}"` : "",
-        new Date(agent.auctionEndTime).toISOString(),
-        agent.currentBid?.amount || 0,
-        agent.currentBid?.years || 0,
-        agent.currentBid?.totalValue || 0,
-        agent.bidCount,
-        agent.highBidder ? `"${((agent.highBidder.firstName || '') + ' ' + (agent.highBidder.lastName || '')).trim()}"` : "",
-        agent.highBidder?.email ? `"${agent.highBidder.email}"` : "",
-        agent.highBidder?.teamAbbreviation || ""
-      ]);
+      const rows = results.map(agent => {
+        // Split player name into first and last name
+        // Handle formats like "First Last", "First Middle Last", etc.
+        const nameParts = (agent.name || "").trim().split(/\s+/);
+        const firstName = nameParts[0] || "";
+        const lastName = nameParts.slice(1).join(" ") || "";
+        
+        return [
+          agent.highBidder?.teamAbbreviation || "",
+          lastName ? `"${lastName.replace(/"/g, '""')}"` : "",
+          firstName ? `"${firstName.replace(/"/g, '""')}"` : "",
+          agent.team || "",
+          agent.currentBid?.years || 0,
+          agent.currentBid?.amount || 0
+        ];
+      });
 
       const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
 
