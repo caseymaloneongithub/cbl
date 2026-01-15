@@ -35,7 +35,7 @@ import {
 import { formatCurrency, formatDate, formatNumberWithCommas } from "@/lib/utils";
 import { apiRequest, queryClient, REFRESH_INTERVAL } from "@/lib/queryClient";
 import type { FreeAgentWithBids, Auction } from "@shared/schema";
-import { Trophy, RefreshCcw, Loader2, Archive } from "lucide-react";
+import { Trophy, RefreshCcw, Loader2, Archive, History, Clock } from "lucide-react";
 
 export default function Results() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
@@ -47,6 +47,8 @@ export default function Results() {
   const [relistMinYears, setRelistMinYears] = useState(1);
   const [relistEndDate, setRelistEndDate] = useState("");
   const [selectedAuctionId, setSelectedAuctionId] = useState<string>("all");
+  const [bidHistoryDialogOpen, setBidHistoryDialogOpen] = useState(false);
+  const [bidHistoryAgent, setBidHistoryAgent] = useState<FreeAgentWithBids | null>(null);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -94,6 +96,38 @@ export default function Results() {
     enabled: isAuthenticated,
     refetchInterval: REFRESH_INTERVAL,
   });
+
+  // Fetch bid history when a player is selected
+  interface BidHistoryItem {
+    id: number;
+    amount: number;
+    years: number;
+    totalValue: number;
+    isAutoBid: boolean;
+    createdAt: string;
+    user: {
+      id: string;
+      firstName: string | null;
+      lastName: string | null;
+      teamName: string | null;
+      teamAbbreviation: string | null;
+    };
+  }
+
+  const { data: bidHistory, isLoading: bidHistoryLoading } = useQuery<BidHistoryItem[]>({
+    queryKey: ["/api/free-agents", bidHistoryAgent?.id, "bids"],
+    queryFn: async () => {
+      const res = await fetch(`/api/free-agents/${bidHistoryAgent?.id}/bids`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch bid history");
+      return res.json();
+    },
+    enabled: !!bidHistoryAgent?.id && bidHistoryDialogOpen,
+  });
+
+  const handlePlayerClick = (agent: FreeAgentWithBids) => {
+    setBidHistoryAgent(agent);
+    setBidHistoryDialogOpen(true);
+  };
 
   const relistMutation = useMutation({
     mutationFn: async ({ agentId, minimumBid, minimumYears, auctionEndTime }: { agentId: number; minimumBid: number; minimumYears: number; auctionEndTime: string }) => {
@@ -290,12 +324,18 @@ export default function Results() {
                   {results.map((agent) => (
                     <TableRow key={agent.id} data-testid={`row-result-${agent.id}`}>
                       <TableCell>
-                        <span className="font-medium">{agent.name}</span>
-                        {agent.team && (
-                          <span className="text-muted-foreground text-sm ml-2">
-                            ({agent.team})
-                          </span>
-                        )}
+                        <button
+                          onClick={() => handlePlayerClick(agent)}
+                          className="text-left hover:underline focus:outline-none focus:underline"
+                          data-testid={`button-player-history-${agent.id}`}
+                        >
+                          <span className="font-medium text-primary">{agent.name}</span>
+                          {agent.team && (
+                            <span className="text-muted-foreground text-sm ml-2">
+                              ({agent.team})
+                            </span>
+                          )}
+                        </button>
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="font-mono text-xs">
@@ -433,6 +473,97 @@ export default function Results() {
                 ) : (
                   "Relist Player"
                 )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bid History Dialog */}
+      <Dialog open={bidHistoryDialogOpen} onOpenChange={setBidHistoryDialogOpen}>
+        <DialogContent className="sm:max-w-[550px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="h-5 w-5" />
+              Bid History
+            </DialogTitle>
+            <DialogDescription>
+              {bidHistoryAgent?.name} {bidHistoryAgent?.team && `(${bidHistoryAgent.team})`}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="pt-2">
+            {bidHistoryLoading ? (
+              <div className="space-y-3">
+                {[...Array(3)].map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            ) : !bidHistory || bidHistory.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No bids were placed on this player.
+              </div>
+            ) : (
+              <div className="max-h-[400px] overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50">
+                      <TableHead className="font-semibold">Team</TableHead>
+                      <TableHead className="font-semibold text-right">Bid</TableHead>
+                      <TableHead className="font-semibold text-center">Years</TableHead>
+                      <TableHead className="font-semibold text-right">Total</TableHead>
+                      <TableHead className="font-semibold text-center">Time</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {bidHistory.map((bid, index) => (
+                      <TableRow 
+                        key={bid.id} 
+                        className={index === 0 ? "bg-primary/5" : ""}
+                        data-testid={`row-bid-history-${bid.id}`}
+                      >
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="font-medium">
+                              {bid.user.teamAbbreviation || bid.user.teamName || "Unknown"}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {bid.user.firstName} {bid.user.lastName}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {formatCurrency(bid.amount)}
+                          {bid.isAutoBid && (
+                            <Badge variant="outline" className="ml-1 text-xs">Auto</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center font-mono">
+                          {bid.years}yr
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-medium">
+                          {formatCurrency(bid.totalValue)}
+                        </TableCell>
+                        <TableCell className="text-center text-xs text-muted-foreground">
+                          <div className="flex items-center justify-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {formatDate(bid.createdAt)}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-4">
+              <Button
+                variant="outline"
+                onClick={() => setBidHistoryDialogOpen(false)}
+                data-testid="button-close-bid-history"
+              >
+                Close
               </Button>
             </div>
           </div>
