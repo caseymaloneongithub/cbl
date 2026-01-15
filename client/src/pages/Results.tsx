@@ -78,6 +78,16 @@ export default function Results() {
     refetchInterval: REFRESH_INTERVAL,
   });
 
+  // Default to active auction when auctions load
+  useEffect(() => {
+    if (auctions && auctions.length > 0 && selectedAuctionId === "all") {
+      const activeAuction = auctions.find(a => a.status === "active");
+      if (activeAuction) {
+        setSelectedAuctionId(activeAuction.id.toString());
+      }
+    }
+  }, [auctions, selectedAuctionId]);
+
   // Build query key with optional auction filter
   const resultsQueryKey = selectedAuctionId === "all" 
     ? ["/api/results"] 
