@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -54,6 +55,7 @@ export default function Results() {
   const [bidHistoryAgent, setBidHistoryAgent] = useState<FreeAgentWithBids | null>(null);
   const [sortColumn, setSortColumn] = useState<SortColumn>("endTime");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [excludeNoBids, setExcludeNoBids] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -112,11 +114,16 @@ export default function Results() {
     refetchInterval: REFRESH_INTERVAL,
   });
 
-  // Sort results
+  // Filter and sort results
   const sortedResults = useMemo(() => {
     if (!results) return [];
     
-    return [...results].sort((a, b) => {
+    let filtered = results;
+    if (excludeNoBids) {
+      filtered = results.filter(agent => agent.currentBid !== null);
+    }
+    
+    return [...filtered].sort((a, b) => {
       let comparison = 0;
       
       switch (sortColumn) {
@@ -148,7 +155,7 @@ export default function Results() {
       
       return sortDirection === "asc" ? comparison : -comparison;
     });
-  }, [results, sortColumn, sortDirection]);
+  }, [results, sortColumn, sortDirection, excludeNoBids]);
 
   const handleSort = (column: SortColumn) => {
     if (sortColumn === column) {
@@ -329,27 +336,40 @@ export default function Results() {
         </div>
         
         {auctions && auctions.length > 0 && (
-          <div className="flex items-center gap-2">
-            <Archive className="h-4 w-4 text-muted-foreground" />
-            <Select
-              value={selectedAuctionId}
-              onValueChange={setSelectedAuctionId}
-            >
-              <SelectTrigger className="w-[200px]" data-testid="select-auction-filter">
-                <SelectValue placeholder="Select auction" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Auctions</SelectItem>
-                {auctions.map((auction) => (
-                  <SelectItem key={auction.id} value={String(auction.id)}>
-                    {auction.name}
-                    {auction.status === "active" && (
-                      <Badge variant="default" className="ml-2 text-xs">Active</Badge>
-                    )}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Switch
+                id="exclude-no-bids"
+                checked={excludeNoBids}
+                onCheckedChange={setExcludeNoBids}
+                data-testid="toggle-exclude-no-bids"
+              />
+              <Label htmlFor="exclude-no-bids" className="text-sm cursor-pointer">
+                Exclude No Bids
+              </Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Archive className="h-4 w-4 text-muted-foreground" />
+              <Select
+                value={selectedAuctionId}
+                onValueChange={setSelectedAuctionId}
+              >
+                <SelectTrigger className="w-[200px]" data-testid="select-auction-filter">
+                  <SelectValue placeholder="Select auction" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Auctions</SelectItem>
+                  {auctions.map((auction) => (
+                    <SelectItem key={auction.id} value={String(auction.id)}>
+                      {auction.name}
+                      {auction.status === "active" && (
+                        <Badge variant="default" className="ml-2 text-xs">Active</Badge>
+                      )}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         )}
       </div>
