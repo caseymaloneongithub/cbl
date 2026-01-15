@@ -2190,6 +2190,9 @@ export async function registerRoutes(
 
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader("Content-Disposition", "attachment; filename=auction-results.csv");
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       res.send(csv);
     } catch (error) {
       console.error("Error exporting auction results:", error);
