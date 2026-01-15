@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useLeague } from "@/hooks/useLeague";
-import { Globe } from "lucide-react";
+import { Globe, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +37,9 @@ import { apiRequest, queryClient, REFRESH_INTERVAL } from "@/lib/queryClient";
 import type { FreeAgentWithBids, Auction } from "@shared/schema";
 import { Trophy, RefreshCcw, Loader2, Archive, History, Clock } from "lucide-react";
 
+type SortColumn = "player" | "type" | "winner" | "amount" | "years" | "totalValue" | "endTime";
+type SortDirection = "asc" | "desc";
+
 export default function Results() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const { selectedLeagueId, isLoadingLeagues, leagues } = useLeague();
@@ -49,6 +52,8 @@ export default function Results() {
   const [selectedAuctionId, setSelectedAuctionId] = useState<string>("all");
   const [bidHistoryDialogOpen, setBidHistoryDialogOpen] = useState(false);
   const [bidHistoryAgent, setBidHistoryAgent] = useState<FreeAgentWithBids | null>(null);
+  const [sortColumn, setSortColumn] = useState<SortColumn>("endTime");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -106,6 +111,62 @@ export default function Results() {
     enabled: isAuthenticated,
     refetchInterval: REFRESH_INTERVAL,
   });
+
+  // Sort results
+  const sortedResults = useMemo(() => {
+    if (!results) return [];
+    
+    return [...results].sort((a, b) => {
+      let comparison = 0;
+      
+      switch (sortColumn) {
+        case "player":
+          comparison = (a.name || "").localeCompare(b.name || "");
+          break;
+        case "type":
+          comparison = (a.playerType || "").localeCompare(b.playerType || "");
+          break;
+        case "winner": {
+          const aWinner = a.highBidder?.teamAbbreviation || a.highBidder?.teamName || a.highBidder?.firstName || "";
+          const bWinner = b.highBidder?.teamAbbreviation || b.highBidder?.teamName || b.highBidder?.firstName || "";
+          comparison = aWinner.localeCompare(bWinner);
+          break;
+        }
+        case "amount":
+          comparison = (a.currentBid?.amount || 0) - (b.currentBid?.amount || 0);
+          break;
+        case "years":
+          comparison = (a.currentBid?.years || 0) - (b.currentBid?.years || 0);
+          break;
+        case "totalValue":
+          comparison = (a.currentBid?.totalValue || 0) - (b.currentBid?.totalValue || 0);
+          break;
+        case "endTime":
+          comparison = new Date(a.auctionEndTime).getTime() - new Date(b.auctionEndTime).getTime();
+          break;
+      }
+      
+      return sortDirection === "asc" ? comparison : -comparison;
+    });
+  }, [results, sortColumn, sortDirection]);
+
+  const handleSort = (column: SortColumn) => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortColumn(column);
+      setSortDirection("asc");
+    }
+  };
+
+  const SortIcon = ({ column }: { column: SortColumn }) => {
+    if (sortColumn !== column) {
+      return <ArrowUpDown className="h-4 w-4 ml-1 opacity-50" />;
+    }
+    return sortDirection === "asc" 
+      ? <ArrowUp className="h-4 w-4 ml-1" />
+      : <ArrowDown className="h-4 w-4 ml-1" />;
+  };
 
   // Fetch bid history when a player is selected
   interface BidHistoryItem {
@@ -320,18 +381,60 @@ export default function Results() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/50">
-                    <TableHead className="font-semibold">Player</TableHead>
-                    <TableHead className="font-semibold">Type</TableHead>
-                    <TableHead className="font-semibold">Winner</TableHead>
-                    <TableHead className="font-semibold text-right">Winning Bid</TableHead>
-                    <TableHead className="font-semibold text-center">Years</TableHead>
-                    <TableHead className="font-semibold text-right">Total Value</TableHead>
-                    <TableHead className="font-semibold text-center">Auction Ended</TableHead>
+                    <TableHead 
+                      className="font-semibold cursor-pointer hover-elevate select-none"
+                      onClick={() => handleSort("player")}
+                      data-testid="sort-player"
+                    >
+                      <span className="flex items-center">Player<SortIcon column="player" /></span>
+                    </TableHead>
+                    <TableHead 
+                      className="font-semibold cursor-pointer hover-elevate select-none"
+                      onClick={() => handleSort("type")}
+                      data-testid="sort-type"
+                    >
+                      <span className="flex items-center">Type<SortIcon column="type" /></span>
+                    </TableHead>
+                    <TableHead 
+                      className="font-semibold cursor-pointer hover-elevate select-none"
+                      onClick={() => handleSort("winner")}
+                      data-testid="sort-winner"
+                    >
+                      <span className="flex items-center">Winner<SortIcon column="winner" /></span>
+                    </TableHead>
+                    <TableHead 
+                      className="font-semibold cursor-pointer hover-elevate select-none text-right"
+                      onClick={() => handleSort("amount")}
+                      data-testid="sort-amount"
+                    >
+                      <span className="flex items-center justify-end">Winning Bid<SortIcon column="amount" /></span>
+                    </TableHead>
+                    <TableHead 
+                      className="font-semibold cursor-pointer hover-elevate select-none text-center"
+                      onClick={() => handleSort("years")}
+                      data-testid="sort-years"
+                    >
+                      <span className="flex items-center justify-center">Years<SortIcon column="years" /></span>
+                    </TableHead>
+                    <TableHead 
+                      className="font-semibold cursor-pointer hover-elevate select-none text-right"
+                      onClick={() => handleSort("totalValue")}
+                      data-testid="sort-total-value"
+                    >
+                      <span className="flex items-center justify-end">Total Value<SortIcon column="totalValue" /></span>
+                    </TableHead>
+                    <TableHead 
+                      className="font-semibold cursor-pointer hover-elevate select-none text-center"
+                      onClick={() => handleSort("endTime")}
+                      data-testid="sort-end-time"
+                    >
+                      <span className="flex items-center justify-center">Auction Ended<SortIcon column="endTime" /></span>
+                    </TableHead>
                     {isCommissioner && <TableHead className="font-semibold text-right">Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {results.map((agent) => (
+                  {sortedResults.map((agent) => (
                     <TableRow key={agent.id} data-testid={`row-result-${agent.id}`}>
                       <TableCell>
                         <button
