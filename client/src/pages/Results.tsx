@@ -355,8 +355,8 @@ export default function Results() {
                       <TableCell>
                         {agent.highBidder ? (
                           <div className="flex items-center gap-2">
-                            <span>
-                              {agent.highBidder.firstName} {agent.highBidder.lastName}
+                            <span className="font-medium">
+                              {agent.highBidder.teamAbbreviation || agent.highBidder.teamName || `${agent.highBidder.firstName} ${agent.highBidder.lastName}`}
                             </span>
                             <Badge variant="default" className="text-xs">
                               <Trophy className="h-3 w-3 mr-1" />
