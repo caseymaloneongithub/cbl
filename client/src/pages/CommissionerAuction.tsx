@@ -212,6 +212,25 @@ export default function CommissionerAuction() {
     "ip", "wins", "losses", "era", "whip", "strikeouts" // pitcher stats
   ]);
 
+  // Bulk limits upload state
+  const [bulkLimitsDialogOpen, setBulkLimitsDialogOpen] = useState(false);
+  const [bulkLimitsDragActive, setBulkLimitsDragActive] = useState(false);
+  interface ParsedBulkLimit {
+    teamAbbreviation: string;
+    email: string;
+    budget: string;
+    rosterLimit: string;
+    ipLimit: string;
+    paLimit: string;
+  }
+  const [parsedBulkLimits, setParsedBulkLimits] = useState<ParsedBulkLimit[]>([]);
+  const [bulkLimitsResults, setBulkLimitsResults] = useState<{
+    updated: number;
+    total: number;
+    results: { team: string; success: boolean; message?: string }[];
+  } | null>(null);
+  const [bulkLimitsResultsDialogOpen, setBulkLimitsResultsDialogOpen] = useState(false);
+
   // Fetch auction details
   const { data: auction, isLoading: auctionLoading } = useQuery<Auction>({
     queryKey: ['/api/auctions', numericAuctionId],
@@ -1071,6 +1090,172 @@ export default function CommissionerAuction() {
     }
   }, [parseTeamEnrollmentCSV]);
 
+  // Bulk limits CSV parser
+  const parseBulkLimitsCSV = useCallback((csvText: string) => {
+    const lines = csvText.trim().split('\n');
+    if (lines.length < 2) {
+      toast({
+        title: "Invalid CSV",
+        description: "CSV must have a header row and at least one data row.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const headerLine = lines[0].toLowerCase();
+    const headers = headerLine.split(',').map(h => h.trim().replace(/"/g, ''));
+    
+    // Find column indices
+    const teamIdx = headers.findIndex(h => ['team', 'abbr', 'abbreviation', 'teamabbreviation', 'team abbreviation'].includes(h));
+    const emailIdx = headers.findIndex(h => h === 'email');
+    const budgetIdx = headers.findIndex(h => h === 'budget');
+    const rosterIdx = headers.findIndex(h => ['roster', 'rosterlimit', 'roster limit'].includes(h));
+    const ipIdx = headers.findIndex(h => ['ip', 'iplimit', 'ip limit'].includes(h));
+    const paIdx = headers.findIndex(h => ['pa', 'palimit', 'pa limit'].includes(h));
+
+    if (teamIdx === -1 && emailIdx === -1) {
+      toast({
+        title: "Missing required column",
+        description: "CSV must have a 'Team' or 'Email' column to identify teams.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const parsed: ParsedBulkLimit[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      
+      // Simple CSV parsing (handle quoted fields)
+      const values: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      for (const char of line) {
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          values.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      values.push(current.trim());
+
+      parsed.push({
+        teamAbbreviation: teamIdx >= 0 ? values[teamIdx] || '' : '',
+        email: emailIdx >= 0 ? values[emailIdx] || '' : '',
+        budget: budgetIdx >= 0 ? values[budgetIdx]?.replace(/[,$]/g, '') || '' : '',
+        rosterLimit: rosterIdx >= 0 ? values[rosterIdx] || '' : '',
+        ipLimit: ipIdx >= 0 ? values[ipIdx] || '' : '',
+        paLimit: paIdx >= 0 ? values[paIdx] || '' : '',
+      });
+    }
+
+    if (parsed.length === 0) {
+      toast({
+        title: "No data found",
+        description: "Could not parse any team data from the CSV.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setParsedBulkLimits(parsed);
+    toast({
+      title: "CSV parsed",
+      description: `Found ${parsed.length} teams to update.`,
+    });
+  }, [toast]);
+
+  const handleBulkLimitsDrag = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setBulkLimitsDragActive(true);
+    } else if (e.type === "dragleave") {
+      setBulkLimitsDragActive(false);
+    }
+  }, []);
+
+  const handleBulkLimitsDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setBulkLimitsDragActive(false);
+    
+    const file = e.dataTransfer.files[0];
+    if (file && (file.type === "text/csv" || file.name.endsWith(".csv"))) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target?.result as string;
+        parseBulkLimitsCSV(text);
+      };
+      reader.readAsText(file);
+    }
+  }, [parseBulkLimitsCSV]);
+
+  const handleBulkLimitsFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target?.result as string;
+        parseBulkLimitsCSV(text);
+      };
+      reader.readAsText(file);
+    }
+  }, [parseBulkLimitsCSV]);
+
+  // Bulk update limits mutation
+  const bulkUpdateLimits = useMutation({
+    mutationFn: async (data: ParsedBulkLimit[]) => {
+      return await apiRequest("POST", `/api/auctions/${numericAuctionId}/teams/bulk-limits`, {
+        data: data.map(row => ({
+          teamAbbreviation: row.teamAbbreviation,
+          email: row.email,
+          budget: row.budget,
+          rosterLimit: row.rosterLimit,
+          ipLimit: row.ipLimit,
+          paLimit: row.paLimit,
+        }))
+      });
+    },
+    onSuccess: async (response) => {
+      const result = await response.json();
+      queryClient.invalidateQueries({ queryKey: ['/api/auctions', numericAuctionId, 'teams'] });
+      setBulkLimitsDialogOpen(false);
+      setParsedBulkLimits([]);
+      
+      // Show results dialog if there are any failures, otherwise just toast
+      const failedCount = result.results.filter((r: any) => !r.success).length;
+      if (failedCount > 0) {
+        setBulkLimitsResults(result);
+        setBulkLimitsResultsDialogOpen(true);
+      } else {
+        toast({
+          title: "Limits updated",
+          description: `Successfully updated ${result.updated} teams.`,
+        });
+      }
+    },
+    onError: (error: Error) => {
+      if (isUnauthorizedError(error)) {
+        toast({
+          title: "Unauthorized",
+          description: "Please log in to continue.",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update team limits.",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Loading state
   if (authLoading || auctionLoading) {
     return (
@@ -1342,6 +1527,14 @@ export default function CommissionerAuction() {
                 <RefreshCcw className="mr-2 h-4 w-4" />
               )}
               Sync from Roster
+            </Button>
+            <Button 
+              variant="outline"
+              onClick={() => setBulkLimitsDialogOpen(true)} 
+              data-testid="button-bulk-update-limits"
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              Bulk Update
             </Button>
             <Button onClick={() => setEnrollDialogOpen(true)} data-testid="button-enroll-teams">
               <Plus className="mr-2 h-4 w-4" />
@@ -2753,6 +2946,188 @@ export default function CommissionerAuction() {
           
           <DialogFooter>
             <Button onClick={() => setCsvUpdateResultsDialogOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Limits Upload Dialog */}
+      <Dialog open={bulkLimitsDialogOpen} onOpenChange={(open) => {
+        setBulkLimitsDialogOpen(open);
+        if (!open) {
+          setParsedBulkLimits([]);
+        }
+      }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Bulk Update Team Limits</DialogTitle>
+            <DialogDescription>
+              Upload a CSV file to update budgets and limits for multiple teams at once.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {parsedBulkLimits.length === 0 ? (
+            <div className="space-y-4">
+              <div 
+                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                  bulkLimitsDragActive ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'
+                }`}
+                onDragEnter={handleBulkLimitsDrag}
+                onDragLeave={handleBulkLimitsDrag}
+                onDragOver={handleBulkLimitsDrag}
+                onDrop={handleBulkLimitsDrop}
+              >
+                <Upload className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+                <p className="text-sm text-muted-foreground mb-4">
+                  Drag and drop a CSV file here, or click to select
+                </p>
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={handleBulkLimitsFileSelect}
+                  className="hidden"
+                  id="bulk-limits-file-input"
+                  data-testid="input-bulk-limits-csv"
+                />
+                <Button variant="outline" asChild>
+                  <label htmlFor="bulk-limits-file-input" className="cursor-pointer">
+                    <FileSpreadsheet className="mr-2 h-4 w-4" />
+                    Select CSV File
+                  </label>
+                </Button>
+              </div>
+              
+              <div className="bg-muted/50 rounded-lg p-4">
+                <h4 className="font-medium mb-2">CSV Format</h4>
+                <p className="text-sm text-muted-foreground mb-2">
+                  Your CSV should include at least a <strong>Team</strong> (abbreviation) or <strong>Email</strong> column to identify teams.
+                  Optional columns: <strong>Budget</strong>, <strong>Roster</strong>, <strong>IP</strong>, <strong>PA</strong>.
+                </p>
+                <pre className="text-xs bg-background rounded p-2 overflow-x-auto">
+Team,Budget,Roster,IP,PA{"\n"}ABC,250,40,1200,5500{"\n"}XYZ,275,45,1400,6000
+                </pre>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="border rounded-lg overflow-hidden max-h-60 overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Team</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead className="text-right">Budget</TableHead>
+                      <TableHead className="text-right">Roster</TableHead>
+                      <TableHead className="text-right">IP</TableHead>
+                      <TableHead className="text-right">PA</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {parsedBulkLimits.map((row, i) => (
+                      <TableRow key={i}>
+                        <TableCell className="font-medium">{row.teamAbbreviation || '-'}</TableCell>
+                        <TableCell className="text-muted-foreground text-sm">{row.email || '-'}</TableCell>
+                        <TableCell className="text-right">{row.budget || '-'}</TableCell>
+                        <TableCell className="text-right">{row.rosterLimit || '-'}</TableCell>
+                        <TableCell className="text-right">{row.ipLimit || '-'}</TableCell>
+                        <TableCell className="text-right">{row.paLimit || '-'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              
+              <p className="text-sm text-muted-foreground">
+                {parsedBulkLimits.length} teams will be updated. Empty values will not change existing limits.
+              </p>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setBulkLimitsDialogOpen(false);
+                setParsedBulkLimits([]);
+              }}
+            >
+              Cancel
+            </Button>
+            {parsedBulkLimits.length > 0 && (
+              <>
+                <Button 
+                  variant="outline"
+                  onClick={() => setParsedBulkLimits([])}
+                >
+                  Upload Different File
+                </Button>
+                <Button 
+                  onClick={() => bulkUpdateLimits.mutate(parsedBulkLimits)}
+                  disabled={bulkUpdateLimits.isPending}
+                  data-testid="button-apply-bulk-limits"
+                >
+                  {bulkUpdateLimits.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Updating...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="mr-2 h-4 w-4" />
+                      Apply Updates
+                    </>
+                  )}
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Limits Results Dialog */}
+      <Dialog open={bulkLimitsResultsDialogOpen} onOpenChange={setBulkLimitsResultsDialogOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Bulk Update Complete</DialogTitle>
+            <DialogDescription>
+              {bulkLimitsResults && (
+                <>
+                  Updated {bulkLimitsResults.updated} of {bulkLimitsResults.total} teams.
+                  {bulkLimitsResults.results.filter(r => !r.success).length > 0 && (
+                    <span className="text-amber-600 dark:text-amber-500 ml-1">
+                      {bulkLimitsResults.results.filter(r => !r.success).length} teams could not be updated.
+                    </span>
+                  )}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {bulkLimitsResults && bulkLimitsResults.results.filter(r => !r.success).length > 0 && (
+            <div className="space-y-2 py-4">
+              <div className="flex items-center gap-2 text-amber-600 dark:text-amber-500">
+                <AlertCircle className="h-4 w-4" />
+                <span className="font-medium">Teams Not Updated</span>
+              </div>
+              <div className="bg-amber-50 dark:bg-amber-950/20 rounded-lg p-3 max-h-60 overflow-y-auto">
+                <div className="space-y-1">
+                  {bulkLimitsResults.results.filter(r => !r.success).map((row, i) => (
+                    <div key={i} className="flex items-center justify-between text-sm">
+                      <span className="font-medium text-amber-700 dark:text-amber-400">{row.team}</span>
+                      <span className="text-muted-foreground">{row.message || 'Not found'}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Check that team abbreviations or emails match enrolled teams in this auction.
+              </p>
+            </div>
+          )}
+          
+          <DialogFooter>
+            <Button onClick={() => setBulkLimitsResultsDialogOpen(false)}>
               Close
             </Button>
           </DialogFooter>

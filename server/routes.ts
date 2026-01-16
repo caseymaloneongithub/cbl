@@ -3055,6 +3055,126 @@ export async function registerRoutes(
     }
   });
 
+  // Bulk update team limits via CSV data
+  app.post("/api/auctions/:id/teams/bulk-limits", isAuthenticated, async (req: any, res) => {
+    try {
+      const sessionUserId = req.session.originalUserId || req.session.userId!;
+      const auctionId = parseInt(req.params.id);
+      
+      // Check commissioner access for this auction's league
+      if (!await hasAuctionCommissionerAccess(sessionUserId, auctionId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const { data } = req.body;
+      if (!Array.isArray(data) || data.length === 0) {
+        return res.status(400).json({ message: "No data provided" });
+      }
+
+      // Get the auction to find its league
+      const auction = await storage.getAuction(auctionId);
+      if (!auction || !auction.leagueId) {
+        return res.status(404).json({ message: "Auction not found or not associated with a league" });
+      }
+
+      // Get all enrolled teams for this auction with their league member info
+      const enrolledTeams = await storage.getAuctionTeams(auctionId);
+      const leagueMembers = await storage.getLeagueMembers(auction.leagueId);
+      
+      // Create lookup maps by team abbreviation and email
+      const teamByAbbr = new Map<string, { userId: string; teamName: string }>();
+      const teamByEmail = new Map<string, { userId: string; teamName: string }>();
+      
+      for (const member of leagueMembers) {
+        const enrolled = enrolledTeams.find(t => t.userId === member.userId);
+        if (enrolled) {
+          if (member.teamAbbreviation) {
+            teamByAbbr.set(member.teamAbbreviation.toUpperCase(), { 
+              userId: member.userId, 
+              teamName: member.teamName || '' 
+            });
+          }
+          if (member.user?.email) {
+            teamByEmail.set(member.user.email.toLowerCase(), { 
+              userId: member.userId, 
+              teamName: member.teamName || '' 
+            });
+          }
+        }
+      }
+
+      const results: { team: string; success: boolean; message?: string }[] = [];
+      let successCount = 0;
+
+      for (const row of data) {
+        // Try to find team by abbreviation first, then by email
+        const abbr = (row.teamAbbreviation || row.team || row.abbr || '').toString().trim().toUpperCase();
+        const email = (row.email || '').toString().trim().toLowerCase();
+        
+        let teamInfo = abbr ? teamByAbbr.get(abbr) : null;
+        if (!teamInfo && email) {
+          teamInfo = teamByEmail.get(email);
+        }
+
+        if (!teamInfo) {
+          results.push({ 
+            team: abbr || email || 'Unknown', 
+            success: false, 
+            message: 'Team not found or not enrolled in auction' 
+          });
+          continue;
+        }
+
+        try {
+          // Parse limit values - handle empty strings and null values
+          const parseNumber = (val: any): number | null => {
+            if (val === '' || val === null || val === undefined) return null;
+            const num = parseFloat(val);
+            return isNaN(num) ? null : num;
+          };
+
+          const budget = parseNumber(row.budget);
+          const rosterLimit = parseNumber(row.rosterLimit || row.roster);
+          const ipLimit = parseNumber(row.ipLimit || row.ip);
+          const paLimit = parseNumber(row.paLimit || row.pa);
+
+          // Update limits if any are provided
+          if (rosterLimit !== null || ipLimit !== null || paLimit !== null) {
+            await storage.updateAuctionTeamLimits(auctionId, teamInfo.userId, {
+              rosterLimit,
+              ipLimit,
+              paLimit,
+            });
+          }
+
+          // Update budget if provided
+          if (budget !== null && budget >= 0) {
+            await storage.updateAuctionTeamBudget(auctionId, teamInfo.userId, budget);
+          }
+
+          results.push({ team: abbr || teamInfo.teamName, success: true });
+          successCount++;
+        } catch (err: any) {
+          results.push({ 
+            team: abbr || teamInfo.teamName, 
+            success: false, 
+            message: err.message 
+          });
+        }
+      }
+
+      res.json({ 
+        success: true, 
+        updated: successCount,
+        total: data.length,
+        results 
+      });
+    } catch (error) {
+      console.error("Error bulk updating team limits:", error);
+      res.status(500).json({ message: "Failed to bulk update team limits" });
+    }
+  });
+
   // Reset all team budgets in an auction
   app.post("/api/auctions/:id/reset-budgets", isAuthenticated, async (req: any, res) => {
     try {
