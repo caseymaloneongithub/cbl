@@ -429,7 +429,11 @@ async function runHourlySummaryEmail() {
           : 'https://cbl-auctions.replit.app';
       const optOutLink = group.emailNotifications === "league" ? `${appUrl}` : undefined;
       
-      // Send email to each recipient
+      // Send email to each recipient with rate limiting (Resend allows 2 requests/second)
+      log(`Auction ${auctionId}: Sending emails to ${recipients.length} recipients`, "email-job");
+      let successCount = 0;
+      let failCount = 0;
+      
       for (const recipient of recipients) {
         const recipientName = recipient.firstName || "Team Owner";
         const emailResult = await sendAuctionResultsSummaryEmail(
@@ -440,11 +444,19 @@ async function runHourlySummaryEmail() {
         );
         
         if (emailResult.success) {
-          log(`Email sent to ${recipient.email} for auction ${auctionId} (${results.length} results)`, "email-job");
+          successCount++;
         } else {
+          failCount++;
           log(`Failed to send email to ${recipient.email}: ${emailResult.error}`, "email-job");
         }
+        
+        // Rate limit: wait 600ms between emails to stay under Resend's 2 requests/second limit
+        if (recipients.indexOf(recipient) < recipients.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 600));
+        }
       }
+      
+      log(`Auction ${auctionId}: Sent ${successCount}/${recipients.length} emails (${failCount} failed)`, "email-job");
     }
     
     // Mark all processed free agents as emailed (even if some emails failed)
