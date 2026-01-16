@@ -5,7 +5,7 @@ import { setupAuth, isAuthenticated, hashPassword, generateRandomPassword } from
 import { insertBidSchema, insertAutoBidSchema } from "@shared/schema";
 import { z } from "zod";
 import { fromZonedTime } from "date-fns-tz";
-import { parse, isValid } from "date-fns";
+import { parse, isValid, format } from "date-fns";
 import { syncPlayerStatsFromMLB, testMLBConnection } from "./mlb-api";
 
 const EASTERN_TIMEZONE = "America/New_York";
@@ -2166,7 +2166,8 @@ export async function registerRoutes(
         "First Name",
         "MLB Team",
         "Years",
-        "Salary"
+        "Salary",
+        "Auction End Date"
       ];
 
       const rows = results.map(agent => {
@@ -2176,13 +2177,19 @@ export async function registerRoutes(
         const firstName = nameParts[0] || "";
         const lastName = nameParts.slice(1).join(" ") || "";
         
+        // Format auction end date as MM/DD/YYYY
+        const endDate = agent.auctionEndTime 
+          ? format(new Date(agent.auctionEndTime), "M/d/yyyy")
+          : "";
+        
         return [
           agent.highBidder?.teamAbbreviation || "",
           lastName ? `"${lastName.replace(/"/g, '""')}"` : "",
           firstName ? `"${firstName.replace(/"/g, '""')}"` : "",
           agent.team || "",
           agent.currentBid?.years || 0,
-          agent.currentBid?.amount || 0
+          agent.currentBid?.amount || 0,
+          endDate
         ];
       });
 
