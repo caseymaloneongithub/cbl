@@ -1090,7 +1090,7 @@ export default function CommissionerAuction() {
     }
   }, [parseTeamEnrollmentCSV]);
 
-  // Bulk limits CSV parser
+  // Bulk limits CSV parser (supports CSV and TSV)
   const parseBulkLimitsCSV = useCallback((csvText: string) => {
     // Remove BOM if present and normalize line endings
     let cleanText = csvText.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -1104,25 +1104,36 @@ export default function CommissionerAuction() {
       return;
     }
 
-    // Parse header row - handle quoted fields and normalize
+    // Detect delimiter (tab or comma)
     const headerLine = lines[0];
-    const rawHeaders: string[] = [];
-    let current = '';
-    let inQuotes = false;
-    for (const char of headerLine) {
-      if (char === '"') {
-        inQuotes = !inQuotes;
-      } else if (char === ',' && !inQuotes) {
-        rawHeaders.push(current);
-        current = '';
-      } else {
-        current += char;
-      }
-    }
-    rawHeaders.push(current);
+    const delimiter = headerLine.includes('\t') ? '\t' : ',';
     
-    // Clean and normalize headers
-    const headers = rawHeaders.map(h => h.trim().replace(/"/g, '').toLowerCase().replace(/\s+/g, ''));
+    // Parse a line with the detected delimiter
+    const parseLine = (line: string): string[] => {
+      if (delimiter === '\t') {
+        return line.split('\t').map(v => v.trim().replace(/"/g, ''));
+      }
+      // For comma, handle quoted fields
+      const values: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      for (const char of line) {
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === delimiter && !inQuotes) {
+          values.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      values.push(current.trim());
+      return values;
+    };
+    
+    // Parse and normalize headers
+    const rawHeaders = parseLine(headerLine);
+    const headers = rawHeaders.map(h => h.toLowerCase().replace(/\s+/g, ''));
     
     // Find column indices with flexible matching
     const teamIdx = headers.findIndex(h => 
