@@ -1092,7 +1092,9 @@ export default function CommissionerAuction() {
 
   // Bulk limits CSV parser
   const parseBulkLimitsCSV = useCallback((csvText: string) => {
-    const lines = csvText.trim().split('\n');
+    // Remove BOM if present and normalize line endings
+    let cleanText = csvText.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const lines = cleanText.trim().split('\n');
     if (lines.length < 2) {
       toast({
         title: "Invalid CSV",
@@ -1102,16 +1104,36 @@ export default function CommissionerAuction() {
       return;
     }
 
-    const headerLine = lines[0].toLowerCase();
-    const headers = headerLine.split(',').map(h => h.trim().replace(/"/g, ''));
+    // Parse header row - handle quoted fields and normalize
+    const headerLine = lines[0];
+    const rawHeaders: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (const char of headerLine) {
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        rawHeaders.push(current);
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    rawHeaders.push(current);
     
-    // Find column indices
-    const teamIdx = headers.findIndex(h => ['team', 'abbr', 'abbreviation', 'teamabbreviation', 'team abbreviation'].includes(h));
-    const emailIdx = headers.findIndex(h => h === 'email');
-    const budgetIdx = headers.findIndex(h => h === 'budget');
-    const rosterIdx = headers.findIndex(h => ['roster', 'rosterlimit', 'roster limit'].includes(h));
-    const ipIdx = headers.findIndex(h => ['ip', 'iplimit', 'ip limit'].includes(h));
-    const paIdx = headers.findIndex(h => ['pa', 'palimit', 'pa limit'].includes(h));
+    // Clean and normalize headers
+    const headers = rawHeaders.map(h => h.trim().replace(/"/g, '').toLowerCase().replace(/\s+/g, ''));
+    
+    // Find column indices with flexible matching
+    const teamIdx = headers.findIndex(h => 
+      h === 'team' || h === 'abbr' || h === 'abbreviation' || 
+      h === 'teamabbreviation' || h === 'teamabbr' || h.includes('team')
+    );
+    const emailIdx = headers.findIndex(h => h === 'email' || h.includes('email'));
+    const budgetIdx = headers.findIndex(h => h === 'budget' || h.includes('budget'));
+    const rosterIdx = headers.findIndex(h => h === 'roster' || h === 'rosterlimit' || h.includes('roster'));
+    const ipIdx = headers.findIndex(h => h === 'ip' || h === 'iplimit');
+    const paIdx = headers.findIndex(h => h === 'pa' || h === 'palimit');
 
     if (teamIdx === -1 && emailIdx === -1) {
       toast({
