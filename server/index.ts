@@ -267,7 +267,14 @@ function startHourlySummaryEmailJob() {
   
   log("Hourly summary email job started", "email-job");
   
-  // Run every hour (not immediately on startup to avoid spam during development)
+  // Run once after a short delay on startup to catch any pending emails
+  // This ensures emails aren't missed if server restarts during an active auction period
+  setTimeout(() => {
+    log("Running initial email check after startup", "email-job");
+    runHourlySummaryEmail();
+  }, 30 * 1000); // 30 second delay to let system settle
+  
+  // Then run every hour
   setInterval(runHourlySummaryEmail, INTERVAL_MS);
 }
 
