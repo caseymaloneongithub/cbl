@@ -1693,10 +1693,10 @@ export default function CommissionerAuction() {
                     ?.filter(p => {
                       const now = new Date();
                       const endTime = new Date(p.auctionEndTime);
-                      const hasStarted = !p.auctionStartTime || new Date(p.auctionStartTime) <= now;
                       const notEnded = endTime > now;
                       const matchesSearch = !playerSearchQuery || p.name.toLowerCase().includes(playerSearchQuery.toLowerCase());
-                      return hasStarted && notEnded && matchesSearch && !p.winnerId;
+                      // Commissioners can bid on any player that hasn't ended and hasn't been won
+                      return notEnded && matchesSearch && !p.winnerId;
                     })
                     .sort((a, b) => a.name.localeCompare(b.name))
                     .slice(0, 50)
