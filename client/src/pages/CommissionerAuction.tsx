@@ -270,6 +270,22 @@ export default function CommissionerAuction() {
     enabled: !!numericAuctionId,
   });
 
+  // Fetch budget info for selected team in commissioner bid form
+  const { data: selectedTeamBudget } = useQuery<{
+    budget: number;
+    spent: number;
+    available: number;
+    rosterLimit?: number;
+    currentRosterCount?: number;
+    ipLimit?: number;
+    currentIpUsage?: number;
+    paLimit?: number;
+    currentPaUsage?: number;
+  }>({
+    queryKey: ['/api/budget', { auctionId: numericAuctionId, userId: commBidTeamId }],
+    enabled: !!numericAuctionId && !!commBidTeamId,
+  });
+
   // Settings form
   const settingsForm = useForm<SettingsFormData>({
     resolver: zodResolver(settingsSchema),
@@ -1633,6 +1649,22 @@ export default function CommissionerAuction() {
                   ))}
                 </SelectContent>
               </Select>
+              {commBidTeamId && selectedTeamBudget && (
+                <div className="text-xs text-muted-foreground space-y-0.5 pt-1">
+                  <div className="flex gap-3 flex-wrap">
+                    <span>Budget: <span className="font-medium text-foreground">${formatNumberWithCommas(Math.floor(selectedTeamBudget.available))}</span> avail</span>
+                    {selectedTeamBudget.rosterLimit !== undefined && (
+                      <span>Roster: <span className="font-medium text-foreground">{selectedTeamBudget.currentRosterCount ?? 0}/{selectedTeamBudget.rosterLimit}</span></span>
+                    )}
+                    {selectedTeamBudget.ipLimit !== undefined && (
+                      <span>IP: <span className="font-medium text-foreground">{formatNumberWithCommas(selectedTeamBudget.currentIpUsage ?? 0)}/{formatNumberWithCommas(selectedTeamBudget.ipLimit)}</span></span>
+                    )}
+                    {selectedTeamBudget.paLimit !== undefined && (
+                      <span>PA: <span className="font-medium text-foreground">{formatNumberWithCommas(selectedTeamBudget.currentPaUsage ?? 0)}/{formatNumberWithCommas(selectedTeamBudget.paLimit)}</span></span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Player Search & Select */}
