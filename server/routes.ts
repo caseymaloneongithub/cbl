@@ -2102,16 +2102,27 @@ export async function registerRoutes(
   });
 
   // Team limits (requires auctionId - limits are per-auction)
+  // Commissioners can query other teams by passing userId parameter
   app.get("/api/limits", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId!;
+      const sessionUserId = req.session.originalUserId || req.session.userId!;
       const auctionId = req.query.auctionId ? parseInt(req.query.auctionId) : undefined;
+      const targetUserId = req.query.userId as string | undefined;
       
       if (!auctionId || isNaN(auctionId)) {
         return res.status(400).json({ message: "auctionId is required" });
       }
       
-      const limitsInfo = await storage.getUserLimitsInfo(userId, auctionId);
+      // If querying another user's limits, require commissioner access
+      let userIdToQuery = sessionUserId;
+      if (targetUserId && targetUserId !== sessionUserId) {
+        if (!await hasAuctionCommissionerAccess(sessionUserId, auctionId)) {
+          return res.status(403).json({ message: "Commissioner access required to view other team's limits" });
+        }
+        userIdToQuery = targetUserId;
+      }
+      
+      const limitsInfo = await storage.getUserLimitsInfo(userIdToQuery, auctionId);
       res.json(limitsInfo);
     } catch (error: any) {
       if (error.message === "Team not enrolled in this auction") {

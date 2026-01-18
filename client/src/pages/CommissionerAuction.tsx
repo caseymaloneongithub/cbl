@@ -282,7 +282,12 @@ export default function CommissionerAuction() {
     paLimit?: number;
     currentPaUsage?: number;
   }>({
-    queryKey: ['/api/budget', { auctionId: numericAuctionId, userId: commBidTeamId }],
+    queryKey: ['/api/limits', { auctionId: numericAuctionId, userId: commBidTeamId }],
+    queryFn: async () => {
+      const res = await fetch(`/api/limits?auctionId=${numericAuctionId}&userId=${commBidTeamId}`);
+      if (!res.ok) throw new Error('Failed to fetch team budget');
+      return res.json();
+    },
     enabled: !!numericAuctionId && !!commBidTeamId,
   });
 
