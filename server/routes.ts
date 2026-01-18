@@ -2103,6 +2103,7 @@ export async function registerRoutes(
 
   // Team limits (requires auctionId - limits are per-auction)
   // Commissioners can query other teams by passing userId parameter
+  // Also includes budget info for convenience
   app.get("/api/limits", isAuthenticated, async (req: any, res) => {
     try {
       const sessionUserId = req.session.originalUserId || req.session.userId!;
@@ -2123,7 +2124,16 @@ export async function registerRoutes(
       }
       
       const limitsInfo = await storage.getUserLimitsInfo(userIdToQuery, auctionId);
-      res.json(limitsInfo);
+      const budgetInfo = await storage.getUserBudgetInfo(userIdToQuery, auctionId);
+      
+      // Combine limits and budget info
+      res.json({
+        ...limitsInfo,
+        budget: budgetInfo.budget,
+        spent: budgetInfo.spent,
+        committed: budgetInfo.committed,
+        available: budgetInfo.available,
+      });
     } catch (error: any) {
       if (error.message === "Team not enrolled in this auction") {
         return res.status(404).json({ message: error.message });

@@ -275,12 +275,12 @@ export default function CommissionerAuction() {
     budget: number;
     spent: number;
     available: number;
-    rosterLimit?: number;
-    currentRosterCount?: number;
-    ipLimit?: number;
-    currentIpUsage?: number;
-    paLimit?: number;
-    currentPaUsage?: number;
+    rosterLimit: number | null;
+    rosterUsed: number;
+    ipLimit: number | null;
+    ipUsed: number;
+    paLimit: number | null;
+    paUsed: number;
   }>({
     queryKey: ['/api/limits', { auctionId: numericAuctionId, userId: commBidTeamId }],
     queryFn: async () => {
@@ -1658,14 +1658,14 @@ export default function CommissionerAuction() {
                 <div className="text-xs text-muted-foreground space-y-0.5 pt-1">
                   <div className="flex gap-3 flex-wrap">
                     <span>Budget: <span className="font-medium text-foreground">${formatNumberWithCommas(Math.floor(selectedTeamBudget.available))}</span> avail</span>
-                    {selectedTeamBudget.rosterLimit !== undefined && (
-                      <span>Roster: <span className="font-medium text-foreground">{selectedTeamBudget.currentRosterCount ?? 0}/{selectedTeamBudget.rosterLimit}</span></span>
+                    {selectedTeamBudget.rosterLimit != null && (
+                      <span>Roster: <span className="font-medium text-foreground">{selectedTeamBudget.rosterUsed ?? 0}/{selectedTeamBudget.rosterLimit}</span></span>
                     )}
-                    {selectedTeamBudget.ipLimit !== undefined && (
-                      <span>IP: <span className="font-medium text-foreground">{formatNumberWithCommas(selectedTeamBudget.currentIpUsage ?? 0)}/{formatNumberWithCommas(selectedTeamBudget.ipLimit)}</span></span>
+                    {selectedTeamBudget.ipLimit != null && (
+                      <span>IP: <span className="font-medium text-foreground">{formatNumberWithCommas(selectedTeamBudget.ipUsed ?? 0)}/{formatNumberWithCommas(selectedTeamBudget.ipLimit)}</span></span>
                     )}
-                    {selectedTeamBudget.paLimit !== undefined && (
-                      <span>PA: <span className="font-medium text-foreground">{formatNumberWithCommas(selectedTeamBudget.currentPaUsage ?? 0)}/{formatNumberWithCommas(selectedTeamBudget.paLimit)}</span></span>
+                    {selectedTeamBudget.paLimit != null && (
+                      <span>PA: <span className="font-medium text-foreground">{formatNumberWithCommas(selectedTeamBudget.paUsed ?? 0)}/{formatNumberWithCommas(selectedTeamBudget.paLimit)}</span></span>
                     )}
                   </div>
                 </div>
