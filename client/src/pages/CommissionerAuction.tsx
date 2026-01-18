@@ -276,11 +276,11 @@ export default function CommissionerAuction() {
     spent: number;
     available: number;
     rosterLimit: number | null;
-    rosterUsed: number;
+    rosterAvailable: number | null;
     ipLimit: number | null;
-    ipUsed: number;
+    ipAvailable: number | null;
     paLimit: number | null;
-    paUsed: number;
+    paAvailable: number | null;
   }>({
     queryKey: ['/api/limits', { auctionId: numericAuctionId, userId: commBidTeamId }],
     queryFn: async () => {
@@ -1659,13 +1659,13 @@ export default function CommissionerAuction() {
                   <div className="flex gap-3 flex-wrap">
                     <span>Budget: <span className="font-medium text-foreground">${formatNumberWithCommas(Math.floor(selectedTeamBudget.available))}</span> avail</span>
                     {selectedTeamBudget.rosterLimit != null && (
-                      <span>Roster: <span className="font-medium text-foreground">{selectedTeamBudget.rosterUsed ?? 0}/{selectedTeamBudget.rosterLimit}</span></span>
+                      <span>Roster: <span className="font-medium text-foreground">{selectedTeamBudget.rosterAvailable ?? 0}</span> avail</span>
                     )}
                     {selectedTeamBudget.ipLimit != null && (
-                      <span>IP: <span className="font-medium text-foreground">{formatNumberWithCommas(selectedTeamBudget.ipUsed ?? 0)}/{formatNumberWithCommas(selectedTeamBudget.ipLimit)}</span></span>
+                      <span>IP: <span className="font-medium text-foreground">{formatNumberWithCommas(selectedTeamBudget.ipAvailable ?? 0)}</span> avail</span>
                     )}
                     {selectedTeamBudget.paLimit != null && (
-                      <span>PA: <span className="font-medium text-foreground">{formatNumberWithCommas(selectedTeamBudget.paUsed ?? 0)}/{formatNumberWithCommas(selectedTeamBudget.paLimit)}</span></span>
+                      <span>PA: <span className="font-medium text-foreground">{formatNumberWithCommas(selectedTeamBudget.paAvailable ?? 0)}</span> avail</span>
                     )}
                   </div>
                 </div>
