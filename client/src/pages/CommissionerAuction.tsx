@@ -215,6 +215,15 @@ export default function CommissionerAuction() {
   // Bulk limits upload state
   const [bulkLimitsDialogOpen, setBulkLimitsDialogOpen] = useState(false);
   const [bulkLimitsDragActive, setBulkLimitsDragActive] = useState(false);
+  
+  // Commissioner bid form state
+  const [commBidTeamId, setCommBidTeamId] = useState<string>("");
+  const [commBidPlayerId, setCommBidPlayerId] = useState<string>("");
+  const [commBidAmount, setCommBidAmount] = useState<string>("");
+  const [commBidYears, setCommBidYears] = useState<string>("1");
+  const [commBidType, setCommBidType] = useState<"single" | "auto">("single");
+  const [commBidMaxAmount, setCommBidMaxAmount] = useState<string>("");
+  const [playerSearchQuery, setPlayerSearchQuery] = useState<string>("");
   interface ParsedBulkLimit {
     teamAbbreviation: string;
     email: string;
@@ -252,6 +261,12 @@ export default function CommissionerAuction() {
   // Fetch expired players with no bids
   const { data: expiredNoBidPlayers, isLoading: expiredPlayersLoading } = useQuery<FreeAgentWithBids[]>({
     queryKey: ['/api/auctions', numericAuctionId, 'expired-no-bids'],
+    enabled: !!numericAuctionId,
+  });
+
+  // Fetch all free agents for this auction (for commissioner bid form)
+  const { data: auctionFreeAgents } = useQuery<FreeAgentWithBids[]>({
+    queryKey: ['/api/auctions', numericAuctionId, 'free-agents'],
     enabled: !!numericAuctionId,
   });
 
@@ -344,6 +359,60 @@ export default function CommissionerAuction() {
       toast({
         title: "Error",
         description: error.message || "Failed to update settings.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Commissioner bid mutation
+  const placeCommissionerBid = useMutation({
+    mutationFn: async (data: { freeAgentId: number; targetUserId: string; amount: number; years: number }) => {
+      const response = await apiRequest("POST", "/api/commissioner/bids", data);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/auctions', numericAuctionId, 'free-agents'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/free-agents'] });
+      setCommBidPlayerId("");
+      setCommBidAmount("");
+      setCommBidYears("1");
+      setPlayerSearchQuery("");
+      toast({
+        title: "Bid placed",
+        description: `Bid placed successfully for team.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to place bid.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Commissioner auto-bid mutation
+  const placeCommissionerAutoBid = useMutation({
+    mutationFn: async (data: { freeAgentId: number; targetUserId: string; maxAmount: number; years: number; isActive: boolean }) => {
+      const response = await apiRequest("POST", "/api/commissioner/auto-bids", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/auctions', numericAuctionId, 'free-agents'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/free-agents'] });
+      setCommBidPlayerId("");
+      setCommBidMaxAmount("");
+      setCommBidYears("1");
+      setPlayerSearchQuery("");
+      toast({
+        title: "Auto-bid created",
+        description: `Auto-bid created successfully for team.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create auto-bid.",
         variant: "destructive",
       });
     },
@@ -1529,6 +1598,182 @@ export default function CommissionerAuction() {
               </Button>
             </form>
           </Form>
+        </CardContent>
+      </Card>
+
+      {/* Commissioner Bid Form */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <DollarSign className="h-5 w-5" />
+            Enter Bid for Team
+          </CardTitle>
+          <CardDescription>
+            Place bids on behalf of any enrolled team
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 items-end">
+            {/* Team Selector */}
+            <div className="space-y-2">
+              <Label htmlFor="comm-bid-team">Team</Label>
+              <Select value={commBidTeamId} onValueChange={setCommBidTeamId}>
+                <SelectTrigger id="comm-bid-team" data-testid="select-comm-bid-team">
+                  <SelectValue placeholder="Select team" />
+                </SelectTrigger>
+                <SelectContent>
+                  {auctionTeams?.sort((a, b) => {
+                    const nameA = (a.user as any).leagueTeamName || a.user.teamName || a.user.email;
+                    const nameB = (b.user as any).leagueTeamName || b.user.teamName || b.user.email;
+                    return nameA.localeCompare(nameB);
+                  }).map((team) => (
+                    <SelectItem key={team.userId} value={team.userId}>
+                      {(team.user as any).leagueTeamName || team.user.teamName || team.user.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Player Search & Select */}
+            <div className="space-y-2">
+              <Label htmlFor="comm-bid-player">Player</Label>
+              <Select value={commBidPlayerId} onValueChange={setCommBidPlayerId}>
+                <SelectTrigger id="comm-bid-player" data-testid="select-comm-bid-player">
+                  <SelectValue placeholder="Select player" />
+                </SelectTrigger>
+                <SelectContent>
+                  <div className="p-2">
+                    <Input
+                      placeholder="Search players..."
+                      value={playerSearchQuery}
+                      onChange={(e) => setPlayerSearchQuery(e.target.value)}
+                      className="mb-2"
+                      data-testid="input-player-search"
+                    />
+                  </div>
+                  {auctionFreeAgents
+                    ?.filter(p => {
+                      const now = new Date();
+                      const endTime = new Date(p.auctionEndTime);
+                      const hasStarted = !p.auctionStartTime || new Date(p.auctionStartTime) <= now;
+                      const notEnded = endTime > now;
+                      const matchesSearch = !playerSearchQuery || p.name.toLowerCase().includes(playerSearchQuery.toLowerCase());
+                      return hasStarted && notEnded && matchesSearch && !p.winnerId;
+                    })
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .slice(0, 50)
+                    .map((player) => (
+                      <SelectItem key={player.id} value={String(player.id)}>
+                        {player.name} ({player.playerType === 'hitter' ? 'H' : 'P'})
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Bid Type */}
+            <div className="space-y-2">
+              <Label>Bid Type</Label>
+              <Select value={commBidType} onValueChange={(v) => setCommBidType(v as "single" | "auto")}>
+                <SelectTrigger data-testid="select-comm-bid-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="single">Single Bid</SelectItem>
+                  <SelectItem value="auto">Auto-Bid</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Amount */}
+            <div className="space-y-2">
+              <Label htmlFor="comm-bid-amount">{commBidType === 'auto' ? 'Max Amount' : 'Amount'}</Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                <Input
+                  id="comm-bid-amount"
+                  type="text"
+                  inputMode="numeric"
+                  className="pl-7"
+                  placeholder="0"
+                  value={commBidType === 'auto' ? commBidMaxAmount : commBidAmount}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/[^\d]/g, '');
+                    if (commBidType === 'auto') {
+                      setCommBidMaxAmount(val);
+                    } else {
+                      setCommBidAmount(val);
+                    }
+                  }}
+                  data-testid="input-comm-bid-amount"
+                />
+              </div>
+            </div>
+
+            {/* Years */}
+            <div className="space-y-2">
+              <Label>Years</Label>
+              <Select value={commBidYears} onValueChange={setCommBidYears}>
+                <SelectTrigger data-testid="select-comm-bid-years">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[1, 2, 3, 4, 5].map((y) => (
+                    <SelectItem key={y} value={String(y)}>{y} year{y > 1 ? 's' : ''}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Submit Button */}
+            <Button
+              onClick={() => {
+                if (!commBidTeamId || !commBidPlayerId) {
+                  toast({ title: "Error", description: "Please select a team and player", variant: "destructive" });
+                  return;
+                }
+                const playerId = parseInt(commBidPlayerId);
+                const years = parseInt(commBidYears);
+                
+                if (commBidType === 'single') {
+                  const amount = parseInt(commBidAmount);
+                  if (!amount || amount <= 0) {
+                    toast({ title: "Error", description: "Please enter a valid bid amount", variant: "destructive" });
+                    return;
+                  }
+                  placeCommissionerBid.mutate({
+                    freeAgentId: playerId,
+                    targetUserId: commBidTeamId,
+                    amount,
+                    years,
+                  });
+                } else {
+                  const maxAmount = parseInt(commBidMaxAmount);
+                  if (!maxAmount || maxAmount <= 0) {
+                    toast({ title: "Error", description: "Please enter a valid max amount", variant: "destructive" });
+                    return;
+                  }
+                  placeCommissionerAutoBid.mutate({
+                    freeAgentId: playerId,
+                    targetUserId: commBidTeamId,
+                    maxAmount,
+                    years,
+                    isActive: true,
+                  });
+                }
+              }}
+              disabled={placeCommissionerBid.isPending || placeCommissionerAutoBid.isPending}
+              data-testid="button-place-comm-bid"
+            >
+              {(placeCommissionerBid.isPending || placeCommissionerAutoBid.isPending) ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <DollarSign className="mr-2 h-4 w-4" />
+              )}
+              {commBidType === 'single' ? 'Place Bid' : 'Set Auto-Bid'}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

@@ -3895,6 +3895,251 @@ export async function registerRoutes(
     }
   });
 
+  // Commissioner bid endpoints - place bids on behalf of teams
+  app.post("/api/commissioner/bids", isAuthenticated, async (req: any, res) => {
+    try {
+      const commissionerId = req.session.userId!;
+      
+      // Validate and coerce input types
+      const freeAgentId = parseInt(req.body.freeAgentId);
+      const targetUserId = String(req.body.targetUserId || "");
+      const amount = parseInt(req.body.amount);
+      const years = parseInt(req.body.years);
+      
+      if (isNaN(freeAgentId) || !targetUserId || isNaN(amount) || isNaN(years)) {
+        return res.status(400).json({ message: "Missing or invalid required fields: freeAgentId (number), targetUserId (string), amount (number), years (number)" });
+      }
+      
+      if (amount <= 0) {
+        return res.status(400).json({ message: "Amount must be a positive number" });
+      }
+      
+      const agent = await storage.getFreeAgent(freeAgentId);
+      if (!agent) {
+        return res.status(404).json({ message: "Free agent not found" });
+      }
+      
+      if (!agent.auctionId) {
+        return res.status(400).json({ message: "Player is not associated with an auction" });
+      }
+      
+      if (!await hasAuctionCommissionerAccess(commissionerId, agent.auctionId)) {
+        return res.status(403).json({ message: "You don't have commissioner access for this auction" });
+      }
+      
+      // Always verify target team is enrolled in this auction (before other checks)
+      const limitsCheck = await storage.canUserBidOnPlayer(targetUserId, freeAgentId);
+      if (!limitsCheck.canBid) {
+        return res.status(400).json({ message: limitsCheck.reason || "Target team is not enrolled in this auction" });
+      }
+      
+      if (new Date(agent.auctionEndTime) <= new Date()) {
+        return res.status(400).json({ message: "Auction has ended" });
+      }
+      
+      if (agent.auctionStartTime && new Date(agent.auctionStartTime) > new Date()) {
+        return res.status(400).json({ message: "Bidding has not started yet for this player" });
+      }
+      
+      if (years < 1 || years > 5) {
+        return res.status(400).json({ message: "Years must be between 1 and 5" });
+      }
+      
+      const minimumYears = agent.minimumYears || 1;
+      if (years < minimumYears) {
+        return res.status(400).json({ message: `This player requires at least a ${minimumYears}-year contract` });
+      }
+      
+      const auction = await storage.getAuction(agent.auctionId);
+      const yearFactors = auction ? [
+        auction.yearFactor1, auction.yearFactor2, auction.yearFactor3, auction.yearFactor4, auction.yearFactor5,
+      ] : [1.0, 1.25, 1.33, 1.43, 1.55];
+      
+      const totalValue = amount * yearFactors[years - 1];
+      
+      if (amount < agent.minimumBid) {
+        return res.status(400).json({ message: `Bid must be at least $${agent.minimumBid}` });
+      }
+      
+      const bidIncrement = auction?.bidIncrement ?? 0.10;
+      const currentHighBid = await storage.getHighestBidForAgent(freeAgentId);
+      
+      if (currentHighBid) {
+        if (currentHighBid.isImportedInitial) {
+          if (years <= currentHighBid.years) {
+            return res.status(400).json({ 
+              message: `Imported opening bid requires more years. Current: ${currentHighBid.years} year(s), minimum: ${currentHighBid.years + 1} years.` 
+            });
+          }
+          if (amount < currentHighBid.amount) {
+            return res.status(400).json({ message: `Bid must be at least $${currentHighBid.amount}` });
+          }
+        }
+        
+        const minRequired = currentHighBid.totalValue * (1 + bidIncrement);
+        if (totalValue < minRequired) {
+          return res.status(400).json({ 
+            message: `Bid must beat current bid. Minimum total value: $${Math.ceil(minRequired)}` 
+          });
+        }
+      }
+      
+      const enforceBudget = auction?.enforceBudget ?? true;
+      if (enforceBudget) {
+        const budgetInfo = await storage.getUserBudgetInfo(targetUserId, agent.auctionId);
+        let availableForThisBid = budgetInfo.available;
+        if (currentHighBid && currentHighBid.userId === targetUserId) {
+          availableForThisBid += currentHighBid.amount;
+        }
+        if (amount > availableForThisBid) {
+          return res.status(400).json({ 
+            message: `Bid exceeds team's available budget. Available: $${Math.floor(availableForThisBid)}, Bid: $${amount}` 
+          });
+        }
+      }
+      
+      const bid = await storage.createBid({
+        freeAgentId,
+        userId: targetUserId,
+        amount,
+        years,
+        totalValue,
+        isAutoBid: false,
+      });
+      
+      let auctionExtended = false;
+      if (auction?.extendAuctionOnBid) {
+        const now = new Date();
+        const endTime = new Date(agent.auctionEndTime);
+        const hoursUntilEnd = (endTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+        if (hoursUntilEnd > 0 && hoursUntilEnd <= 24) {
+          const newEndTime = new Date(endTime.getTime() + 24 * 60 * 60 * 1000);
+          await storage.updateFreeAgentAuctionEndTime(freeAgentId, newEndTime);
+          auctionExtended = true;
+        }
+      }
+      
+      const autoBidsTriggered = await processAllAutoBidsUntilStable(freeAgentId, targetUserId, auction);
+      
+      console.log(`[Commissioner Bid] ${commissionerId} placed bid for ${targetUserId} on player ${agent.name}: $${amount} x ${years}yr`);
+      res.json({ ...bid, autoBidsTriggered, auctionExtended });
+    } catch (error) {
+      console.error("Error placing commissioner bid:", error);
+      res.status(500).json({ message: "Failed to place bid" });
+    }
+  });
+
+  // Commissioner auto-bid endpoint
+  app.post("/api/commissioner/auto-bids", isAuthenticated, async (req: any, res) => {
+    try {
+      const commissionerId = req.session.userId!;
+      
+      // Validate and coerce input types
+      const freeAgentId = parseInt(req.body.freeAgentId);
+      const targetUserId = String(req.body.targetUserId || "");
+      const maxAmount = parseInt(req.body.maxAmount) || 0;
+      const years = parseInt(req.body.years) || 1;
+      const isActive = req.body.isActive !== false;
+      
+      if (isNaN(freeAgentId) || !targetUserId) {
+        return res.status(400).json({ message: "Missing or invalid required fields: freeAgentId (number), targetUserId (string)" });
+      }
+      
+      const agent = await storage.getFreeAgent(freeAgentId);
+      if (!agent) {
+        return res.status(404).json({ message: "Free agent not found" });
+      }
+      
+      if (!agent.auctionId) {
+        return res.status(400).json({ message: "Player is not associated with an auction" });
+      }
+      
+      if (!await hasAuctionCommissionerAccess(commissionerId, agent.auctionId)) {
+        return res.status(403).json({ message: "You don't have commissioner access for this auction" });
+      }
+      
+      // Always verify target team is enrolled
+      const canBidResult = await storage.canUserBidOnPlayer(targetUserId, freeAgentId);
+      if (!canBidResult.canBid) {
+        return res.status(400).json({ message: canBidResult.reason || "Target team is not enrolled in this auction" });
+      }
+      
+      if (new Date(agent.auctionEndTime) <= new Date()) {
+        return res.status(400).json({ message: "Auction has ended" });
+      }
+      
+      const auction = await storage.getAuction(agent.auctionId);
+      if (auction && !auction.allowAutoBidding) {
+        return res.status(400).json({ message: "Auto-bidding is not enabled for this auction" });
+      }
+      
+      const hasStarted = !agent.auctionStartTime || new Date(agent.auctionStartTime) <= new Date();
+      
+      if (isActive) {
+        const minimumYears = agent.minimumYears || 1;
+        if (years < minimumYears) {
+          return res.status(400).json({ message: `This player requires at least a ${minimumYears}-year contract` });
+        }
+        
+        if (maxAmount < agent.minimumBid) {
+          return res.status(400).json({ message: `Max amount must be at least $${agent.minimumBid}` });
+        }
+        
+        if (maxAmount <= 0) {
+          return res.status(400).json({ message: "Max amount must be a positive number" });
+        }
+        
+        if (years < 1 || years > 5) {
+          return res.status(400).json({ message: "Years must be between 1 and 5" });
+        }
+      }
+      
+      const autoBid = await storage.createOrUpdateAutoBid({
+        freeAgentId,
+        userId: targetUserId,
+        maxAmount: maxAmount || 0,
+        years: years || 1,
+        isActive: isActive ?? true,
+      });
+      
+      if (hasStarted && autoBid.isActive) {
+        const yearFactors = auction ? [
+          auction.yearFactor1, auction.yearFactor2, auction.yearFactor3, auction.yearFactor4, auction.yearFactor5,
+        ] : [1.0, 1.25, 1.33, 1.43, 1.55];
+        
+        const highestBid = await storage.getHighestBidForAgent(freeAgentId);
+        
+        if (!highestBid) {
+          const openingAmount = Math.max(agent.minimumBid, 1);
+          if (openingAmount <= autoBid.maxAmount) {
+            const newTotalValue = openingAmount * yearFactors[autoBid.years - 1];
+            await storage.createBid({
+              freeAgentId,
+              userId: targetUserId,
+              amount: openingAmount,
+              years: autoBid.years,
+              totalValue: newTotalValue,
+              isAutoBid: true,
+            });
+            const triggered = await processAllAutoBidsUntilStable(freeAgentId, targetUserId, auction);
+            console.log(`[Commissioner Auto-Bid] Created for ${targetUserId} on ${agent.name}: max $${maxAmount} x ${years}yr`);
+            return res.json({ ...autoBid, autoBidsTriggered: triggered });
+          }
+        } else if (highestBid.userId !== targetUserId) {
+          const triggered = await processAllAutoBidsUntilStable(freeAgentId, "", auction);
+          console.log(`[Commissioner Auto-Bid] Created for ${targetUserId} on ${agent.name}: max $${maxAmount} x ${years}yr`);
+          return res.json({ ...autoBid, autoBidsTriggered: triggered });
+        }
+      }
+      
+      console.log(`[Commissioner Auto-Bid] Created for ${targetUserId} on ${agent.name}: max $${maxAmount} x ${years}yr`);
+      res.json({ ...autoBid, autoBidsTriggered: false });
+    } catch (error) {
+      console.error("Error placing commissioner auto-bid:", error);
+      res.status(500).json({ message: "Failed to place auto-bid" });
+    }
+  });
+
   return httpServer;
 }
 
