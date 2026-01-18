@@ -1734,7 +1734,9 @@ export default function CommissionerAuction() {
                   inputMode="numeric"
                   className="pl-7"
                   placeholder="0"
-                  value={commBidType === 'auto' ? commBidMaxAmount : commBidAmount}
+                  value={commBidType === 'auto' 
+                    ? (commBidMaxAmount ? formatNumberWithCommas(parseInt(commBidMaxAmount)) : '')
+                    : (commBidAmount ? formatNumberWithCommas(parseInt(commBidAmount)) : '')}
                   onChange={(e) => {
                     const val = e.target.value.replace(/[^\d]/g, '');
                     if (commBidType === 'auto') {
