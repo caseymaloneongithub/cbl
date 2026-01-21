@@ -485,9 +485,24 @@ export class DatabaseStorage implements IStorage {
       ))
       .orderBy(freeAgents.name);
     
-    // Filter to only those with no bids
+    // Get names of players that have been won in this auction (to exclude duplicates)
+    const wonPlayerNames = await db
+      .select({ name: freeAgents.name })
+      .from(freeAgents)
+      .where(and(
+        eq(freeAgents.auctionId, auctionId),
+        sql`${freeAgents.winnerId} IS NOT NULL`
+      ));
+    const wonNamesSet = new Set(wonPlayerNames.map(p => p.name.toLowerCase()));
+    
+    // Filter to only those with no bids AND no "won" duplicate with the same name
     const agentsNoBids: FreeAgent[] = [];
     for (const agent of expiredAgents) {
+      // Skip if a player with the same name has already been won
+      if (wonNamesSet.has(agent.name.toLowerCase())) {
+        continue;
+      }
+      
       const bidCount = await db
         .select({ count: sql<number>`count(*)` })
         .from(bids)
