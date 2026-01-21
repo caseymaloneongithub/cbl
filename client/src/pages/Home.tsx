@@ -86,7 +86,7 @@ export default function Home() {
     committed: number;
     available: number;
   }>({
-    queryKey: ["/api/budget", activeAuction?.id],
+    queryKey: ["/api/budget", activeAuction?.id, user?.id],
     queryFn: async () => {
       if (!activeAuction?.id) return { budget: 0, spent: 0, committed: 0, available: 0 };
       const res = await fetch(`/api/budget?auctionId=${activeAuction.id}`, { credentials: "include" });
@@ -116,7 +116,7 @@ export default function Home() {
     paCommitted: number;
     paAvailable: number | null;
   }>({
-    queryKey: ["/api/limits", activeAuction?.id],
+    queryKey: ["/api/limits", activeAuction?.id, user?.id],
     queryFn: async () => {
       if (!activeAuction?.id) return null;
       const res = await fetch(`/api/limits?auctionId=${activeAuction.id}`, { credentials: "include" });

@@ -2106,7 +2106,10 @@ export async function registerRoutes(
   // Also includes budget info for convenience
   app.get("/api/limits", isAuthenticated, async (req: any, res) => {
     try {
-      const sessionUserId = req.session.originalUserId || req.session.userId!;
+      // For permission checks, use the real admin (originalUserId if impersonating)
+      const permissionUserId = req.session.originalUserId || req.session.userId!;
+      // For fetching "my" limits, use the current session user (impersonated user when impersonating)
+      const currentUserId = req.session.userId!;
       const auctionId = req.query.auctionId ? parseInt(req.query.auctionId) : undefined;
       const targetUserId = req.query.userId as string | undefined;
       
@@ -2114,10 +2117,11 @@ export async function registerRoutes(
         return res.status(400).json({ message: "auctionId is required" });
       }
       
+      // By default, fetch the current user's limits (respects impersonation)
+      let userIdToQuery = currentUserId;
       // If querying another user's limits, require commissioner access
-      let userIdToQuery = sessionUserId;
-      if (targetUserId && targetUserId !== sessionUserId) {
-        if (!await hasAuctionCommissionerAccess(sessionUserId, auctionId)) {
+      if (targetUserId && targetUserId !== currentUserId) {
+        if (!await hasAuctionCommissionerAccess(permissionUserId, auctionId)) {
           return res.status(403).json({ message: "Commissioner access required to view other team's limits" });
         }
         userIdToQuery = targetUserId;
