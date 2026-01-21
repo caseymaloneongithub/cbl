@@ -227,6 +227,8 @@ export default function CommissionerAuction() {
   
   // Manage bids section state
   const [manageBidsTeamId, setManageBidsTeamId] = useState<string>("");
+  const [cancellingBidId, setCancellingBidId] = useState<number | null>(null);
+  const [cancellingAutoBidId, setCancellingAutoBidId] = useState<number | null>(null);
   interface ParsedBulkLimit {
     teamAbbreviation: string;
     email: string;
@@ -319,6 +321,7 @@ export default function CommissionerAuction() {
   // Cancel bid mutation
   const cancelBid = useMutation({
     mutationFn: async (bidId: number) => {
+      setCancellingBidId(bidId);
       const res = await fetch(`/api/commissioner/bids/${bidId}`, { method: 'DELETE', credentials: 'include' });
       if (!res.ok) {
         const data = await res.json();
@@ -327,12 +330,14 @@ export default function CommissionerAuction() {
       return res.json();
     },
     onSuccess: () => {
+      setCancellingBidId(null);
       queryClient.invalidateQueries({ queryKey: ['/api/commissioner/teams', manageBidsTeamId, 'bids'] });
       queryClient.invalidateQueries({ queryKey: ['/api/auctions', numericAuctionId, 'free-agents'] });
       queryClient.invalidateQueries({ queryKey: ['/api/free-agents'] });
       toast({ title: "Bid cancelled successfully" });
     },
     onError: (error: Error) => {
+      setCancellingBidId(null);
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
@@ -340,6 +345,7 @@ export default function CommissionerAuction() {
   // Cancel auto-bid mutation
   const cancelAutoBid = useMutation({
     mutationFn: async (autoBidId: number) => {
+      setCancellingAutoBidId(autoBidId);
       const res = await fetch(`/api/commissioner/auto-bids/${autoBidId}`, { method: 'DELETE', credentials: 'include' });
       if (!res.ok) {
         const data = await res.json();
@@ -348,10 +354,12 @@ export default function CommissionerAuction() {
       return res.json();
     },
     onSuccess: () => {
+      setCancellingAutoBidId(null);
       queryClient.invalidateQueries({ queryKey: ['/api/commissioner/teams', manageBidsTeamId, 'auto-bids'] });
       toast({ title: "Auto-bid cancelled successfully" });
     },
     onError: (error: Error) => {
+      setCancellingAutoBidId(null);
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
@@ -1962,10 +1970,10 @@ export default function CommissionerAuction() {
                                 size="sm"
                                 variant="destructive"
                                 onClick={() => cancelBid.mutate(bid.id)}
-                                disabled={cancelBid.isPending || isAuctionClosed}
+                                disabled={cancellingBidId !== null || isAuctionClosed}
                                 data-testid={`button-cancel-bid-${bid.id}`}
                               >
-                                {cancelBid.isPending ? (
+                                {cancellingBidId === bid.id ? (
                                   <Loader2 className="h-3 w-3 animate-spin" />
                                 ) : (
                                   <X className="h-3 w-3" />
@@ -2020,10 +2028,10 @@ export default function CommissionerAuction() {
                               size="sm"
                               variant="destructive"
                               onClick={() => cancelAutoBid.mutate(autoBid.id)}
-                              disabled={cancelAutoBid.isPending}
+                              disabled={cancellingAutoBidId !== null}
                               data-testid={`button-cancel-autobid-${autoBid.id}`}
                             >
-                              {cancelAutoBid.isPending ? (
+                              {cancellingAutoBidId === autoBid.id ? (
                                 <Loader2 className="h-3 w-3 animate-spin" />
                               ) : (
                                 <X className="h-3 w-3" />
