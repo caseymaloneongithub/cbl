@@ -1,8 +1,10 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { db } from "./db";
 import { setupAuth, isAuthenticated, hashPassword, generateRandomPassword } from "./auth";
-import { insertBidSchema, insertAutoBidSchema } from "@shared/schema";
+import { insertBidSchema, insertAutoBidSchema, autoBids } from "@shared/schema";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { fromZonedTime } from "date-fns-tz";
 import { parse, isValid, format } from "date-fns";
@@ -4162,6 +4164,126 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error placing commissioner auto-bid:", error);
       res.status(500).json({ message: "Failed to place auto-bid" });
+    }
+  });
+
+  // Commissioner: Get a team's bids for an auction
+  app.get("/api/commissioner/teams/:userId/bids", isAuthenticated, async (req: any, res) => {
+    try {
+      const commissionerId = req.session.originalUserId || req.session.userId!;
+      const targetUserId = req.params.userId;
+      const auctionId = req.query.auctionId ? parseInt(req.query.auctionId) : undefined;
+      
+      if (!auctionId || isNaN(auctionId)) {
+        return res.status(400).json({ message: "auctionId is required" });
+      }
+      
+      if (!await hasAuctionCommissionerAccess(commissionerId, auctionId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+      
+      const bids = await storage.getUserBidsRaw(targetUserId, auctionId);
+      res.json(bids);
+    } catch (error) {
+      console.error("Error fetching team bids:", error);
+      res.status(500).json({ message: "Failed to fetch team bids" });
+    }
+  });
+
+  // Commissioner: Get a team's auto-bids for an auction
+  app.get("/api/commissioner/teams/:userId/auto-bids", isAuthenticated, async (req: any, res) => {
+    try {
+      const commissionerId = req.session.originalUserId || req.session.userId!;
+      const targetUserId = req.params.userId;
+      const auctionId = req.query.auctionId ? parseInt(req.query.auctionId) : undefined;
+      
+      if (!auctionId || isNaN(auctionId)) {
+        return res.status(400).json({ message: "auctionId is required" });
+      }
+      
+      if (!await hasAuctionCommissionerAccess(commissionerId, auctionId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+      
+      const autoBids = await storage.getUserAutoBids(targetUserId, auctionId);
+      res.json(autoBids);
+    } catch (error) {
+      console.error("Error fetching team auto-bids:", error);
+      res.status(500).json({ message: "Failed to fetch team auto-bids" });
+    }
+  });
+
+  // Commissioner: Cancel a bid
+  app.delete("/api/commissioner/bids/:bidId", isAuthenticated, async (req: any, res) => {
+    try {
+      const commissionerId = req.session.originalUserId || req.session.userId!;
+      const bidId = parseInt(req.params.bidId);
+      
+      if (isNaN(bidId)) {
+        return res.status(400).json({ message: "Invalid bid ID" });
+      }
+      
+      const bid = await storage.getBid(bidId);
+      if (!bid) {
+        return res.status(404).json({ message: "Bid not found" });
+      }
+      
+      const agent = await storage.getFreeAgent(bid.freeAgentId);
+      if (!agent || !agent.auctionId) {
+        return res.status(404).json({ message: "Associated player not found" });
+      }
+      
+      if (!await hasAuctionCommissionerAccess(commissionerId, agent.auctionId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+      
+      // Check if auction has ended - can't delete bids from closed auctions
+      if (new Date(agent.auctionEndTime) <= new Date()) {
+        return res.status(400).json({ message: "Cannot cancel bids from closed auctions" });
+      }
+      
+      await storage.deleteBid(bidId);
+      console.log(`[Commissioner] Cancelled bid ${bidId} for user ${bid.userId} on player ${agent.name}`);
+      
+      res.json({ message: "Bid cancelled successfully" });
+    } catch (error) {
+      console.error("Error cancelling bid:", error);
+      res.status(500).json({ message: "Failed to cancel bid" });
+    }
+  });
+
+  // Commissioner: Cancel an auto-bid
+  app.delete("/api/commissioner/auto-bids/:autoBidId", isAuthenticated, async (req: any, res) => {
+    try {
+      const commissionerId = req.session.originalUserId || req.session.userId!;
+      const autoBidId = parseInt(req.params.autoBidId);
+      
+      if (isNaN(autoBidId)) {
+        return res.status(400).json({ message: "Invalid auto-bid ID" });
+      }
+      
+      // Need to find the auto-bid first
+      const [autoBid] = await db.select().from(autoBids).where(eq(autoBids.id, autoBidId));
+      if (!autoBid) {
+        return res.status(404).json({ message: "Auto-bid not found" });
+      }
+      
+      const agent = await storage.getFreeAgent(autoBid.freeAgentId);
+      if (!agent || !agent.auctionId) {
+        return res.status(404).json({ message: "Associated player not found" });
+      }
+      
+      if (!await hasAuctionCommissionerAccess(commissionerId, agent.auctionId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+      
+      await storage.deleteAutoBid(autoBidId);
+      console.log(`[Commissioner] Cancelled auto-bid ${autoBidId} for user ${autoBid.userId} on player ${agent.name}`);
+      
+      res.json({ message: "Auto-bid cancelled successfully" });
+    } catch (error) {
+      console.error("Error cancelling auto-bid:", error);
+      res.status(500).json({ message: "Failed to cancel auto-bid" });
     }
   });
 

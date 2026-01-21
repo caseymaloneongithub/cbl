@@ -86,7 +86,9 @@ export interface IStorage {
   getBidsForAgent(agentId: number): Promise<BidWithUser[]>;
   getHighestBidForAgent(agentId: number): Promise<Bid | undefined>;
   getUserBids(userId: string, auctionId?: number): Promise<FreeAgentWithBids[]>;
+  getUserBidsRaw(userId: string, auctionId?: number): Promise<(Bid & { freeAgent: FreeAgent })[]>;
   createBid(bid: InsertBid): Promise<Bid>;
+  deleteBid(bidId: number): Promise<void>;
   
   // Auto bids
   getAutoBid(agentId: number, userId: string): Promise<AutoBid | undefined>;
@@ -94,6 +96,7 @@ export interface IStorage {
   getUserAutoBids(userId: string, auctionId?: number): Promise<(AutoBid & { freeAgent: FreeAgent })[]>;
   getUserOutbidPlayers(userId: string, auctionId?: number): Promise<OutbidPlayer[]>;
   createOrUpdateAutoBid(autoBid: InsertAutoBid): Promise<AutoBid>;
+  deleteAutoBid(autoBidId: number): Promise<void>;
   
   // Stats
   getUserStats(userId: string, auctionId?: number): Promise<{
@@ -817,6 +820,30 @@ export class DatabaseStorage implements IStorage {
     return newBid;
   }
 
+  async deleteBid(bidId: number): Promise<void> {
+    await db.delete(bids).where(eq(bids.id, bidId));
+  }
+
+  async getUserBidsRaw(userId: string, auctionId?: number): Promise<(Bid & { freeAgent: FreeAgent })[]> {
+    const userBids = await db
+      .select()
+      .from(bids)
+      .where(eq(bids.userId, userId));
+    
+    const result: (Bid & { freeAgent: FreeAgent })[] = [];
+    for (const bid of userBids) {
+      const [agent] = await db.select().from(freeAgents).where(eq(freeAgents.id, bid.freeAgentId));
+      if (agent) {
+        // Filter by auctionId if provided
+        if (auctionId !== undefined && agent.auctionId !== auctionId) {
+          continue;
+        }
+        result.push({ ...bid, freeAgent: agent });
+      }
+    }
+    return result;
+  }
+
   async getUserOutbidPlayers(userId: string, auctionId?: number): Promise<OutbidPlayer[]> {
     const userBidAgentIds = await db
       .selectDistinct({ agentId: bids.freeAgentId })
@@ -918,6 +945,10 @@ export class DatabaseStorage implements IStorage {
     
     const [newAutoBid] = await db.insert(autoBids).values(autoBidData).returning();
     return newAutoBid;
+  }
+
+  async deleteAutoBid(autoBidId: number): Promise<void> {
+    await db.delete(autoBids).where(eq(autoBids.id, autoBidId));
   }
 
   // Stats

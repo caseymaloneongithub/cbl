@@ -41,7 +41,7 @@ import {
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { formatCurrency, formatNumberWithCommas } from "@/lib/utils";
-import type { Auction, User, FreeAgentWithBids } from "@shared/schema";
+import type { Auction, User, FreeAgentWithBids, Bid, AutoBid, FreeAgent } from "@shared/schema";
 import { 
   Settings, Users, Loader2, FileSpreadsheet, Trash2, DollarSign, Plus, UserPlus, 
   Upload, ArrowLeft, Save, Check, X, AlertCircle, RefreshCcw, Clock 
@@ -224,6 +224,9 @@ export default function CommissionerAuction() {
   const [commBidType, setCommBidType] = useState<"single" | "auto">("single");
   const [commBidMaxAmount, setCommBidMaxAmount] = useState<string>("");
   const [playerSearchQuery, setPlayerSearchQuery] = useState<string>("");
+  
+  // Manage bids section state
+  const [manageBidsTeamId, setManageBidsTeamId] = useState<string>("");
   interface ParsedBulkLimit {
     teamAbbreviation: string;
     email: string;
@@ -289,6 +292,68 @@ export default function CommissionerAuction() {
       return res.json();
     },
     enabled: !!numericAuctionId && !!commBidTeamId,
+  });
+
+  // Fetch bids for selected team in manage bids section
+  const { data: manageBidsTeamBids, isLoading: loadingManageBids } = useQuery<(Bid & { freeAgent: FreeAgent })[]>({
+    queryKey: ['/api/commissioner/teams', manageBidsTeamId, 'bids', numericAuctionId],
+    queryFn: async () => {
+      const res = await fetch(`/api/commissioner/teams/${manageBidsTeamId}/bids?auctionId=${numericAuctionId}`);
+      if (!res.ok) throw new Error('Failed to fetch team bids');
+      return res.json();
+    },
+    enabled: !!numericAuctionId && !!manageBidsTeamId,
+  });
+
+  // Fetch auto-bids for selected team in manage bids section
+  const { data: manageBidsTeamAutoBids, isLoading: loadingManageAutoBids } = useQuery<(AutoBid & { freeAgent: FreeAgent })[]>({
+    queryKey: ['/api/commissioner/teams', manageBidsTeamId, 'auto-bids', numericAuctionId],
+    queryFn: async () => {
+      const res = await fetch(`/api/commissioner/teams/${manageBidsTeamId}/auto-bids?auctionId=${numericAuctionId}`);
+      if (!res.ok) throw new Error('Failed to fetch team auto-bids');
+      return res.json();
+    },
+    enabled: !!numericAuctionId && !!manageBidsTeamId,
+  });
+
+  // Cancel bid mutation
+  const cancelBid = useMutation({
+    mutationFn: async (bidId: number) => {
+      const res = await fetch(`/api/commissioner/bids/${bidId}`, { method: 'DELETE', credentials: 'include' });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || 'Failed to cancel bid');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/commissioner/teams', manageBidsTeamId, 'bids'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/auctions', numericAuctionId, 'free-agents'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/free-agents'] });
+      toast({ title: "Bid cancelled successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // Cancel auto-bid mutation
+  const cancelAutoBid = useMutation({
+    mutationFn: async (autoBidId: number) => {
+      const res = await fetch(`/api/commissioner/auto-bids/${autoBidId}`, { method: 'DELETE', credentials: 'include' });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || 'Failed to cancel auto-bid');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/commissioner/teams', manageBidsTeamId, 'auto-bids'] });
+      toast({ title: "Auto-bid cancelled successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
   });
 
   // Settings form
@@ -1813,6 +1878,169 @@ export default function CommissionerAuction() {
               {commBidType === 'single' ? 'Place Bid' : 'Set Auto-Bid'}
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Manage Bids */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Trash2 className="h-5 w-5" />
+            Manage Team Bids
+          </CardTitle>
+          <CardDescription>
+            View and cancel bids for any enrolled team
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Team Selector */}
+          <div className="max-w-md">
+            <Label htmlFor="manage-bids-team">Select Team</Label>
+            <Select value={manageBidsTeamId} onValueChange={setManageBidsTeamId}>
+              <SelectTrigger id="manage-bids-team" data-testid="select-manage-bids-team">
+                <SelectValue placeholder="Select a team" />
+              </SelectTrigger>
+              <SelectContent>
+                {auctionTeams?.sort((a, b) => {
+                  const nameA = (a.user as any).leagueTeamName || a.user.teamName || a.user.email;
+                  const nameB = (b.user as any).leagueTeamName || b.user.teamName || b.user.email;
+                  return nameA.localeCompare(nameB);
+                }).map((team) => (
+                  <SelectItem key={team.userId} value={team.userId}>
+                    {(team.user as any).leagueTeamName || team.user.teamName || team.user.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Bids Table */}
+          {manageBidsTeamId && (
+            <div className="space-y-4">
+              {/* Regular Bids */}
+              <div>
+                <h4 className="font-medium mb-2">Bids</h4>
+                {loadingManageBids ? (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading bids...
+                  </div>
+                ) : manageBidsTeamBids && manageBidsTeamBids.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Player</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Years</TableHead>
+                        <TableHead>Total Value</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {manageBidsTeamBids.map((bid) => {
+                        const isAuctionClosed = new Date(bid.freeAgent.auctionEndTime) <= new Date();
+                        return (
+                          <TableRow key={bid.id}>
+                            <TableCell className="font-medium">{bid.freeAgent.name}</TableCell>
+                            <TableCell>${formatNumberWithCommas(bid.amount)}</TableCell>
+                            <TableCell>{bid.years} yr</TableCell>
+                            <TableCell>${formatNumberWithCommas(Math.floor(bid.totalValue))}</TableCell>
+                            <TableCell className="text-muted-foreground text-sm">
+                              {bid.createdAt ? new Date(bid.createdAt).toLocaleDateString() : '-'}
+                            </TableCell>
+                            <TableCell>
+                              {isAuctionClosed ? (
+                                <Badge variant="secondary">Closed</Badge>
+                              ) : (
+                                <Badge variant="default">Active</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => cancelBid.mutate(bid.id)}
+                                disabled={cancelBid.isPending || isAuctionClosed}
+                                data-testid={`button-cancel-bid-${bid.id}`}
+                              >
+                                {cancelBid.isPending ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <X className="h-3 w-3" />
+                                )}
+                                <span className="ml-1">Cancel</span>
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <p className="text-muted-foreground text-sm">No bids found for this team</p>
+                )}
+              </div>
+
+              {/* Auto-Bids */}
+              <div>
+                <h4 className="font-medium mb-2">Auto-Bids</h4>
+                {loadingManageAutoBids ? (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading auto-bids...
+                  </div>
+                ) : manageBidsTeamAutoBids && manageBidsTeamAutoBids.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Player</TableHead>
+                        <TableHead>Max Amount</TableHead>
+                        <TableHead>Years</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {manageBidsTeamAutoBids.map((autoBid) => (
+                        <TableRow key={autoBid.id}>
+                          <TableCell className="font-medium">{autoBid.freeAgent.name}</TableCell>
+                          <TableCell>${formatNumberWithCommas(autoBid.maxAmount)}</TableCell>
+                          <TableCell>{autoBid.years} yr</TableCell>
+                          <TableCell>
+                            {autoBid.isActive ? (
+                              <Badge variant="default">Active</Badge>
+                            ) : (
+                              <Badge variant="secondary">Inactive</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => cancelAutoBid.mutate(autoBid.id)}
+                              disabled={cancelAutoBid.isPending}
+                              data-testid={`button-cancel-autobid-${autoBid.id}`}
+                            >
+                              {cancelAutoBid.isPending ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <X className="h-3 w-3" />
+                              )}
+                              <span className="ml-1">Cancel</span>
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <p className="text-muted-foreground text-sm">No auto-bids found for this team</p>
+                )}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
