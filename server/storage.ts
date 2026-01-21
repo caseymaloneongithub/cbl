@@ -473,14 +473,15 @@ export class DatabaseStorage implements IStorage {
   async getExpiredFreeAgentsNoBids(auctionId: number): Promise<FreeAgentWithBids[]> {
     const now = new Date();
     
-    // Get expired players for this auction
+    // Get expired players for this auction that have no winner
     const expiredAgents = await db
       .select()
       .from(freeAgents)
       .where(and(
         eq(freeAgents.auctionId, auctionId),
         sql`${freeAgents.auctionEndTime} <= ${now}`,
-        eq(freeAgents.isActive, true)
+        eq(freeAgents.isActive, true),
+        isNull(freeAgents.winnerId)
       ))
       .orderBy(freeAgents.name);
     
