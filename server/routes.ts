@@ -1915,7 +1915,13 @@ export async function registerRoutes(
         if (success) {
           break; // Successfully deployed a bid
         }
-        // Failed - try to activate next item
+        // Check if the item was actually skipped (vs just waiting for auction to start)
+        const updatedItem = await storage.getBidBundleItem(currentItem.id);
+        if (updatedItem?.status === 'active') {
+          // Item is still active (waiting for auction to start) - don't cascade to next
+          break;
+        }
+        // Item was skipped - try to activate next item
         const nextItem = await storage.activateNextBundleItem(bundle.id);
         currentItem = nextItem ?? undefined;
       }
@@ -2033,7 +2039,13 @@ export async function registerRoutes(
         if (success) {
           break; // Successfully deployed a bid
         }
-        // Failed - try to activate next item
+        // Check if the item was actually skipped (vs just waiting for auction to start)
+        const updatedItem = await storage.getBidBundleItem(currentItem.id);
+        if (updatedItem?.status === 'active') {
+          // Item is still active (waiting for auction to start) - don't cascade to next
+          break;
+        }
+        // Item was skipped - try to activate next item
         const nextItem = await storage.activateNextBundleItem(updatedBundle.id);
         currentItem = nextItem ?? undefined;
       }
@@ -4531,9 +4543,16 @@ async function deployBundleItemAsAutoBid(
     return false;
   }
   
-  // Check if auction is still open
+  // Check if auction has ended (skip the item)
   if (new Date(agent.auctionEndTime) <= new Date()) {
     await storage.updateBidBundleItem(item.id, { status: 'skipped' });
+    return false;
+  }
+  
+  // Check if auction hasn't started yet (don't skip - wait for it to start)
+  if (new Date(agent.auctionStartTime) > new Date()) {
+    // Auction hasn't started - leave the item as-is, the background job will deploy it later
+    console.log(`[Bundle] Item ${item.id} for ${agent.name}: auction hasn't started yet, will deploy when it starts`);
     return false;
   }
   

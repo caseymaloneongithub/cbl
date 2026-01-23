@@ -227,6 +227,7 @@ export interface IStorage {
   getUserBidBundles(userId: string, auctionId?: number): Promise<BidBundleWithItems[]>;
   createBidBundle(bundle: InsertBidBundle, items: Omit<InsertBidBundleItem, 'bundleId'>[]): Promise<BidBundleWithItems>;
   updateBidBundle(id: number, data: Partial<InsertBidBundle>): Promise<BidBundle>;
+  getBidBundleItem(id: number): Promise<BidBundleItem | undefined>;
   updateBidBundleItem(id: number, data: Partial<InsertBidBundleItem>): Promise<BidBundleItem>;
   updateBidBundleWithItems(id: number, data: Partial<InsertBidBundle>, items: Omit<InsertBidBundleItem, 'bundleId'>[]): Promise<BidBundleWithItems>;
   deleteBidBundle(id: number): Promise<void>;
@@ -2305,6 +2306,14 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  async getBidBundleItem(id: number): Promise<BidBundleItem | undefined> {
+    const [item] = await db
+      .select()
+      .from(bidBundleItems)
+      .where(eq(bidBundleItems.id, id));
+    return item;
+  }
+
   async updateBidBundleItem(id: number, data: Partial<InsertBidBundleItem>): Promise<BidBundleItem> {
     const [updated] = await db
       .update(bidBundleItems)
@@ -2431,10 +2440,22 @@ export class DatabaseStorage implements IStorage {
     
     // Check if the auction is still open
     const agent = nextItem.freeAgent;
-    if (!agent || new Date(agent.auctionEndTime) <= new Date()) {
-      // Auction closed or no agent, skip this item and try the next
+    if (!agent) {
+      // No agent found, skip this item and try the next
       await this.updateBidBundleItem(nextItem.id, { status: 'skipped' });
       return this.activateNextBundleItem(bundleId);
+    }
+    
+    if (new Date(agent.auctionEndTime) <= new Date()) {
+      // Auction has ended, skip this item and try the next
+      await this.updateBidBundleItem(nextItem.id, { status: 'skipped' });
+      return this.activateNextBundleItem(bundleId);
+    }
+    
+    // If auction hasn't started yet, still activate the item - it will be deployed when auction starts
+    if (new Date(agent.auctionStartTime) > new Date()) {
+      console.log(`[Bundle] Item for ${agent.name}: auction hasn't started yet, activating but not deploying`);
+      // Continue to activate the item - the background job will deploy it when the auction starts
     }
 
     // Mark any earlier items for the same player as 'outbid' (for same-player ladder support)
