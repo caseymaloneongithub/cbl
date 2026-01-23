@@ -192,6 +192,13 @@ export interface IStorage {
     auctionId: number;
   }>>;
   
+  getPendingBundleItemsForStartedAuctions(): Promise<Array<{
+    itemId: number;
+    bundleId: number;
+    freeAgentId: number;
+    userId: string;
+  }>>;
+  
   // Admin operations
   getSuperAdmin(): Promise<User | undefined>;
   getUnemailedClosedAuctions(): Promise<{
@@ -2024,6 +2031,49 @@ export class DatabaseStorage implements IStorage {
     }
     
     return pendingAutoBids;
+  }
+  
+  async getPendingBundleItemsForStartedAuctions(): Promise<Array<{
+    itemId: number;
+    bundleId: number;
+    freeAgentId: number;
+    userId: string;
+  }>> {
+    const now = new Date();
+    
+    // Find active bundle items where:
+    // 1. The bundle is active
+    // 2. The item is active (waiting to be deployed)
+    // 3. The auction has started (auctionStartTime <= now OR auctionStartTime is null)
+    // 4. The auction has not ended (auctionEndTime > now)
+    // 5. Player is still active (no winner yet)
+    const results = await db
+      .select({
+        itemId: bidBundleItems.id,
+        bundleId: bidBundleItems.bundleId,
+        freeAgentId: bidBundleItems.freeAgentId,
+        userId: bidBundles.userId,
+      })
+      .from(bidBundleItems)
+      .innerJoin(bidBundles, eq(bidBundleItems.bundleId, bidBundles.id))
+      .innerJoin(freeAgents, eq(bidBundleItems.freeAgentId, freeAgents.id))
+      .where(
+        and(
+          eq(bidBundles.status, 'active'),
+          eq(bidBundleItems.status, 'active'),
+          // Auction has started (null means immediately available)
+          or(
+            isNull(freeAgents.auctionStartTime),
+            sql`${freeAgents.auctionStartTime} <= ${now}`
+          ),
+          // Auction has not ended
+          sql`${freeAgents.auctionEndTime} > ${now}`,
+          // Player is still active (no winner yet)
+          isNull(freeAgents.winnerId)
+        )
+      );
+    
+    return results;
   }
 
   async getSuperAdmin(): Promise<User | undefined> {

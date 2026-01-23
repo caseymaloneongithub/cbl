@@ -162,6 +162,9 @@ async function runFinalization() {
     // Deploy pending auto-bids for auctions that just started
     await deployPendingAutoBids();
     
+    // Deploy pending bundle items for auctions that just started
+    await deployPendingBundleItems();
+    
   } catch (error) {
     log(`Finalization job error: ${error}`, "auction-job");
   }
@@ -258,6 +261,47 @@ async function deployPendingAutoBids() {
     }
   } catch (error) {
     log(`Error in deployPendingAutoBids: ${error}`, "auction-job");
+  }
+}
+
+// Deploy bundle items whose auctions have just started
+async function deployPendingBundleItems() {
+  try {
+    const pendingItems = await storage.getPendingBundleItemsForStartedAuctions();
+    
+    if (pendingItems.length === 0) {
+      return;
+    }
+    
+    log(`Deploying ${pendingItems.length} pending bundle item(s) for started auctions`, "auction-job");
+    
+    for (const pending of pendingItems) {
+      try {
+        // Get the full bundle with items
+        const bundle = await storage.getBidBundle(pending.bundleId);
+        if (!bundle) {
+          log(`Bundle ${pending.bundleId} not found`, "auction-job");
+          continue;
+        }
+        
+        // Find the item in the bundle
+        const item = bundle.items.find(i => i.id === pending.itemId);
+        if (!item) {
+          log(`Bundle item ${pending.itemId} not found in bundle`, "auction-job");
+          continue;
+        }
+        
+        // Deploy the bundle item as an auto-bid
+        const deployed = await deployBundleItemAsAutoBid(item, bundle);
+        if (deployed) {
+          log(`Deployed bundle item ${pending.itemId} for player (agent ID ${pending.freeAgentId})`, "auction-job");
+        }
+      } catch (error) {
+        log(`Error deploying bundle item ${pending.itemId}: ${error}`, "auction-job");
+      }
+    }
+  } catch (error) {
+    log(`Error in deployPendingBundleItems: ${error}`, "auction-job");
   }
 }
 
