@@ -4412,6 +4412,15 @@ async function processAllAutoBidsUntilStable(
           }
         }
         
+        // RACE CONDITION FIX: Re-verify the current high bid hasn't changed before placing
+        const verifyHighBid = await storage.getHighestBidForAgent(agentId);
+        if (verifyHighBid && verifyHighBid.totalValue >= bidTotalValue) {
+          console.log(`[UnifiedAutoBid] Race condition detected: high bid changed to ${verifyHighBid.totalValue}, our bid ${bidTotalValue} no longer wins. Recalculating...`);
+          // High bid changed - need to recalculate, break and let next iteration handle it
+          madeChange = true; // Force another iteration
+          break;
+        }
+        
         // Place the counter-bid
         await storage.createBid({
           freeAgentId: agentId,
@@ -4482,6 +4491,15 @@ async function processAllAutoBidsUntilStable(
             }
           }
           
+          // RACE CONDITION FIX: Re-verify the current high bid hasn't changed before placing
+          const verifyHighBid = await storage.getHighestBidForAgent(agentId);
+          if (verifyHighBid && verifyHighBid.totalValue >= bidTotalValue) {
+            console.log(`[UnifiedAutoBid] Race condition detected for bundle: high bid changed to ${verifyHighBid.totalValue}, our bid ${bidTotalValue} no longer wins. Recalculating...`);
+            // High bid changed - need to recalculate, break and let next iteration handle it
+            madeChange = true; // Force another iteration
+            break;
+          }
+          
           // Place the counter-bid
           const newBid = await storage.createBid({
             freeAgentId: agentId,
@@ -4550,7 +4568,7 @@ async function deployBundleItemAsAutoBid(
   }
   
   // Check if auction hasn't started yet (don't skip - wait for it to start)
-  if (new Date(agent.auctionStartTime) > new Date()) {
+  if (agent.auctionStartTime && new Date(agent.auctionStartTime) > new Date()) {
     // Auction hasn't started - leave the item as-is, the background job will deploy it later
     console.log(`[Bundle] Item ${item.id} for ${agent.name}: auction hasn't started yet, will deploy when it starts`);
     return false;
