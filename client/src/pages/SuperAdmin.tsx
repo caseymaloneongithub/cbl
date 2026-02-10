@@ -37,7 +37,7 @@ import {
 
 function MlbPlayerSync() {
   const { toast } = useToast();
-  const [syncSeason, setSyncSeason] = useState(new Date().getFullYear());
+  const [syncSeason, setSyncSeason] = useState(new Date().getFullYear() - 1);
   
   const { data: status, isLoading: loadingStatus } = useQuery<{
     total: number;
@@ -68,7 +68,7 @@ function MlbPlayerSync() {
   });
 
   const currentYear = new Date().getFullYear();
-  const seasonOptions = Array.from({ length: 5 }, (_, i) => currentYear - i);
+  const seasonOptions = Array.from({ length: 11 }, (_, i) => currentYear - 1 - i);
 
   return (
     <div className="space-y-4">
