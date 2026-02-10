@@ -312,6 +312,8 @@ const SPORT_LEVELS: Record<number, string> = {
   1: "MLB",
   11: "AAA",
   12: "AA",
+  13: "High-A",
+  14: "Single-A",
   16: "Rookie",
 };
 
@@ -378,7 +380,7 @@ export async function fetchAllAffiliatedPlayers(
   season: number,
   onProgress?: (progress: SyncProgress) => void
 ): Promise<AffiliatedPlayerRecord[]> {
-  const sportIds = [1, 11, 12, 16];
+  const sportIds = [16, 14, 13, 12, 11, 1];
   
   const teamMap = await fetchTeamsLookup(sportIds, season);
   

@@ -41,7 +41,7 @@ function MlbPlayerSync() {
   
   const { data: status, isLoading: loadingStatus } = useQuery<{
     total: number;
-    byLevel: { MLB: number; AAA: number; AA: number; Rookie: number };
+    byLevel: Record<string, number>;
   }>({
     queryKey: ["/api/admin/mlb-players/status"],
   });
@@ -110,27 +110,19 @@ function MlbPlayerSync() {
       {loadingStatus ? (
         <Skeleton className="h-20 w-full" />
       ) : status && status.total > 0 ? (
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-3">
           <div className="text-center p-3 rounded-md bg-muted/50">
             <div className="text-2xl font-bold" data-testid="text-mlb-total">{status.total.toLocaleString()}</div>
-            <div className="text-xs text-muted-foreground">Total Players</div>
+            <div className="text-xs text-muted-foreground">Total</div>
           </div>
-          <div className="text-center p-3 rounded-md bg-muted/50">
-            <div className="text-lg font-semibold" data-testid="text-mlb-mlb">{status.byLevel.MLB.toLocaleString()}</div>
-            <div className="text-xs text-muted-foreground">MLB</div>
-          </div>
-          <div className="text-center p-3 rounded-md bg-muted/50">
-            <div className="text-lg font-semibold" data-testid="text-mlb-aaa">{status.byLevel.AAA.toLocaleString()}</div>
-            <div className="text-xs text-muted-foreground">AAA</div>
-          </div>
-          <div className="text-center p-3 rounded-md bg-muted/50">
-            <div className="text-lg font-semibold" data-testid="text-mlb-aa">{status.byLevel.AA.toLocaleString()}</div>
-            <div className="text-xs text-muted-foreground">AA</div>
-          </div>
-          <div className="text-center p-3 rounded-md bg-muted/50">
-            <div className="text-lg font-semibold" data-testid="text-mlb-rookie">{status.byLevel.Rookie.toLocaleString()}</div>
-            <div className="text-xs text-muted-foreground">Rookie</div>
-          </div>
+          {["MLB", "AAA", "AA", "High-A", "Single-A", "Rookie"].map((level) => (
+            <div key={level} className="text-center p-3 rounded-md bg-muted/50">
+              <div className="text-lg font-semibold" data-testid={`text-mlb-${level.toLowerCase()}`}>
+                {(status.byLevel[level] || 0).toLocaleString()}
+              </div>
+              <div className="text-xs text-muted-foreground">{level}</div>
+            </div>
+          ))}
         </div>
       ) : (
         <div className="text-center py-6 text-muted-foreground">

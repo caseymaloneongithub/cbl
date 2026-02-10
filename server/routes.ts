@@ -1060,9 +1060,11 @@ export async function registerRoutes(
       const mlb = await storage.getMlbPlayerCount({ sportLevel: "MLB" });
       const aaa = await storage.getMlbPlayerCount({ sportLevel: "AAA" });
       const aa = await storage.getMlbPlayerCount({ sportLevel: "AA" });
+      const highA = await storage.getMlbPlayerCount({ sportLevel: "High-A" });
+      const singleA = await storage.getMlbPlayerCount({ sportLevel: "Single-A" });
       const rookie = await storage.getMlbPlayerCount({ sportLevel: "Rookie" });
 
-      res.json({ total, byLevel: { MLB: mlb, AAA: aaa, AA: aa, Rookie: rookie } });
+      res.json({ total, byLevel: { MLB: mlb, AAA: aaa, AA: aa, "High-A": highA, "Single-A": singleA, Rookie: rookie } });
     } catch (error: any) {
       console.error("Error fetching MLB player status:", error);
       res.status(500).json({ message: "Failed to fetch MLB player status" });
