@@ -471,6 +471,40 @@ export const insertEmailOptOutSchema = createInsertSchema(emailOptOuts).omit({
   createdAt: true,
 });
 
+// MLB Players reference table - stores all affiliated baseball players
+export const mlbPlayers = pgTable("mlb_players", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  mlbId: integer("mlb_id").unique().notNull(),
+  fullName: varchar("full_name", { length: 255 }).notNull(),
+  firstName: varchar("first_name", { length: 128 }),
+  lastName: varchar("last_name", { length: 128 }),
+  primaryPosition: varchar("primary_position", { length: 10 }),
+  positionName: varchar("position_name", { length: 50 }),
+  positionType: varchar("position_type", { length: 20 }),
+  batSide: varchar("bat_side", { length: 5 }),
+  throwHand: varchar("throw_hand", { length: 5 }),
+  currentTeamId: integer("current_team_id"),
+  currentTeamName: varchar("current_team_name", { length: 255 }),
+  parentOrgId: integer("parent_org_id"),
+  parentOrgName: varchar("parent_org_name", { length: 255 }),
+  sportId: integer("sport_id").notNull(),
+  sportLevel: varchar("sport_level", { length: 20 }).notNull(),
+  birthDate: varchar("birth_date", { length: 20 }),
+  age: integer("age"),
+  isActive: boolean("is_active").default(true),
+  season: integer("season").notNull(),
+  lastSyncedAt: timestamp("last_synced_at").defaultNow(),
+}, (table) => [
+  index("idx_mlb_players_mlb_id").on(table.mlbId),
+  index("idx_mlb_players_name").on(table.fullName),
+  index("idx_mlb_players_sport_level").on(table.sportLevel),
+]);
+
+export const insertMlbPlayerSchema = createInsertSchema(mlbPlayers).omit({
+  id: true,
+  lastSyncedAt: true,
+});
+
 // Types
 export type League = typeof leagues.$inferSelect;
 export type InsertLeague = z.infer<typeof insertLeagueSchema>;
@@ -514,6 +548,9 @@ export type InsertBidBundleItem = z.infer<typeof insertBidBundleItemSchema>;
 
 export type EmailOptOut = typeof emailOptOuts.$inferSelect;
 export type InsertEmailOptOut = z.infer<typeof insertEmailOptOutSchema>;
+
+export type MlbPlayer = typeof mlbPlayers.$inferSelect;
+export type InsertMlbPlayer = z.infer<typeof insertMlbPlayerSchema>;
 
 // Extended types for frontend use
 export type FreeAgentWithBids = FreeAgent & {

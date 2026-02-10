@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/table";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { League, LeagueMember, User } from "@shared/schema";
-import { Plus, Users, Globe, Loader2, Crown, Trash2, UserPlus, Pencil, Key } from "lucide-react";
+import { Plus, Users, Globe, Loader2, Crown, Trash2, UserPlus, Pencil, Key, Database, RefreshCw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -34,6 +34,113 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+
+function MlbPlayerSync() {
+  const { toast } = useToast();
+  const [syncSeason, setSyncSeason] = useState(new Date().getFullYear());
+  
+  const { data: status, isLoading: loadingStatus } = useQuery<{
+    total: number;
+    byLevel: { MLB: number; AAA: number; AA: number; Rookie: number };
+  }>({
+    queryKey: ["/api/admin/mlb-players/status"],
+  });
+
+  const syncMutation = useMutation({
+    mutationFn: async (season: number) => {
+      const res = await apiRequest("POST", "/api/admin/mlb-players/sync", { season });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Sync Complete",
+        description: data.message,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/mlb-players/status"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Sync Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const currentYear = new Date().getFullYear();
+  const seasonOptions = Array.from({ length: 5 }, (_, i) => currentYear - i);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-4 flex-wrap">
+        <Select
+          value={syncSeason.toString()}
+          onValueChange={(v) => setSyncSeason(parseInt(v))}
+        >
+          <SelectTrigger className="w-32" data-testid="select-mlb-season">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {seasonOptions.map((yr) => (
+              <SelectItem key={yr} value={yr.toString()}>
+                {yr}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          onClick={() => syncMutation.mutate(syncSeason)}
+          disabled={syncMutation.isPending}
+          data-testid="button-sync-mlb-players"
+        >
+          {syncMutation.isPending ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Syncing...
+            </>
+          ) : (
+            <>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Sync {syncSeason} Players
+            </>
+          )}
+        </Button>
+      </div>
+
+      {loadingStatus ? (
+        <Skeleton className="h-20 w-full" />
+      ) : status && status.total > 0 ? (
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <div className="text-center p-3 rounded-md bg-muted/50">
+            <div className="text-2xl font-bold" data-testid="text-mlb-total">{status.total.toLocaleString()}</div>
+            <div className="text-xs text-muted-foreground">Total Players</div>
+          </div>
+          <div className="text-center p-3 rounded-md bg-muted/50">
+            <div className="text-lg font-semibold" data-testid="text-mlb-mlb">{status.byLevel.MLB.toLocaleString()}</div>
+            <div className="text-xs text-muted-foreground">MLB</div>
+          </div>
+          <div className="text-center p-3 rounded-md bg-muted/50">
+            <div className="text-lg font-semibold" data-testid="text-mlb-aaa">{status.byLevel.AAA.toLocaleString()}</div>
+            <div className="text-xs text-muted-foreground">AAA</div>
+          </div>
+          <div className="text-center p-3 rounded-md bg-muted/50">
+            <div className="text-lg font-semibold" data-testid="text-mlb-aa">{status.byLevel.AA.toLocaleString()}</div>
+            <div className="text-xs text-muted-foreground">AA</div>
+          </div>
+          <div className="text-center p-3 rounded-md bg-muted/50">
+            <div className="text-lg font-semibold" data-testid="text-mlb-rookie">{status.byLevel.Rookie.toLocaleString()}</div>
+            <div className="text-xs text-muted-foreground">Rookie</div>
+          </div>
+        </div>
+      ) : (
+        <div className="text-center py-6 text-muted-foreground">
+          <Database className="h-10 w-10 mx-auto mb-2 opacity-50" />
+          <p>No players synced yet. Click the sync button to populate the database.</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function SuperAdmin() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
@@ -461,6 +568,23 @@ export default function SuperAdmin() {
           </CardContent>
         </Card>
       )}
+
+      <Card data-testid="card-mlb-player-database">
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+          <div>
+            <CardTitle className="flex items-center gap-2 flex-wrap">
+              <Globe className="h-5 w-5" />
+              MLB Player Database
+            </CardTitle>
+            <CardDescription>
+              Sync affiliated baseball players from the MLB API (MLB, AAA, AA, Rookie excl. DSL)
+            </CardDescription>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <MlbPlayerSync />
+        </CardContent>
+      </Card>
 
       <Dialog open={createLeagueDialogOpen} onOpenChange={setCreateLeagueDialogOpen}>
         <DialogContent>

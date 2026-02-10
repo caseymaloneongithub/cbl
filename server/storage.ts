@@ -42,6 +42,9 @@ import {
   type InsertLeagueMember,
   type RosterPlayer,
   type InsertRosterPlayer,
+  mlbPlayers,
+  type MlbPlayer,
+  type InsertMlbPlayer,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, lt, sql, isNull, inArray, or } from "drizzle-orm";
@@ -283,6 +286,13 @@ export interface IStorage {
     paUsed: number;
     playerCount: number;
   }[]>;
+  
+  // MLB Players reference database
+  upsertMlbPlayers(players: InsertMlbPlayer[]): Promise<number>;
+  getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number }): Promise<MlbPlayer[]>;
+  getMlbPlayerCount(filters?: { sportLevel?: string; search?: string }): Promise<number>;
+  getMlbPlayerByMlbId(mlbId: number): Promise<MlbPlayer | undefined>;
+  clearMlbPlayers(season?: number): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2872,6 +2882,103 @@ export class DatabaseStorage implements IStorage {
     }
 
     return { updated: updatedTeams.length, teams: updatedTeams };
+  }
+
+  // MLB Players reference database
+  async upsertMlbPlayers(players: InsertMlbPlayer[]): Promise<number> {
+    if (players.length === 0) return 0;
+    
+    const BATCH_SIZE = 100;
+    let totalUpserted = 0;
+    
+    for (let i = 0; i < players.length; i += BATCH_SIZE) {
+      const batch = players.slice(i, i + BATCH_SIZE);
+      await db.insert(mlbPlayers)
+        .values(batch)
+        .onConflictDoUpdate({
+          target: mlbPlayers.mlbId,
+          set: {
+            fullName: sql`EXCLUDED.full_name`,
+            firstName: sql`EXCLUDED.first_name`,
+            lastName: sql`EXCLUDED.last_name`,
+            primaryPosition: sql`EXCLUDED.primary_position`,
+            positionName: sql`EXCLUDED.position_name`,
+            positionType: sql`EXCLUDED.position_type`,
+            batSide: sql`EXCLUDED.bat_side`,
+            throwHand: sql`EXCLUDED.throw_hand`,
+            currentTeamId: sql`EXCLUDED.current_team_id`,
+            currentTeamName: sql`EXCLUDED.current_team_name`,
+            parentOrgId: sql`EXCLUDED.parent_org_id`,
+            parentOrgName: sql`EXCLUDED.parent_org_name`,
+            sportId: sql`EXCLUDED.sport_id`,
+            sportLevel: sql`EXCLUDED.sport_level`,
+            birthDate: sql`EXCLUDED.birth_date`,
+            age: sql`EXCLUDED.age`,
+            isActive: sql`EXCLUDED.is_active`,
+            season: sql`EXCLUDED.season`,
+            lastSyncedAt: new Date(),
+          },
+        });
+      totalUpserted += batch.length;
+    }
+    
+    return totalUpserted;
+  }
+
+  async getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number }): Promise<MlbPlayer[]> {
+    const conditions = [];
+    if (filters?.sportLevel) {
+      conditions.push(eq(mlbPlayers.sportLevel, filters.sportLevel));
+    }
+    if (filters?.search) {
+      conditions.push(sql`LOWER(${mlbPlayers.fullName}) LIKE LOWER(${'%' + filters.search + '%'})`);
+    }
+    
+    const query = db.select().from(mlbPlayers);
+    if (conditions.length > 0) {
+      query.where(and(...conditions));
+    }
+    query.orderBy(mlbPlayers.fullName);
+    if (filters?.limit) {
+      query.limit(filters.limit);
+    }
+    if (filters?.offset) {
+      query.offset(filters.offset);
+    }
+    
+    return await query;
+  }
+
+  async getMlbPlayerCount(filters?: { sportLevel?: string; search?: string }): Promise<number> {
+    const conditions = [];
+    if (filters?.sportLevel) {
+      conditions.push(eq(mlbPlayers.sportLevel, filters.sportLevel));
+    }
+    if (filters?.search) {
+      conditions.push(sql`LOWER(${mlbPlayers.fullName}) LIKE LOWER(${'%' + filters.search + '%'})`);
+    }
+    
+    const query = db.select({ count: sql<number>`COUNT(*)` }).from(mlbPlayers);
+    if (conditions.length > 0) {
+      query.where(and(...conditions));
+    }
+    
+    const result = await query;
+    return Number(result[0]?.count || 0);
+  }
+
+  async getMlbPlayerByMlbId(mlbId: number): Promise<MlbPlayer | undefined> {
+    const [player] = await db.select().from(mlbPlayers).where(eq(mlbPlayers.mlbId, mlbId));
+    return player;
+  }
+
+  async clearMlbPlayers(season?: number): Promise<number> {
+    if (season) {
+      const result = await db.delete(mlbPlayers).where(eq(mlbPlayers.season, season));
+      return result.rowCount || 0;
+    }
+    const result = await db.delete(mlbPlayers);
+    return result.rowCount || 0;
   }
 }
 

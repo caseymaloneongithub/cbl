@@ -277,3 +277,166 @@ export async function testMLBConnection(): Promise<boolean> {
     return false;
   }
 }
+
+// ---- Affiliated Players Sync ----
+
+interface MLBTeamInfo {
+  id: number;
+  name: string;
+  abbreviation: string;
+  parentOrgId?: number;
+  parentOrgName?: string;
+  sport?: { id: number; name: string };
+}
+
+interface MLBRosterPlayer {
+  id: number;
+  fullName: string;
+  firstName: string;
+  lastName: string;
+  birthDate?: string;
+  currentAge?: number;
+  active?: boolean;
+  currentTeam?: { id: number };
+  primaryPosition?: {
+    code: string;
+    name: string;
+    type: string;
+    abbreviation: string;
+  };
+  batSide?: { code: string };
+  pitchHand?: { code: string };
+}
+
+const SPORT_LEVELS: Record<number, string> = {
+  1: "MLB",
+  11: "AAA",
+  12: "AA",
+  16: "Rookie",
+};
+
+export interface AffiliatedPlayerRecord {
+  mlbId: number;
+  fullName: string;
+  firstName: string | null;
+  lastName: string | null;
+  primaryPosition: string | null;
+  positionName: string | null;
+  positionType: string | null;
+  batSide: string | null;
+  throwHand: string | null;
+  currentTeamId: number | null;
+  currentTeamName: string | null;
+  parentOrgId: number | null;
+  parentOrgName: string | null;
+  sportId: number;
+  sportLevel: string;
+  birthDate: string | null;
+  age: number | null;
+  isActive: boolean;
+  season: number;
+}
+
+export interface SyncProgress {
+  level: string;
+  playerCount: number;
+  filteredOut?: number;
+}
+
+async function fetchTeamsLookup(sportIds: number[], season: number): Promise<Map<number, MLBTeamInfo>> {
+  const url = `${MLB_API_BASE}/teams?sportIds=${sportIds.join(",")}&season=${season}`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch teams: ${response.status}`);
+  }
+  const data = await response.json();
+  const teamMap = new Map<number, MLBTeamInfo>();
+  for (const team of (data.teams || [])) {
+    teamMap.set(team.id, {
+      id: team.id,
+      name: team.name,
+      abbreviation: team.abbreviation,
+      parentOrgId: team.parentOrgId,
+      parentOrgName: team.parentOrgName,
+      sport: team.sport,
+    });
+  }
+  return teamMap;
+}
+
+async function fetchPlayersForSportLevel(sportId: number, season: number): Promise<MLBRosterPlayer[]> {
+  const url = `${MLB_API_BASE}/sports/${sportId}/players?season=${season}`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch players for sportId ${sportId}: ${response.status}`);
+  }
+  const data = await response.json();
+  return data.people || [];
+}
+
+export async function fetchAllAffiliatedPlayers(
+  season: number,
+  onProgress?: (progress: SyncProgress) => void
+): Promise<AffiliatedPlayerRecord[]> {
+  const sportIds = [1, 11, 12, 16];
+  
+  const teamMap = await fetchTeamsLookup(sportIds, season);
+  
+  const dslTeamIds = new Set<number>();
+  for (const [id, team] of teamMap) {
+    if (team.name.includes("DSL")) {
+      dslTeamIds.add(id);
+    }
+  }
+  console.log(`[MLB Sync] Found ${dslTeamIds.size} DSL teams to exclude`);
+  
+  const allPlayers: AffiliatedPlayerRecord[] = [];
+  
+  for (const sportId of sportIds) {
+    const levelName = SPORT_LEVELS[sportId] || `Sport${sportId}`;
+    console.log(`[MLB Sync] Fetching ${levelName} players...`);
+    
+    const rawPlayers = await fetchPlayersForSportLevel(sportId, season);
+    let filteredOut = 0;
+    
+    for (const player of rawPlayers) {
+      const teamId = player.currentTeam?.id;
+      
+      if (sportId === 16 && teamId && dslTeamIds.has(teamId)) {
+        filteredOut++;
+        continue;
+      }
+      
+      const teamInfo = teamId ? teamMap.get(teamId) : undefined;
+      
+      allPlayers.push({
+        mlbId: player.id,
+        fullName: player.fullName,
+        firstName: player.firstName || null,
+        lastName: player.lastName || null,
+        primaryPosition: player.primaryPosition?.abbreviation || null,
+        positionName: player.primaryPosition?.name || null,
+        positionType: player.primaryPosition?.type || null,
+        batSide: player.batSide?.code || null,
+        throwHand: player.pitchHand?.code || null,
+        currentTeamId: teamId || null,
+        currentTeamName: teamInfo?.name || null,
+        parentOrgId: teamInfo?.parentOrgId || null,
+        parentOrgName: teamInfo?.parentOrgName || null,
+        sportId,
+        sportLevel: levelName,
+        birthDate: player.birthDate || null,
+        age: player.currentAge || null,
+        isActive: player.active !== false,
+        season,
+      });
+    }
+    
+    console.log(`[MLB Sync] ${levelName}: ${rawPlayers.length} total, ${filteredOut} DSL excluded, ${rawPlayers.length - filteredOut} kept`);
+    onProgress?.({ level: levelName, playerCount: rawPlayers.length - filteredOut, filteredOut });
+    
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  
+  return allPlayers;
+}

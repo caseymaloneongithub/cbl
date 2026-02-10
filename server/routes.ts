@@ -8,7 +8,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { fromZonedTime } from "date-fns-tz";
 import { parse, isValid, format } from "date-fns";
-import { syncPlayerStatsFromMLB, testMLBConnection } from "./mlb-api";
+import { syncPlayerStatsFromMLB, testMLBConnection, fetchAllAffiliatedPlayers } from "./mlb-api";
 
 const EASTERN_TIMEZONE = "America/New_York";
 const CST_TIMEZONE = "America/Chicago";
@@ -982,6 +982,111 @@ export async function registerRoutes(
       res.status(500).json({ 
         message: `Failed to update stats: ${error?.message || String(error)}`
       });
+    }
+  });
+
+  // Super admin: Sync all affiliated players from MLB API into reference database
+  app.post("/api/admin/mlb-players/sync", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      if (!user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Super Admin access required" });
+      }
+
+      const { season } = req.body;
+      const currentYear = new Date().getFullYear();
+      const syncSeason = typeof season === "number" && season >= 2000 && season <= currentYear + 1
+        ? season
+        : currentYear;
+
+      console.log(`[MLB Sync] Starting affiliated players sync for season ${syncSeason}`);
+
+      const players = await fetchAllAffiliatedPlayers(syncSeason);
+
+      const upserted = await storage.upsertMlbPlayers(
+        players.map(p => ({
+          mlbId: p.mlbId,
+          fullName: p.fullName,
+          firstName: p.firstName,
+          lastName: p.lastName,
+          primaryPosition: p.primaryPosition,
+          positionName: p.positionName,
+          positionType: p.positionType,
+          batSide: p.batSide,
+          throwHand: p.throwHand,
+          currentTeamId: p.currentTeamId,
+          currentTeamName: p.currentTeamName,
+          parentOrgId: p.parentOrgId,
+          parentOrgName: p.parentOrgName,
+          sportId: p.sportId,
+          sportLevel: p.sportLevel,
+          birthDate: p.birthDate,
+          age: p.age,
+          isActive: p.isActive,
+          season: p.season,
+        }))
+      );
+
+      const levelCounts: Record<string, number> = {};
+      for (const p of players) {
+        levelCounts[p.sportLevel] = (levelCounts[p.sportLevel] || 0) + 1;
+      }
+
+      console.log(`[MLB Sync] Completed: ${upserted} players synced`);
+
+      res.json({
+        message: `Synced ${upserted} affiliated players for ${syncSeason} season`,
+        season: syncSeason,
+        totalPlayers: upserted,
+        byLevel: levelCounts,
+      });
+    } catch (error: any) {
+      console.error("Error syncing MLB players:", error);
+      res.status(500).json({ message: error.message || "Failed to sync MLB players" });
+    }
+  });
+
+  // Super admin: Get MLB player counts/status
+  app.get("/api/admin/mlb-players/status", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      if (!user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Super Admin access required" });
+      }
+
+      const total = await storage.getMlbPlayerCount();
+      const mlb = await storage.getMlbPlayerCount({ sportLevel: "MLB" });
+      const aaa = await storage.getMlbPlayerCount({ sportLevel: "AAA" });
+      const aa = await storage.getMlbPlayerCount({ sportLevel: "AA" });
+      const rookie = await storage.getMlbPlayerCount({ sportLevel: "Rookie" });
+
+      res.json({ total, byLevel: { MLB: mlb, AAA: aaa, AA: aa, Rookie: rookie } });
+    } catch (error: any) {
+      console.error("Error fetching MLB player status:", error);
+      res.status(500).json({ message: "Failed to fetch MLB player status" });
+    }
+  });
+
+  // Search MLB players reference database (available to all authenticated users)
+  app.get("/api/mlb-players", isAuthenticated, async (req: any, res) => {
+    try {
+      const { search, sportLevel, limit, offset } = req.query;
+      const players = await storage.getMlbPlayers({
+        search: search as string,
+        sportLevel: sportLevel as string,
+        limit: limit ? parseInt(limit as string) : 50,
+        offset: offset ? parseInt(offset as string) : 0,
+      });
+      const count = await storage.getMlbPlayerCount({
+        search: search as string,
+        sportLevel: sportLevel as string,
+      });
+      res.json({ players, total: count });
+    } catch (error: any) {
+      console.error("Error searching MLB players:", error);
+      res.status(500).json({ message: "Failed to search MLB players" });
     }
   });
 
