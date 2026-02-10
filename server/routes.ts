@@ -1024,6 +1024,8 @@ export async function registerRoutes(
           birthDate: p.birthDate,
           age: p.age,
           isActive: p.isActive,
+          hadHittingStats: p.hadHittingStats,
+          hadPitchingStats: p.hadPitchingStats,
           season: p.season,
         }))
       );
@@ -1056,15 +1058,18 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Super Admin access required" });
       }
 
+      const levels = ["MLB", "AAA", "AA", "High-A", "Single-A", "Rookie"];
       const total = await storage.getMlbPlayerCount();
-      const mlb = await storage.getMlbPlayerCount({ sportLevel: "MLB" });
-      const aaa = await storage.getMlbPlayerCount({ sportLevel: "AAA" });
-      const aa = await storage.getMlbPlayerCount({ sportLevel: "AA" });
-      const highA = await storage.getMlbPlayerCount({ sportLevel: "High-A" });
-      const singleA = await storage.getMlbPlayerCount({ sportLevel: "Single-A" });
-      const rookie = await storage.getMlbPlayerCount({ sportLevel: "Rookie" });
 
-      res.json({ total, byLevel: { MLB: mlb, AAA: aaa, AA: aa, "High-A": highA, "Single-A": singleA, Rookie: rookie } });
+      const byLevel: Record<string, { total: number; hitters: number; pitchers: number }> = {};
+      for (const level of levels) {
+        const levelTotal = await storage.getMlbPlayerCount({ sportLevel: level });
+        const hitters = await storage.getMlbPlayerCount({ sportLevel: level, hadHittingStats: true });
+        const pitchers = await storage.getMlbPlayerCount({ sportLevel: level, hadPitchingStats: true });
+        byLevel[level] = { total: levelTotal, hitters, pitchers };
+      }
+
+      res.json({ total, byLevel });
     } catch (error: any) {
       console.error("Error fetching MLB player status:", error);
       res.status(500).json({ message: "Failed to fetch MLB player status" });

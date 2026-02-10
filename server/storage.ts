@@ -290,7 +290,7 @@ export interface IStorage {
   // MLB Players reference database
   upsertMlbPlayers(players: InsertMlbPlayer[]): Promise<number>;
   getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number }): Promise<MlbPlayer[]>;
-  getMlbPlayerCount(filters?: { sportLevel?: string; search?: string }): Promise<number>;
+  getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean }): Promise<number>;
   getMlbPlayerByMlbId(mlbId: number): Promise<MlbPlayer | undefined>;
   clearMlbPlayers(season?: number): Promise<number>;
 }
@@ -2915,6 +2915,8 @@ export class DatabaseStorage implements IStorage {
             birthDate: sql`EXCLUDED.birth_date`,
             age: sql`EXCLUDED.age`,
             isActive: sql`EXCLUDED.is_active`,
+            hadHittingStats: sql`EXCLUDED.had_hitting_stats`,
+            hadPitchingStats: sql`EXCLUDED.had_pitching_stats`,
             season: sql`EXCLUDED.season`,
             lastSyncedAt: new Date(),
           },
@@ -2949,13 +2951,19 @@ export class DatabaseStorage implements IStorage {
     return await query;
   }
 
-  async getMlbPlayerCount(filters?: { sportLevel?: string; search?: string }): Promise<number> {
+  async getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean }): Promise<number> {
     const conditions = [];
     if (filters?.sportLevel) {
       conditions.push(eq(mlbPlayers.sportLevel, filters.sportLevel));
     }
     if (filters?.search) {
       conditions.push(sql`LOWER(${mlbPlayers.fullName}) LIKE LOWER(${'%' + filters.search + '%'})`);
+    }
+    if (filters?.hadHittingStats !== undefined) {
+      conditions.push(eq(mlbPlayers.hadHittingStats, filters.hadHittingStats));
+    }
+    if (filters?.hadPitchingStats !== undefined) {
+      conditions.push(eq(mlbPlayers.hadPitchingStats, filters.hadPitchingStats));
     }
     
     const query = db.select({ count: sql<number>`COUNT(*)` }).from(mlbPlayers);

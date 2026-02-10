@@ -351,6 +351,8 @@ export interface AffiliatedPlayerRecord {
   birthDate: string | null;
   age: number | null;
   isActive: boolean;
+  hadHittingStats: boolean;
+  hadPitchingStats: boolean;
   season: number;
 }
 
@@ -417,19 +419,31 @@ export async function fetchAllAffiliatedPlayers(
       fetchStatsForLevel(sportId, "pitching", season),
     ]);
     
+    const hitterIds = new Set(hittingSplits.map(s => s.player.id));
+    const pitcherIds = new Set(pitchingSplits.map(s => s.player.id));
+    
     const allSplits = [...hittingSplits, ...pitchingSplits];
+    const seen = new Set<number>();
     let levelCount = 0;
     
     for (const split of allSplits) {
       const playerId = split.player.id;
+      if (seen.has(playerId)) continue;
+      seen.add(playerId);
+      
       const teamId = split.team?.id;
       
       if (sportId === 16 && teamId && dslTeamIds.has(teamId)) {
         continue;
       }
       
+      const isHitter = hitterIds.has(playerId);
+      const isPitcher = pitcherIds.has(playerId);
+      
       if (playerMap.has(playerId)) {
         const existing = playerMap.get(playerId)!;
+        existing.hadHittingStats = existing.hadHittingStats || isHitter;
+        existing.hadPitchingStats = existing.hadPitchingStats || isPitcher;
         const existingSportPriority = sportIds.indexOf(existing.sportId);
         const newSportPriority = sportIds.indexOf(sportId);
         if (newSportPriority <= existingSportPriority) {
@@ -459,6 +473,8 @@ export async function fetchAllAffiliatedPlayers(
         birthDate: player.birthDate || null,
         age: player.currentAge || null,
         isActive: player.active !== false,
+        hadHittingStats: isHitter,
+        hadPitchingStats: isPitcher,
         season,
       });
       levelCount++;

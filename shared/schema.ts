@@ -492,6 +492,8 @@ export const mlbPlayers = pgTable("mlb_players", {
   birthDate: varchar("birth_date", { length: 20 }),
   age: integer("age"),
   isActive: boolean("is_active").default(true),
+  hadHittingStats: boolean("had_hitting_stats").default(false),
+  hadPitchingStats: boolean("had_pitching_stats").default(false),
   season: integer("season").notNull(),
   lastSyncedAt: timestamp("last_synced_at").defaultNow(),
 }, (table) => [
