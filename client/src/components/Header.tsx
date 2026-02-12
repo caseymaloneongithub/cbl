@@ -11,18 +11,57 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import { Diamond, Users, Gavel, Trophy, Settings, LogOut, Menu, UserCog, X, Globe, Check, Building2 } from "lucide-react";
+import { Diamond, Users, Gavel, Trophy, Settings, LogOut, Menu, UserCog, X, Globe, Check, Building2, ChevronDown, ClipboardList, Database } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { User } from "@shared/schema";
 
-const navLinks = [
-  { href: "/", label: "Free Agents", icon: Users },
-  { href: "/my-bids", label: "My Bids", icon: Gavel },
-  { href: "/results", label: "Results", icon: Trophy },
-];
+function NavDropdown({ label, icon: Icon, items, location: loc, testId }: {
+  label: string;
+  icon: any;
+  items: { href: string; label: string; icon: any }[];
+  location: string;
+  testId: string;
+}) {
+  const isActive = items.some(item => item.href === loc || (item.href !== "/" && loc.startsWith(item.href)));
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant={isActive ? "secondary" : "ghost"}
+          size="sm"
+          data-testid={testId}
+        >
+          <Icon className="h-4 w-4 mr-2" />
+          {label}
+          <ChevronDown className="h-3 w-3 ml-1" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        {items.map((item) => {
+          const ItemIcon = item.icon;
+          const itemActive = item.href === loc || (item.href !== "/" && loc.startsWith(item.href));
+          return (
+            <DropdownMenuItem
+              key={item.href}
+              asChild
+              className={`cursor-pointer ${itemActive ? "bg-accent" : ""}`}
+              data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+            >
+              <Link href={item.href}>
+                <ItemIcon className="mr-2 h-4 w-4" />
+                {item.label}
+              </Link>
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 export function Header() {
   const { 
@@ -74,6 +113,22 @@ export function Header() {
     }
   };
 
+  const freeAgencyItems = [
+    { href: "/", label: "Free Agents", icon: Users },
+    { href: "/my-bids", label: "My Bids", icon: Gavel },
+    { href: "/results", label: "Results", icon: Trophy },
+  ];
+
+  const myRosterItems = [
+    { href: "/my-roster/mlb", label: "Major League", icon: ClipboardList },
+    { href: "/my-roster/milb", label: "Minor League", icon: ClipboardList },
+  ];
+
+  const playersItems = [
+    { href: "/players/mlb", label: "Major League", icon: Database },
+    { href: "/players/milb", label: "Minor League", icon: Database },
+  ];
+
   return (
     <>
       {isImpersonating && (
@@ -102,7 +157,6 @@ export function Header() {
     <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-14 items-center justify-between gap-4">
-          {/* Logo and Current League Name */}
           <div className="flex items-center gap-3">
             <Link href="/" className="flex items-center gap-2 hover-elevate active-elevate-2 rounded-md px-2 py-1">
               <Diamond className="h-6 w-6 text-primary" />
@@ -112,29 +166,33 @@ export function Header() {
             </Link>
           </div>
 
-          {/* Desktop Navigation */}
           {isAuthenticated && (
             <nav className="hidden md:flex items-center gap-1">
-              {navLinks.map((link) => {
-                const Icon = link.icon;
-                const isActive = location === link.href;
-                return (
-                  <Link key={link.href} href={link.href}>
-                    <Button
-                      variant={isActive ? "secondary" : "ghost"}
-                      size="sm"
-                      data-testid={`nav-${link.label.toLowerCase().replace(" ", "-")}`}
-                    >
-                      <Icon className="h-4 w-4 mr-2" />
-                      {link.label}
-                    </Button>
-                  </Link>
-                );
-              })}
+              <NavDropdown
+                label="Free Agency"
+                icon={Gavel}
+                items={freeAgencyItems}
+                location={location}
+                testId="nav-free-agency"
+              />
+              <NavDropdown
+                label="My Roster"
+                icon={ClipboardList}
+                items={myRosterItems}
+                location={location}
+                testId="nav-my-roster"
+              />
+              <NavDropdown
+                label="Players"
+                icon={Database}
+                items={playersItems}
+                location={location}
+                testId="nav-players"
+              />
               {(hasAnyCommissionerRole || user?.isSuperAdmin) && (
                 <Link href="/commissioner">
                   <Button
-                    variant={location === "/commissioner" ? "secondary" : "ghost"}
+                    variant={location === "/commissioner" || location.startsWith("/commissioner/") ? "secondary" : "ghost"}
                     size="sm"
                     data-testid="nav-commissioner"
                   >
@@ -158,13 +216,11 @@ export function Header() {
             </nav>
           )}
 
-          {/* Right side */}
           <div className="flex items-center gap-2">
             <ThemeToggle />
 
             {isAuthenticated ? (
               <>
-                {/* Mobile Menu */}
                 <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
                   <SheetTrigger asChild className="md:hidden">
                     <Button variant="ghost" size="icon" data-testid="button-mobile-menu">
@@ -172,7 +228,7 @@ export function Header() {
                     </Button>
                   </SheetTrigger>
                   <SheetContent side="right" className="w-64">
-                    <nav className="flex flex-col gap-2 mt-8">
+                    <nav className="flex flex-col gap-1 mt-8">
                       {leagues.length > 1 && (
                         <>
                           <div className="px-2 py-1">
@@ -199,14 +255,18 @@ export function Header() {
                           <div className="border-b my-2" />
                         </>
                       )}
-                      {navLinks.map((link) => {
+                      <div className="px-2 py-1">
+                        <span className="text-xs text-muted-foreground font-medium">Free Agency</span>
+                      </div>
+                      {freeAgencyItems.map((link) => {
                         const Icon = link.icon;
-                        const isActive = location === link.href;
+                        const isActive = link.href === location;
                         return (
                           <Link key={link.href} href={link.href} onClick={() => setMobileMenuOpen(false)}>
                             <Button
                               variant={isActive ? "secondary" : "ghost"}
                               className="w-full justify-start"
+                              size="sm"
                             >
                               <Icon className="h-4 w-4 mr-2" />
                               {link.label}
@@ -214,10 +274,51 @@ export function Header() {
                           </Link>
                         );
                       })}
+                      <div className="border-b my-2" />
+                      <div className="px-2 py-1">
+                        <span className="text-xs text-muted-foreground font-medium">My Roster</span>
+                      </div>
+                      {myRosterItems.map((link) => {
+                        const Icon = link.icon;
+                        const isActive = location === link.href;
+                        return (
+                          <Link key={link.href} href={link.href} onClick={() => setMobileMenuOpen(false)}>
+                            <Button
+                              variant={isActive ? "secondary" : "ghost"}
+                              className="w-full justify-start"
+                              size="sm"
+                            >
+                              <Icon className="h-4 w-4 mr-2" />
+                              {link.label}
+                            </Button>
+                          </Link>
+                        );
+                      })}
+                      <div className="border-b my-2" />
+                      <div className="px-2 py-1">
+                        <span className="text-xs text-muted-foreground font-medium">Players</span>
+                      </div>
+                      {playersItems.map((link) => {
+                        const Icon = link.icon;
+                        const isActive = location === link.href;
+                        return (
+                          <Link key={link.href} href={link.href} onClick={() => setMobileMenuOpen(false)}>
+                            <Button
+                              variant={isActive ? "secondary" : "ghost"}
+                              className="w-full justify-start"
+                              size="sm"
+                            >
+                              <Icon className="h-4 w-4 mr-2" />
+                              {link.label}
+                            </Button>
+                          </Link>
+                        );
+                      })}
+                      <div className="border-b my-2" />
                       {(hasAnyCommissionerRole || user?.isSuperAdmin) && (
                         <Link href="/commissioner" onClick={() => setMobileMenuOpen(false)}>
                           <Button
-                            variant={location === "/commissioner" ? "secondary" : "ghost"}
+                            variant={location === "/commissioner" || location.startsWith("/commissioner/") ? "secondary" : "ghost"}
                             className="w-full justify-start"
                           >
                             <Settings className="h-4 w-4 mr-2" />
@@ -240,7 +341,6 @@ export function Header() {
                   </SheetContent>
                 </Sheet>
 
-                {/* User Menu */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" className="relative h-9 w-9 rounded-full" data-testid="button-user-menu">

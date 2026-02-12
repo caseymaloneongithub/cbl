@@ -292,8 +292,9 @@ export interface IStorage {
   
   // MLB Players reference database
   upsertMlbPlayers(players: InsertMlbPlayer[]): Promise<number>;
-  getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number }): Promise<MlbPlayer[]>;
-  getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean }): Promise<number>;
+  getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number; currentTeamName?: string; season?: number; sortBy?: string; sortDir?: string }): Promise<MlbPlayer[]>;
+  getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; currentTeamName?: string; season?: number }): Promise<number>;
+  getMlbPlayerTeams(season?: number, sportLevel?: string): Promise<string[]>;
   getMlbPlayerByMlbId(mlbId: number): Promise<MlbPlayer | undefined>;
   clearMlbPlayers(season?: number): Promise<number>;
   
@@ -2941,20 +2942,44 @@ export class DatabaseStorage implements IStorage {
     return totalUpserted;
   }
 
-  async getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number }): Promise<MlbPlayer[]> {
+  async getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number; currentTeamName?: string; season?: number; sortBy?: string; sortDir?: string }): Promise<MlbPlayer[]> {
     const conditions = [];
     if (filters?.sportLevel) {
-      conditions.push(eq(mlbPlayers.sportLevel, filters.sportLevel));
+      if (filters.sportLevel === 'Major League Baseball') {
+        conditions.push(eq(mlbPlayers.sportLevel, 'Major League Baseball'));
+      } else if (filters.sportLevel === 'minors') {
+        conditions.push(sql`${mlbPlayers.sportLevel} != 'Major League Baseball'`);
+      } else {
+        conditions.push(eq(mlbPlayers.sportLevel, filters.sportLevel));
+      }
     }
     if (filters?.search) {
       conditions.push(sql`LOWER(${mlbPlayers.fullName}) LIKE LOWER(${'%' + filters.search + '%'})`);
+    }
+    if (filters?.currentTeamName) {
+      conditions.push(eq(mlbPlayers.currentTeamName, filters.currentTeamName));
+    }
+    if (filters?.season) {
+      conditions.push(eq(mlbPlayers.season, filters.season));
     }
     
     const query = db.select().from(mlbPlayers);
     if (conditions.length > 0) {
       query.where(and(...conditions));
     }
-    query.orderBy(mlbPlayers.fullName);
+
+    const sortCol = filters?.sortBy;
+    const dir = filters?.sortDir === 'desc' ? 'DESC' : 'ASC';
+    if (sortCol === 'age') {
+      query.orderBy(dir === 'DESC' ? sql`${mlbPlayers.age} DESC NULLS LAST` : sql`${mlbPlayers.age} ASC NULLS LAST`);
+    } else if (sortCol === 'position') {
+      query.orderBy(dir === 'DESC' ? sql`${mlbPlayers.primaryPosition} DESC NULLS LAST` : sql`${mlbPlayers.primaryPosition} ASC NULLS LAST`);
+    } else if (sortCol === 'team') {
+      query.orderBy(dir === 'DESC' ? sql`${mlbPlayers.currentTeamName} DESC NULLS LAST` : sql`${mlbPlayers.currentTeamName} ASC NULLS LAST`);
+    } else {
+      query.orderBy(dir === 'DESC' ? sql`${mlbPlayers.fullName} DESC` : mlbPlayers.fullName);
+    }
+
     if (filters?.limit) {
       query.limit(filters.limit);
     }
@@ -2965,10 +2990,16 @@ export class DatabaseStorage implements IStorage {
     return await query;
   }
 
-  async getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean }): Promise<number> {
+  async getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; currentTeamName?: string; season?: number }): Promise<number> {
     const conditions = [];
     if (filters?.sportLevel) {
-      conditions.push(eq(mlbPlayers.sportLevel, filters.sportLevel));
+      if (filters.sportLevel === 'Major League Baseball') {
+        conditions.push(eq(mlbPlayers.sportLevel, 'Major League Baseball'));
+      } else if (filters.sportLevel === 'minors') {
+        conditions.push(sql`${mlbPlayers.sportLevel} != 'Major League Baseball'`);
+      } else {
+        conditions.push(eq(mlbPlayers.sportLevel, filters.sportLevel));
+      }
     }
     if (filters?.search) {
       conditions.push(sql`LOWER(${mlbPlayers.fullName}) LIKE LOWER(${'%' + filters.search + '%'})`);
@@ -2979,6 +3010,12 @@ export class DatabaseStorage implements IStorage {
     if (filters?.hadPitchingStats !== undefined) {
       conditions.push(eq(mlbPlayers.hadPitchingStats, filters.hadPitchingStats));
     }
+    if (filters?.currentTeamName) {
+      conditions.push(eq(mlbPlayers.currentTeamName, filters.currentTeamName));
+    }
+    if (filters?.season) {
+      conditions.push(eq(mlbPlayers.season, filters.season));
+    }
     
     const query = db.select({ count: sql<number>`COUNT(*)` }).from(mlbPlayers);
     if (conditions.length > 0) {
@@ -2987,6 +3024,25 @@ export class DatabaseStorage implements IStorage {
     
     const result = await query;
     return Number(result[0]?.count || 0);
+  }
+
+  async getMlbPlayerTeams(season?: number, sportLevel?: string): Promise<string[]> {
+    const conditions = [sql`${mlbPlayers.currentTeamName} IS NOT NULL`];
+    if (season) conditions.push(eq(mlbPlayers.season, season));
+    if (sportLevel) {
+      if (sportLevel === 'Major League Baseball') {
+        conditions.push(eq(mlbPlayers.sportLevel, 'Major League Baseball'));
+      } else if (sportLevel === 'minors') {
+        conditions.push(sql`${mlbPlayers.sportLevel} != 'Major League Baseball'`);
+      } else {
+        conditions.push(eq(mlbPlayers.sportLevel, sportLevel));
+      }
+    }
+    const rows = await db.selectDistinct({ team: mlbPlayers.currentTeamName })
+      .from(mlbPlayers)
+      .where(and(...conditions))
+      .orderBy(mlbPlayers.currentTeamName);
+    return rows.map(r => r.team!).filter(Boolean);
   }
 
   async getMlbPlayerByMlbId(mlbId: number): Promise<MlbPlayer | undefined> {

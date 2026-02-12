@@ -15,6 +15,8 @@ import ResetPassword from "@/pages/ResetPassword";
 import Home from "@/pages/Home";
 import MyBids from "@/pages/MyBids";
 import Results from "@/pages/Results";
+import MyRoster from "@/pages/MyRoster";
+import Players from "@/pages/Players";
 import Commissioner from "@/pages/Commissioner";
 import CommissionerAuction from "@/pages/CommissionerAuction";
 import SuperAdmin from "@/pages/SuperAdmin";
@@ -91,6 +93,18 @@ function Router() {
       </Route>
       <Route path="/results">
         {() => <ProtectedRoute component={Results} />}
+      </Route>
+      <Route path="/my-roster/mlb">
+        {() => <ProtectedRoute component={() => <MyRoster level="mlb" />} />}
+      </Route>
+      <Route path="/my-roster/milb">
+        {() => <ProtectedRoute component={() => <MyRoster level="milb" />} />}
+      </Route>
+      <Route path="/players/mlb">
+        {() => <ProtectedRoute component={() => <Players level="mlb" />} />}
+      </Route>
+      <Route path="/players/milb">
+        {() => <ProtectedRoute component={() => <Players level="milb" />} />}
       </Route>
       <Route path="/commissioner">
         {() => <CommissionerRoute component={Commissioner} />}

@@ -1079,21 +1079,37 @@ export async function registerRoutes(
   // Search MLB players reference database (available to all authenticated users)
   app.get("/api/mlb-players", isAuthenticated, async (req: any, res) => {
     try {
-      const { search, sportLevel, limit, offset } = req.query;
-      const players = await storage.getMlbPlayers({
+      const { search, sportLevel, limit, offset, currentTeamName, season, sortBy, sortDir } = req.query;
+      const filters = {
         search: search as string,
         sportLevel: sportLevel as string,
         limit: limit ? parseInt(limit as string) : 50,
         offset: offset ? parseInt(offset as string) : 0,
-      });
-      const count = await storage.getMlbPlayerCount({
-        search: search as string,
-        sportLevel: sportLevel as string,
-      });
+        currentTeamName: currentTeamName as string,
+        season: season ? parseInt(season as string) : undefined,
+        sortBy: sortBy as string,
+        sortDir: sortDir as string,
+      };
+      const players = await storage.getMlbPlayers(filters);
+      const count = await storage.getMlbPlayerCount(filters);
       res.json({ players, total: count });
     } catch (error: any) {
       console.error("Error searching MLB players:", error);
       res.status(500).json({ message: "Failed to search MLB players" });
+    }
+  });
+
+  app.get("/api/mlb-players/teams", isAuthenticated, async (req: any, res) => {
+    try {
+      const { season, sportLevel } = req.query;
+      const teams = await storage.getMlbPlayerTeams(
+        season ? parseInt(season as string) : undefined,
+        sportLevel as string,
+      );
+      res.json(teams);
+    } catch (error: any) {
+      console.error("Error fetching MLB teams:", error);
+      res.status(500).json({ message: "Failed to fetch teams" });
     }
   });
 
