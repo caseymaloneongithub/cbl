@@ -5414,6 +5414,128 @@ export async function registerRoutes(
     }
   });
 
+  // POST /api/drafts/:id/commissioner-pick - Commissioner makes a pick on behalf of a team
+  app.post("/api/drafts/:id/commissioner-pick", isAuthenticated, async (req: any, res) => {
+    try {
+      const commissionerUserId = req.session.originalUserId || req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid draft ID" });
+
+      const draft = await storage.getDraft(id);
+      if (!draft) return res.status(404).json({ message: "Draft not found" });
+      if (draft.status !== "active") return res.status(400).json({ message: "Draft is not active" });
+
+      const isCommissioner = await hasLeagueCommissionerAccess(commissionerUserId, draft.leagueId);
+      if (!isCommissioner) return res.status(403).json({ message: "Commissioner access required" });
+
+      const { userId: targetUserId, mlbPlayerId, rosterType } = req.body;
+      if (!targetUserId || !mlbPlayerId || !rosterType) {
+        return res.status(400).json({ message: "userId, mlbPlayerId, and rosterType are required" });
+      }
+      if (rosterType !== "mlb" && rosterType !== "milb") {
+        return res.status(400).json({ message: "rosterType must be 'mlb' or 'milb'" });
+      }
+
+      const availPlayers = await storage.getDraftPlayers(id, { status: "available" });
+      const playerInPool = availPlayers.find(dp => dp.mlbPlayerId === mlbPlayerId);
+      if (!playerInPool) {
+        return res.status(400).json({ message: "Player is not available in the draft pool" });
+      }
+
+      const currentRound = draft.currentRound;
+      const currentPickIndex = draft.currentPickIndex;
+      const roundOrder = await storage.getDraftOrder(id, currentRound);
+      const sortedRoundOrder = [...roundOrder].sort((a, b) => a.orderIndex - b.orderIndex);
+
+      const pickCount = await storage.getDraftPickCount(id);
+      const pickNumber = pickCount + 1;
+
+      const pick = await storage.createDraftPick({
+        draftId: id,
+        round: currentRound,
+        pickNumber,
+        userId: targetUserId,
+        mlbPlayerId,
+        rosterType,
+      });
+      await storage.updateDraftPlayerStatus(id, mlbPlayerId, "drafted");
+      await storage.assignPlayerToRoster({
+        leagueId: draft.leagueId,
+        userId: targetUserId,
+        mlbPlayerId,
+        rosterType,
+        season: draft.season,
+      });
+
+      let nextPickIndex = currentPickIndex + 1;
+      let nextRound = currentRound;
+      if (nextPickIndex >= sortedRoundOrder.length) {
+        nextPickIndex = 0;
+        nextRound = currentRound + 1;
+      }
+      if (nextRound > draft.rounds) {
+        await storage.updateDraft(id, { status: "completed", currentPickIndex, currentRound });
+      } else {
+        await storage.updateDraft(id, { currentPickIndex: nextPickIndex, currentRound: nextRound });
+      }
+
+      res.status(201).json(pick);
+    } catch (error) {
+      console.error("Error making commissioner pick:", error);
+      res.status(500).json({ message: "Failed to make commissioner pick" });
+    }
+  });
+
+  // DELETE /api/drafts/:id/picks/:pickId - Commissioner nullifies a pick (undoes it)
+  app.delete("/api/drafts/:id/picks/:pickId", isAuthenticated, async (req: any, res) => {
+    try {
+      const commissionerUserId = req.session.originalUserId || req.session.userId!;
+      const draftId = parseInt(req.params.id);
+      const pickId = parseInt(req.params.pickId);
+      if (isNaN(draftId) || isNaN(pickId)) return res.status(400).json({ message: "Invalid IDs" });
+
+      const draft = await storage.getDraft(draftId);
+      if (!draft) return res.status(404).json({ message: "Draft not found" });
+
+      const isCommissioner = await hasLeagueCommissionerAccess(commissionerUserId, draft.leagueId);
+      if (!isCommissioner) return res.status(403).json({ message: "Commissioner access required" });
+
+      const pick = await storage.getDraftPickById(pickId);
+      if (!pick) return res.status(404).json({ message: "Pick not found" });
+      if (pick.draftId !== draftId) return res.status(400).json({ message: "Pick does not belong to this draft" });
+
+      await storage.updateDraftPlayerStatus(draftId, pick.mlbPlayerId, "available");
+      await storage.removeRosterAssignmentByPlayer(draft.leagueId, pick.userId, pick.mlbPlayerId, draft.season);
+      await storage.deleteDraftPick(pickId);
+
+      const lastPick = await storage.getLastDraftPick(draftId);
+      if (!lastPick) {
+        await storage.updateDraft(draftId, { currentRound: 1, currentPickIndex: 0, status: "active" });
+      } else {
+        const roundOrder = await storage.getDraftOrder(draftId, lastPick.round);
+        const sortedOrder = [...roundOrder].sort((a, b) => a.orderIndex - b.orderIndex);
+        const lastPickerIndex = sortedOrder.findIndex(o => o.userId === lastPick.userId);
+
+        let nextPickIndex = lastPickerIndex + 1;
+        let nextRound = lastPick.round;
+        if (nextPickIndex >= sortedOrder.length) {
+          nextPickIndex = 0;
+          nextRound = lastPick.round + 1;
+        }
+        if (nextRound > draft.rounds) {
+          await storage.updateDraft(draftId, { status: "completed", currentPickIndex: lastPickerIndex, currentRound: lastPick.round });
+        } else {
+          await storage.updateDraft(draftId, { currentPickIndex: nextPickIndex, currentRound: nextRound });
+        }
+      }
+
+      res.json({ message: "Pick nullified successfully" });
+    } catch (error) {
+      console.error("Error nullifying draft pick:", error);
+      res.status(500).json({ message: "Failed to nullify pick" });
+    }
+  });
+
   return httpServer;
 }
 

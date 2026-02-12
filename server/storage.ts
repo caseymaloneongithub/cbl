@@ -350,9 +350,13 @@ export interface IStorage {
   
   // Draft picks
   getDraftPicks(draftId: number): Promise<DraftPickWithDetails[]>;
+  getDraftPickById(pickId: number): Promise<DraftPick | undefined>;
   createDraftPick(pick: InsertDraftPick): Promise<DraftPick>;
+  deleteDraftPick(pickId: number): Promise<void>;
   getDraftPickCount(draftId: number): Promise<number>;
+  getLastDraftPick(draftId: number): Promise<DraftPick | undefined>;
   getDraftPlayersByParentOrg(draftId: number, parentOrgName: string): Promise<DraftPlayerWithDetails[]>;
+  removeRosterAssignmentByPlayer(leagueId: number, userId: string, mlbPlayerId: number, season: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3423,6 +3427,32 @@ export class DatabaseStorage implements IStorage {
     const [result] = await db.select({ count: sql<number>`COUNT(*)::int` })
       .from(draftPicks).where(eq(draftPicks.draftId, draftId));
     return result?.count || 0;
+  }
+
+  async getDraftPickById(pickId: number): Promise<DraftPick | undefined> {
+    const [result] = await db.select().from(draftPicks).where(eq(draftPicks.id, pickId));
+    return result;
+  }
+
+  async deleteDraftPick(pickId: number): Promise<void> {
+    await db.delete(draftPicks).where(eq(draftPicks.id, pickId));
+  }
+
+  async getLastDraftPick(draftId: number): Promise<DraftPick | undefined> {
+    const [result] = await db.select().from(draftPicks)
+      .where(eq(draftPicks.draftId, draftId))
+      .orderBy(sql`${draftPicks.pickNumber} DESC`)
+      .limit(1);
+    return result;
+  }
+
+  async removeRosterAssignmentByPlayer(leagueId: number, userId: string, mlbPlayerId: number, season: number): Promise<void> {
+    await db.delete(leagueRosterAssignments).where(and(
+      eq(leagueRosterAssignments.leagueId, leagueId),
+      eq(leagueRosterAssignments.userId, userId),
+      eq(leagueRosterAssignments.mlbPlayerId, mlbPlayerId),
+      eq(leagueRosterAssignments.season, season),
+    ));
   }
 
   async getDraftPlayersByParentOrg(draftId: number, parentOrgName: string): Promise<DraftPlayerWithDetails[]> {

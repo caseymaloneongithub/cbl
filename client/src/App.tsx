@@ -23,6 +23,7 @@ import CommissionerTeams from "@/pages/commissioner/CommissionerTeams";
 import CommissionerRosters from "@/pages/commissioner/CommissionerRosters";
 import CommissionerSettings from "@/pages/commissioner/CommissionerSettings";
 import CommissionerDraft from "@/pages/commissioner/CommissionerDraft";
+import CommissionerDraftDetail from "@/pages/commissioner/CommissionerDraftDetail";
 import SuperAdmin from "@/pages/SuperAdmin";
 import DraftBoard from "@/pages/DraftBoard";
 
@@ -131,6 +132,9 @@ function Router() {
       </Route>
       <Route path="/commissioner/draft">
         {() => <CommissionerRoute component={CommissionerDraft} />}
+      </Route>
+      <Route path="/commissioner/drafts/:draftId">
+        {() => <CommissionerRoute component={CommissionerDraftDetail} />}
       </Route>
       <Route path="/commissioner/auctions/:auctionId">
         {() => <CommissionerRoute component={CommissionerAuction} />}

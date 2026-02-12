@@ -45,7 +45,7 @@ Preferred communication style: Simple, everyday language.
 - **Background Jobs**: Automated auction finalization, auto-bid deployment, and hourly email summaries.
 - **MLB Stats Integration**: Commissioners can sync player statistics from MLB's official Stats API, supporting fuzzy name matching, selective stat updates, and batch processing to respect API rate limits.
 - **Email Notifications**: Integrated with Resend for password resets, new user credentials, and hourly auction summaries with configurable notification settings (none, commissioner, bidders, league) and individual opt-out options.
-- **Draft System**: Full draft management with CSV-based order configuration, customizable rounds, and "Team Draft" functionality for drafting entire affiliated player pools.
+- **Draft System**: Full draft management with separate detail pages per draft (`/commissioner/drafts/:draftId`), CSV-based order configuration, customizable rounds, "Team Draft" functionality, commissioner pick-on-behalf and nullify/undo pick capabilities, and time-based pick scheduling with early-pick support.
 - **League Roster Assignments**: Tracks MLB players assigned to league teams per season, supporting ML and MiLB roster limits, and dynamically identifying unassigned players as free agents.
 
 ## External Dependencies
