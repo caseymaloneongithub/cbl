@@ -22,7 +22,9 @@ import CommissionerFreeAgency from "@/pages/commissioner/CommissionerFreeAgency"
 import CommissionerTeams from "@/pages/commissioner/CommissionerTeams";
 import CommissionerRosters from "@/pages/commissioner/CommissionerRosters";
 import CommissionerSettings from "@/pages/commissioner/CommissionerSettings";
+import CommissionerDraft from "@/pages/commissioner/CommissionerDraft";
 import SuperAdmin from "@/pages/SuperAdmin";
+import DraftBoard from "@/pages/DraftBoard";
 
 function CommissionerRoute({ component: Component }: { component: React.ComponentType<any> }) {
   const { user, isAuthenticated } = useAuth();
@@ -127,8 +129,14 @@ function Router() {
       <Route path="/commissioner/settings">
         {() => <CommissionerRoute component={CommissionerSettings} />}
       </Route>
+      <Route path="/commissioner/draft">
+        {() => <CommissionerRoute component={CommissionerDraft} />}
+      </Route>
       <Route path="/commissioner/auctions/:auctionId">
         {() => <CommissionerRoute component={CommissionerAuction} />}
+      </Route>
+      <Route path="/draft/:draftId">
+        {() => <ProtectedRoute component={DraftBoard} />}
       </Route>
       <Route path="/super-admin">
         {() => <SuperAdminRoute component={SuperAdmin} />}

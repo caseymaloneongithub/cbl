@@ -127,6 +127,7 @@ export function Header() {
 
   const commissionerItems = [
     { href: "/commissioner/free-agency", label: "Auction Management" },
+    { href: "/commissioner/draft", label: "Draft" },
     { href: "/commissioner/teams", label: "Teams" },
     { href: "/commissioner/rosters/mlb", label: "MLB Rosters" },
     { href: "/commissioner/rosters/milb", label: "MiLB Rosters" },

@@ -14,7 +14,7 @@ Preferred communication style: Simple, everyday language.
 - **Styling**: Tailwind CSS with custom CSS variables for theming, supporting light/dark modes.
 - **State Management**: TanStack Query for server state management with aggressive caching.
 - **Routing**: Wouter, handling Landing, Home, My Bids, Results, Commissioner sub-pages, and SuperAdmin pages.
-  - **Navigation**: Dropdown menus for Free Agency (Free Agents, My Bids, Results), My Roster (ML, MiLB), Players (ML, MiLB), Commissioner (Auction Management, Teams, ML Rosters, MiLB Rosters, League Settings)
+  - **Navigation**: Dropdown menus for Free Agency (Free Agents, My Bids, Results), My Roster (ML, MiLB), Players (ML, MiLB), Commissioner (Auction Management, Draft, Teams, MLB Rosters, MiLB Rosters, League Settings)
   - **SuperAdmin page**: Super-admin only; league CRUD, member management, user creation
   - **Commissioner sub-pages** (split from single 2118-line page):
     - `/commissioner/free-agency` - Auction CRUD, activate/reset/delete, data exports
@@ -22,7 +22,9 @@ Preferred communication style: Simple, everyday language.
     - `/commissioner/rosters/mlb` - ML roster assignments (reuses RosterManagement with rosterLevel="mlb")
     - `/commissioner/rosters/milb` - MiLB roster assignments (reuses RosterManagement with rosterLevel="milb")
     - `/commissioner/settings` - League caps, roster CSV upload/clear, roster usage tracking
+    - `/commissioner/draft` - Draft CRUD, player pool upload via MLB API IDs, draft order management, start/complete drafts
     - `/commissioner/auctions/:id` - Per-auction management (free agents, settings, teams, MLB sync)
+  - `/draft/:draftId` - Live draft board for picking players during active drafts
   - `/commissioner` redirects to `/commissioner/free-agency`
 - **Key Design Decisions**: Component co-location, path aliases, React Hook Form with Zod for validation, real-time countdowns.
 
@@ -36,7 +38,7 @@ Preferred communication style: Simple, everyday language.
 ### Database Layer
 - **ORM**: Drizzle ORM with PostgreSQL.
 - **Schema**: Centralized in `shared/schema.ts`, using Drizzle-Zod for runtime validation.
-- **Core Tables**: `users`, `auctions`, `auctionTeams`, `leagueSettings`, `freeAgents`, `bids`, `autoBids`, `sessions`.
+- **Core Tables**: `users`, `auctions`, `auctionTeams`, `leagueSettings`, `freeAgents`, `bids`, `autoBids`, `sessions`, `drafts`, `draftPlayers`, `draftPicks`, `draftOrder`.
 - **Storage Abstraction**: `server/storage.ts` for database operations encapsulation.
 - **Migrations**: Drizzle Kit for schema changes, stored in `/migrations`.
 - **User Table**: Stores only basic account info: email, firstName, lastName, teamName, isCommissioner, isSuperAdmin. No budget or limits.

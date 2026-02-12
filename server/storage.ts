@@ -48,6 +48,19 @@ import {
   leagueRosterAssignments,
   type LeagueRosterAssignment,
   type InsertLeagueRosterAssignment,
+  drafts,
+  draftPlayers,
+  draftOrder,
+  draftPicks,
+  type Draft,
+  type InsertDraft,
+  type DraftPlayer,
+  type DraftPlayerWithDetails,
+  type DraftOrder,
+  type DraftPick,
+  type InsertDraftPick,
+  type DraftPickWithDetails,
+  type DraftWithDetails,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, lt, sql, isNull, inArray, or } from "drizzle-orm";
@@ -308,6 +321,29 @@ export interface IStorage {
   getUnassignedPlayers(leagueId: number, season: number, filters?: { search?: string; sportLevel?: string; limit?: number; offset?: number }): Promise<MlbPlayer[]>;
   getUnassignedPlayerCount(leagueId: number, season: number, filters?: { search?: string; sportLevel?: string }): Promise<number>;
   bulkAssignPlayers(assignments: InsertLeagueRosterAssignment[]): Promise<number>;
+  
+  // Draft operations
+  getDraft(id: number): Promise<Draft | undefined>;
+  getDraftsByLeague(leagueId: number): Promise<DraftWithDetails[]>;
+  createDraft(data: InsertDraft): Promise<Draft>;
+  updateDraft(id: number, data: Partial<Draft>): Promise<Draft | undefined>;
+  deleteDraft(id: number): Promise<void>;
+  
+  // Draft players
+  getDraftPlayers(draftId: number, filters?: { status?: string; search?: string }): Promise<DraftPlayerWithDetails[]>;
+  getDraftPlayerCount(draftId: number, status?: string): Promise<number>;
+  addDraftPlayers(draftId: number, mlbPlayerIds: number[]): Promise<number>;
+  clearDraftPlayers(draftId: number): Promise<number>;
+  updateDraftPlayerStatus(draftId: number, mlbPlayerId: number, status: string): Promise<void>;
+  
+  // Draft order
+  getDraftOrder(draftId: number): Promise<(DraftOrder & { user: User })[]>;
+  setDraftOrder(draftId: number, order: { userId: string; orderIndex: number }[]): Promise<void>;
+  
+  // Draft picks
+  getDraftPicks(draftId: number): Promise<DraftPickWithDetails[]>;
+  createDraftPick(pick: InsertDraftPick): Promise<DraftPick>;
+  getDraftPickCount(draftId: number): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3179,6 +3215,163 @@ export class DatabaseStorage implements IStorage {
       total += batch.length;
     }
     return total;
+  }
+
+  // Draft operations
+  async getDraft(id: number): Promise<Draft | undefined> {
+    const [draft] = await db.select().from(drafts).where(eq(drafts.id, id));
+    return draft;
+  }
+
+  async getDraftsByLeague(leagueId: number): Promise<DraftWithDetails[]> {
+    const allDrafts = await db.select().from(drafts)
+      .where(eq(drafts.leagueId, leagueId))
+      .orderBy(desc(drafts.createdAt));
+    
+    const result: DraftWithDetails[] = [];
+    for (const draft of allDrafts) {
+      const [playerCount] = await db.select({ count: sql<number>`COUNT(*)::int` })
+        .from(draftPlayers).where(eq(draftPlayers.draftId, draft.id));
+      const [pickCount] = await db.select({ count: sql<number>`COUNT(*)::int` })
+        .from(draftPicks).where(eq(draftPicks.draftId, draft.id));
+      const [teamCount] = await db.select({ count: sql<number>`COUNT(*)::int` })
+        .from(draftOrder).where(eq(draftOrder.draftId, draft.id));
+      result.push({
+        ...draft,
+        playerCount: playerCount?.count || 0,
+        pickCount: pickCount?.count || 0,
+        teamCount: teamCount?.count || 0,
+      });
+    }
+    return result;
+  }
+
+  async createDraft(data: InsertDraft): Promise<Draft> {
+    const [draft] = await db.insert(drafts).values(data).returning();
+    return draft;
+  }
+
+  async updateDraft(id: number, data: Partial<Draft>): Promise<Draft | undefined> {
+    const { id: _, ...updateData } = data as any;
+    const [draft] = await db.update(drafts).set(updateData).where(eq(drafts.id, id)).returning();
+    return draft;
+  }
+
+  async deleteDraft(id: number): Promise<void> {
+    await db.delete(drafts).where(eq(drafts.id, id));
+  }
+
+  // Draft players
+  async getDraftPlayers(draftId: number, filters?: { status?: string; search?: string }): Promise<DraftPlayerWithDetails[]> {
+    const conditions = [eq(draftPlayers.draftId, draftId)];
+    if (filters?.status) {
+      conditions.push(eq(draftPlayers.status, filters.status));
+    }
+    if (filters?.search) {
+      conditions.push(sql`LOWER(${mlbPlayers.fullName}) LIKE LOWER(${'%' + filters.search + '%'})`);
+    }
+    const rows = await db.select({
+      draftPlayer: draftPlayers,
+      player: mlbPlayers,
+    })
+      .from(draftPlayers)
+      .innerJoin(mlbPlayers, eq(draftPlayers.mlbPlayerId, mlbPlayers.id))
+      .where(and(...conditions))
+      .orderBy(mlbPlayers.fullName);
+    
+    return rows.map(r => ({ ...r.draftPlayer, player: r.player }));
+  }
+
+  async getDraftPlayerCount(draftId: number, status?: string): Promise<number> {
+    const conditions = [eq(draftPlayers.draftId, draftId)];
+    if (status) conditions.push(eq(draftPlayers.status, status));
+    const [result] = await db.select({ count: sql<number>`COUNT(*)::int` })
+      .from(draftPlayers).where(and(...conditions));
+    return result?.count || 0;
+  }
+
+  async addDraftPlayers(draftId: number, mlbPlayerIds: number[]): Promise<number> {
+    if (mlbPlayerIds.length === 0) return 0;
+    const existing = await db.select({ mlbPlayerId: draftPlayers.mlbPlayerId })
+      .from(draftPlayers).where(eq(draftPlayers.draftId, draftId));
+    const existingSet = new Set(existing.map(e => e.mlbPlayerId));
+    const newIds = mlbPlayerIds.filter(id => !existingSet.has(id));
+    if (newIds.length === 0) return 0;
+    const values = newIds.map(mlbPlayerId => ({ draftId, mlbPlayerId }));
+    const BATCH_SIZE = 100;
+    let total = 0;
+    for (let i = 0; i < values.length; i += BATCH_SIZE) {
+      const batch = values.slice(i, i + BATCH_SIZE);
+      await db.insert(draftPlayers).values(batch);
+      total += batch.length;
+    }
+    return total;
+  }
+
+  async clearDraftPlayers(draftId: number): Promise<number> {
+    const result = await db.delete(draftPlayers).where(eq(draftPlayers.draftId, draftId));
+    return result.rowCount || 0;
+  }
+
+  async updateDraftPlayerStatus(draftId: number, mlbPlayerId: number, status: string): Promise<void> {
+    await db.update(draftPlayers).set({ status })
+      .where(and(eq(draftPlayers.draftId, draftId), eq(draftPlayers.mlbPlayerId, mlbPlayerId)));
+  }
+
+  // Draft order
+  async getDraftOrder(draftId: number): Promise<(DraftOrder & { user: User })[]> {
+    const rows = await db.select({
+      order: draftOrder,
+      user: users,
+    })
+      .from(draftOrder)
+      .innerJoin(users, eq(draftOrder.userId, users.id))
+      .where(eq(draftOrder.draftId, draftId))
+      .orderBy(draftOrder.orderIndex);
+    return rows.map(r => ({ ...r.order, user: r.user }));
+  }
+
+  async setDraftOrder(draftId: number, order: { userId: string; orderIndex: number }[]): Promise<void> {
+    await db.delete(draftOrder).where(eq(draftOrder.draftId, draftId));
+    if (order.length > 0) {
+      await db.insert(draftOrder).values(order.map(o => ({ draftId, ...o })));
+    }
+  }
+
+  // Draft picks
+  async getDraftPicks(draftId: number): Promise<DraftPickWithDetails[]> {
+    const rows = await db.select({
+      pick: draftPicks,
+      player: mlbPlayers,
+      user: users,
+    })
+      .from(draftPicks)
+      .innerJoin(mlbPlayers, eq(draftPicks.mlbPlayerId, mlbPlayers.id))
+      .innerJoin(users, eq(draftPicks.userId, users.id))
+      .where(eq(draftPicks.draftId, draftId))
+      .orderBy(draftPicks.pickNumber);
+    
+    return rows.map(r => ({
+      ...r.pick,
+      player: r.player,
+      user: {
+        id: r.user.id,
+        firstName: r.user.firstName,
+        lastName: r.user.lastName,
+        teamName: r.user.teamName,
+      },
+    }));
+  }
+
+  async createDraftPick(pick: InsertDraftPick): Promise<DraftPick> {
+    const [result] = await db.insert(draftPicks).values(pick).returning();
+    return result;
+  }
+
+  async getDraftPickCount(draftId: number): Promise<number> {
+    const [result] = await db.select({ count: sql<number>`COUNT(*)::int` })
+      .from(draftPicks).where(eq(draftPicks.draftId, draftId));
+    return result?.count || 0;
   }
 }
 

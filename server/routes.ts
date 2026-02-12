@@ -4615,6 +4615,541 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== Draft Routes ====================
+
+  // GET /api/drafts - Get all drafts for a league
+  app.get("/api/drafts", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const leagueId = parseInt(req.query.leagueId);
+      if (isNaN(leagueId)) {
+        return res.status(400).json({ message: "leagueId query parameter is required" });
+      }
+
+      const membership = await storage.getLeagueMember(leagueId, userId);
+      const user = await storage.getUser(userId);
+      if (!membership && !user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Not a member of this league" });
+      }
+
+      const allDrafts = await storage.getDraftsByLeague(leagueId);
+      res.json(allDrafts);
+    } catch (error) {
+      console.error("Error fetching drafts:", error);
+      res.status(500).json({ message: "Failed to fetch drafts" });
+    }
+  });
+
+  // GET /api/drafts/:id - Get a specific draft with details
+  app.get("/api/drafts/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid draft ID" });
+      }
+
+      const draft = await storage.getDraft(id);
+      if (!draft) {
+        return res.status(404).json({ message: "Draft not found" });
+      }
+
+      const membership = await storage.getLeagueMember(draft.leagueId, userId);
+      const user = await storage.getUser(userId);
+      if (!membership && !user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Not a member of this league" });
+      }
+
+      res.json(draft);
+    } catch (error) {
+      console.error("Error fetching draft:", error);
+      res.status(500).json({ message: "Failed to fetch draft" });
+    }
+  });
+
+  // POST /api/drafts - Create a draft
+  app.post("/api/drafts", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const { name, leagueId, season, rounds, snake } = req.body;
+
+      if (!name || !leagueId || !season) {
+        return res.status(400).json({ message: "name, leagueId, and season are required" });
+      }
+
+      if (!await hasLeagueCommissionerAccess(userId, leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const draft = await storage.createDraft({
+        name,
+        leagueId,
+        season,
+        rounds: rounds || 1,
+        snake: snake !== undefined ? snake : true,
+        status: "setup",
+        createdBy: userId,
+      });
+
+      res.status(201).json(draft);
+    } catch (error) {
+      console.error("Error creating draft:", error);
+      res.status(500).json({ message: "Failed to create draft" });
+    }
+  });
+
+  // PATCH /api/drafts/:id - Update draft settings
+  app.patch("/api/drafts/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid draft ID" });
+      }
+
+      const draft = await storage.getDraft(id);
+      if (!draft) {
+        return res.status(404).json({ message: "Draft not found" });
+      }
+
+      if (draft.status !== "setup") {
+        return res.status(400).json({ message: "Can only update drafts in setup status" });
+      }
+
+      if (!await hasLeagueCommissionerAccess(userId, draft.leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const { name, rounds, snake } = req.body;
+      const updateData: any = {};
+      if (name !== undefined) updateData.name = name;
+      if (rounds !== undefined) updateData.rounds = rounds;
+      if (snake !== undefined) updateData.snake = snake;
+
+      const updated = await storage.updateDraft(id, updateData);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating draft:", error);
+      res.status(500).json({ message: "Failed to update draft" });
+    }
+  });
+
+  // DELETE /api/drafts/:id - Delete a draft
+  app.delete("/api/drafts/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid draft ID" });
+      }
+
+      const draft = await storage.getDraft(id);
+      if (!draft) {
+        return res.status(404).json({ message: "Draft not found" });
+      }
+
+      if (draft.status !== "setup") {
+        return res.status(400).json({ message: "Can only delete drafts in setup status" });
+      }
+
+      if (!await hasLeagueCommissionerAccess(userId, draft.leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      await storage.deleteDraft(id);
+      res.json({ message: "Draft deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting draft:", error);
+      res.status(500).json({ message: "Failed to delete draft" });
+    }
+  });
+
+  // POST /api/drafts/:id/start - Start the draft
+  app.post("/api/drafts/:id/start", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid draft ID" });
+      }
+
+      const draft = await storage.getDraft(id);
+      if (!draft) {
+        return res.status(404).json({ message: "Draft not found" });
+      }
+
+      if (draft.status !== "setup") {
+        return res.status(400).json({ message: "Draft is not in setup status" });
+      }
+
+      if (!await hasLeagueCommissionerAccess(userId, draft.leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const playerCount = await storage.getDraftPlayerCount(id);
+      if (playerCount === 0) {
+        return res.status(400).json({ message: "Draft must have players in the pool before starting" });
+      }
+
+      const order = await storage.getDraftOrder(id);
+      if (order.length === 0) {
+        return res.status(400).json({ message: "Draft order must be set before starting" });
+      }
+
+      const updated = await storage.updateDraft(id, {
+        status: "active",
+        currentRound: 1,
+        currentPickIndex: 0,
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error starting draft:", error);
+      res.status(500).json({ message: "Failed to start draft" });
+    }
+  });
+
+  // POST /api/drafts/:id/complete - Complete the draft manually
+  app.post("/api/drafts/:id/complete", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid draft ID" });
+      }
+
+      const draft = await storage.getDraft(id);
+      if (!draft) {
+        return res.status(404).json({ message: "Draft not found" });
+      }
+
+      if (!await hasLeagueCommissionerAccess(userId, draft.leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const updated = await storage.updateDraft(id, { status: "completed" });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error completing draft:", error);
+      res.status(500).json({ message: "Failed to complete draft" });
+    }
+  });
+
+  // GET /api/drafts/:id/players - Get draft player pool
+  app.get("/api/drafts/:id/players", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid draft ID" });
+      }
+
+      const draft = await storage.getDraft(id);
+      if (!draft) {
+        return res.status(404).json({ message: "Draft not found" });
+      }
+
+      const membership = await storage.getLeagueMember(draft.leagueId, userId);
+      const user = await storage.getUser(userId);
+      if (!membership && !user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Not a member of this league" });
+      }
+
+      const filters: { status?: string; search?: string } = {};
+      if (req.query.status) filters.status = req.query.status;
+      if (req.query.search) filters.search = req.query.search;
+
+      const players = await storage.getDraftPlayers(id, filters);
+      res.json(players);
+    } catch (error) {
+      console.error("Error fetching draft players:", error);
+      res.status(500).json({ message: "Failed to fetch draft players" });
+    }
+  });
+
+  // POST /api/drafts/:id/players/upload - Upload MLB player IDs to draft pool
+  app.post("/api/drafts/:id/players/upload", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid draft ID" });
+      }
+
+      const draft = await storage.getDraft(id);
+      if (!draft) {
+        return res.status(404).json({ message: "Draft not found" });
+      }
+
+      if (draft.status !== "setup") {
+        return res.status(400).json({ message: "Can only add players when draft is in setup status" });
+      }
+
+      if (!await hasLeagueCommissionerAccess(userId, draft.leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const { mlbIds } = req.body;
+      if (!Array.isArray(mlbIds) || mlbIds.length === 0) {
+        return res.status(400).json({ message: "mlbIds array is required" });
+      }
+
+      const matchedIds: number[] = [];
+      const notFound: number[] = [];
+
+      for (const mlbId of mlbIds) {
+        const player = await storage.getMlbPlayerByMlbId(mlbId);
+        if (player) {
+          matchedIds.push(player.id);
+        } else {
+          notFound.push(mlbId);
+        }
+      }
+
+      const existingPlayers = await storage.getDraftPlayers(id);
+      const existingMlbPlayerIds = new Set(existingPlayers.map(p => p.mlbPlayerId));
+      const newIds = matchedIds.filter(pid => !existingMlbPlayerIds.has(pid));
+      const alreadyInPool = matchedIds.length - newIds.length;
+
+      let added = 0;
+      if (newIds.length > 0) {
+        added = await storage.addDraftPlayers(id, newIds);
+      }
+
+      res.json({ added, notFound, alreadyInPool });
+    } catch (error) {
+      console.error("Error uploading draft players:", error);
+      res.status(500).json({ message: "Failed to upload draft players" });
+    }
+  });
+
+  // DELETE /api/drafts/:id/players - Clear draft player pool
+  app.delete("/api/drafts/:id/players", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid draft ID" });
+      }
+
+      const draft = await storage.getDraft(id);
+      if (!draft) {
+        return res.status(404).json({ message: "Draft not found" });
+      }
+
+      if (draft.status !== "setup") {
+        return res.status(400).json({ message: "Can only clear players when draft is in setup status" });
+      }
+
+      if (!await hasLeagueCommissionerAccess(userId, draft.leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const removed = await storage.clearDraftPlayers(id);
+      res.json({ removed });
+    } catch (error) {
+      console.error("Error clearing draft players:", error);
+      res.status(500).json({ message: "Failed to clear draft players" });
+    }
+  });
+
+  // GET /api/drafts/:id/order - Get draft order
+  app.get("/api/drafts/:id/order", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid draft ID" });
+      }
+
+      const draft = await storage.getDraft(id);
+      if (!draft) {
+        return res.status(404).json({ message: "Draft not found" });
+      }
+
+      const membership = await storage.getLeagueMember(draft.leagueId, userId);
+      const user = await storage.getUser(userId);
+      if (!membership && !user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Not a member of this league" });
+      }
+
+      const order = await storage.getDraftOrder(id);
+      res.json(order);
+    } catch (error) {
+      console.error("Error fetching draft order:", error);
+      res.status(500).json({ message: "Failed to fetch draft order" });
+    }
+  });
+
+  // POST /api/drafts/:id/order - Set draft order
+  app.post("/api/drafts/:id/order", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid draft ID" });
+      }
+
+      const draft = await storage.getDraft(id);
+      if (!draft) {
+        return res.status(404).json({ message: "Draft not found" });
+      }
+
+      if (draft.status !== "setup") {
+        return res.status(400).json({ message: "Can only set order when draft is in setup status" });
+      }
+
+      if (!await hasLeagueCommissionerAccess(userId, draft.leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const { order } = req.body;
+      if (!Array.isArray(order)) {
+        return res.status(400).json({ message: "order array is required" });
+      }
+
+      await storage.setDraftOrder(id, order);
+      const updatedOrder = await storage.getDraftOrder(id);
+      res.json(updatedOrder);
+    } catch (error) {
+      console.error("Error setting draft order:", error);
+      res.status(500).json({ message: "Failed to set draft order" });
+    }
+  });
+
+  // GET /api/drafts/:id/picks - Get all picks made in the draft
+  app.get("/api/drafts/:id/picks", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid draft ID" });
+      }
+
+      const draft = await storage.getDraft(id);
+      if (!draft) {
+        return res.status(404).json({ message: "Draft not found" });
+      }
+
+      const membership = await storage.getLeagueMember(draft.leagueId, userId);
+      const user = await storage.getUser(userId);
+      if (!membership && !user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Not a member of this league" });
+      }
+
+      const picks = await storage.getDraftPicks(id);
+      res.json(picks);
+    } catch (error) {
+      console.error("Error fetching draft picks:", error);
+      res.status(500).json({ message: "Failed to fetch draft picks" });
+    }
+  });
+
+  // POST /api/drafts/:id/pick - Make a pick
+  app.post("/api/drafts/:id/pick", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const commissionerUserId = req.session.originalUserId || req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid draft ID" });
+      }
+
+      const draft = await storage.getDraft(id);
+      if (!draft) {
+        return res.status(404).json({ message: "Draft not found" });
+      }
+
+      if (draft.status !== "active") {
+        return res.status(400).json({ message: "Draft is not active" });
+      }
+
+      const { mlbPlayerId, rosterType } = req.body;
+      if (!mlbPlayerId || !rosterType) {
+        return res.status(400).json({ message: "mlbPlayerId and rosterType are required" });
+      }
+
+      if (rosterType !== "mlb" && rosterType !== "milb") {
+        return res.status(400).json({ message: "rosterType must be 'mlb' or 'milb'" });
+      }
+
+      const order = await storage.getDraftOrder(id);
+      if (order.length === 0) {
+        return res.status(400).json({ message: "Draft order is not set" });
+      }
+
+      const totalTeams = order.length;
+      const currentRound = draft.currentRound;
+      const currentPickIndex = draft.currentPickIndex;
+
+      let pickingOrderIndex: number;
+      if (draft.snake && currentRound % 2 === 0) {
+        pickingOrderIndex = totalTeams - 1 - currentPickIndex;
+      } else {
+        pickingOrderIndex = currentPickIndex;
+      }
+
+      const currentPicker = order.find(o => o.orderIndex === pickingOrderIndex);
+      if (!currentPicker) {
+        return res.status(500).json({ message: "Could not determine current picker" });
+      }
+
+      const isCommissioner = await hasLeagueCommissionerAccess(commissionerUserId, draft.leagueId);
+      if (userId !== currentPicker.userId && !isCommissioner) {
+        return res.status(403).json({ message: "It is not your turn to pick" });
+      }
+
+      const pickingUserId = currentPicker.userId;
+
+      const draftPlayers = await storage.getDraftPlayers(id, { status: "available" });
+      const playerInPool = draftPlayers.find(dp => dp.mlbPlayerId === mlbPlayerId);
+      if (!playerInPool) {
+        return res.status(400).json({ message: "Player is not available in the draft pool" });
+      }
+
+      const pickCount = await storage.getDraftPickCount(id);
+      const pickNumber = pickCount + 1;
+
+      const pick = await storage.createDraftPick({
+        draftId: id,
+        round: currentRound,
+        pickNumber,
+        userId: pickingUserId,
+        mlbPlayerId,
+        rosterType,
+      });
+
+      await storage.updateDraftPlayerStatus(id, mlbPlayerId, "drafted");
+
+      await storage.assignPlayerToRoster({
+        leagueId: draft.leagueId,
+        userId: pickingUserId,
+        mlbPlayerId,
+        rosterType,
+        season: draft.season,
+      });
+
+      let nextPickIndex = currentPickIndex + 1;
+      let nextRound = currentRound;
+
+      if (nextPickIndex >= totalTeams) {
+        nextPickIndex = 0;
+        nextRound = currentRound + 1;
+      }
+
+      if (nextRound > draft.rounds) {
+        await storage.updateDraft(id, { status: "completed", currentPickIndex: currentPickIndex, currentRound: currentRound });
+      } else {
+        await storage.updateDraft(id, { currentPickIndex: nextPickIndex, currentRound: nextRound });
+      }
+
+      res.status(201).json(pick);
+    } catch (error) {
+      console.error("Error making draft pick:", error);
+      res.status(500).json({ message: "Failed to make draft pick" });
+    }
+  });
+
   return httpServer;
 }
 

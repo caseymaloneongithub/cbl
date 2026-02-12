@@ -473,6 +473,81 @@ export const insertEmailOptOutSchema = createInsertSchema(emailOptOuts).omit({
   createdAt: true,
 });
 
+// Drafts - league-scoped draft events
+export const drafts = pgTable("drafts", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  leagueId: integer("league_id").references(() => leagues.id).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  season: integer("season").notNull(),
+  rounds: integer("rounds").notNull().default(1),
+  snake: boolean("snake").notNull().default(true),
+  status: varchar("status", { length: 20 }).notNull().default("setup"), // 'setup', 'active', 'completed'
+  currentRound: integer("current_round").notNull().default(1),
+  currentPickIndex: integer("current_pick_index").notNull().default(0),
+  createdBy: varchar("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_drafts_league").on(table.leagueId),
+]);
+
+export const insertDraftSchema = createInsertSchema(drafts).omit({
+  id: true,
+  createdAt: true,
+  currentRound: true,
+  currentPickIndex: true,
+});
+
+// Draft players - pool of players eligible for a draft
+export const draftPlayers = pgTable("draft_players", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  draftId: integer("draft_id").references(() => drafts.id, { onDelete: "cascade" }).notNull(),
+  mlbPlayerId: integer("mlb_player_id").references(() => mlbPlayers.id).notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("available"), // 'available', 'drafted'
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_draft_players_draft").on(table.draftId),
+  index("idx_draft_players_mlb").on(table.mlbPlayerId),
+]);
+
+export const insertDraftPlayerSchema = createInsertSchema(draftPlayers).omit({
+  id: true,
+  createdAt: true,
+  status: true,
+});
+
+// Draft order - defines pick order for each draft
+export const draftOrder = pgTable("draft_order", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  draftId: integer("draft_id").references(() => drafts.id, { onDelete: "cascade" }).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  orderIndex: integer("order_index").notNull(),
+}, (table) => [
+  index("idx_draft_order_draft").on(table.draftId),
+]);
+
+export const insertDraftOrderSchema = createInsertSchema(draftOrder).omit({
+  id: true,
+});
+
+// Draft picks - records of each pick made
+export const draftPicks = pgTable("draft_picks", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  draftId: integer("draft_id").references(() => drafts.id, { onDelete: "cascade" }).notNull(),
+  round: integer("round").notNull(),
+  pickNumber: integer("pick_number").notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  mlbPlayerId: integer("mlb_player_id").references(() => mlbPlayers.id).notNull(),
+  rosterType: varchar("roster_type", { length: 10 }).notNull(), // 'mlb' or 'milb'
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_draft_picks_draft").on(table.draftId),
+]);
+
+export const insertDraftPickSchema = createInsertSchema(draftPicks).omit({
+  id: true,
+  createdAt: true,
+});
+
 // League roster assignments - links MLB players to league teams
 export const leagueRosterAssignments = pgTable("league_roster_assignments", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -577,6 +652,33 @@ export type InsertMlbPlayer = z.infer<typeof insertMlbPlayerSchema>;
 
 export type LeagueRosterAssignment = typeof leagueRosterAssignments.$inferSelect;
 export type InsertLeagueRosterAssignment = z.infer<typeof insertLeagueRosterAssignmentSchema>;
+
+export type Draft = typeof drafts.$inferSelect;
+export type InsertDraft = z.infer<typeof insertDraftSchema>;
+
+export type DraftPlayer = typeof draftPlayers.$inferSelect;
+export type InsertDraftPlayer = z.infer<typeof insertDraftPlayerSchema>;
+
+export type DraftOrder = typeof draftOrder.$inferSelect;
+export type InsertDraftOrder = z.infer<typeof insertDraftOrderSchema>;
+
+export type DraftPick = typeof draftPicks.$inferSelect;
+export type InsertDraftPick = z.infer<typeof insertDraftPickSchema>;
+
+export type DraftPlayerWithDetails = DraftPlayer & {
+  player: MlbPlayer;
+};
+
+export type DraftPickWithDetails = DraftPick & {
+  player: MlbPlayer;
+  user: Pick<User, 'id' | 'firstName' | 'lastName' | 'teamName'>;
+};
+
+export type DraftWithDetails = Draft & {
+  playerCount: number;
+  pickCount: number;
+  teamCount: number;
+};
 
 // Extended types for frontend use
 export type FreeAgentWithBids = FreeAgent & {
