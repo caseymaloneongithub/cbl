@@ -4723,11 +4723,13 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
-      const { name, rounds, snake } = req.body;
+      const { name, rounds, snake, pickDurationMinutes, teamDraftRound } = req.body;
       const updateData: any = {};
       if (name !== undefined) updateData.name = name;
       if (rounds !== undefined) updateData.rounds = rounds;
       if (snake !== undefined) updateData.snake = snake;
+      if (pickDurationMinutes !== undefined) updateData.pickDurationMinutes = pickDurationMinutes;
+      if (teamDraftRound !== undefined) updateData.teamDraftRound = teamDraftRound;
 
       const updated = await storage.updateDraft(id, updateData);
       res.json(updated);

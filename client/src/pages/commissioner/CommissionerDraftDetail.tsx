@@ -39,8 +39,8 @@ export default function CommissionerDraftDetail() {
   const [, navigate] = useLocation();
 
   const [editName, setEditName] = useState("");
-  const [editRounds, setEditRounds] = useState(5);
-  const [editSnake, setEditSnake] = useState(true);
+  const [editPickDuration, setEditPickDuration] = useState(60);
+  const [editTeamDraftRound, setEditTeamDraftRound] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [playerIdsText, setPlayerIdsText] = useState("");
   const [csvText, setCsvText] = useState("");
@@ -117,7 +117,7 @@ export default function CommissionerDraftDetail() {
   const updateDraft = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("PATCH", `/api/drafts/${draftId}`, {
-        name: editName, rounds: editRounds, snake: editSnake,
+        name: editName, pickDurationMinutes: editPickDuration, teamDraftRound: editTeamDraftRound ? Number(editTeamDraftRound) : null,
       });
       return res.json();
     },
@@ -317,8 +317,8 @@ export default function CommissionerDraftDetail() {
   const handleInitSettings = () => {
     if (draft) {
       setEditName(draft.name);
-      setEditRounds(draft.rounds);
-      setEditSnake(draft.snake);
+      setEditPickDuration(draft.pickDurationMinutes || 60);
+      setEditTeamDraftRound(draft.teamDraftRound ? String(draft.teamDraftRound) : "");
       setShowSettings(true);
     }
   };
@@ -604,6 +604,14 @@ export default function CommissionerDraftDetail() {
                     <Label htmlFor="edit-name">Name</Label>
                     <Input id="edit-name" value={editName} onChange={e => setEditName(e.target.value)} data-testid="input-edit-draft-name" />
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-pick-duration">Pick Duration (minutes)</Label>
+                    <Input id="edit-pick-duration" type="number" value={editPickDuration} onChange={e => setEditPickDuration(Number(e.target.value))} min={1} max={1440} data-testid="input-edit-pick-duration" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-team-round">Team Draft Round (optional)</Label>
+                    <Input id="edit-team-round" type="number" value={editTeamDraftRound} onChange={e => setEditTeamDraftRound(e.target.value)} min={1} placeholder="Leave blank for none" data-testid="input-edit-team-round" />
+                  </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <Button onClick={() => updateDraft.mutate()} disabled={updateDraft.isPending} data-testid="button-save-settings">
                       {updateDraft.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</> : "Save Settings"}
@@ -614,8 +622,8 @@ export default function CommissionerDraftDetail() {
               ) : (
                 <div className="space-y-2">
                   <p className="text-sm"><span className="text-muted-foreground">Name:</span> {draft.name}</p>
-                  <p className="text-sm"><span className="text-muted-foreground">Rounds:</span> {draft.rounds}</p>
-                  <p className="text-sm"><span className="text-muted-foreground">Snake:</span> {draft.snake ? "Yes" : "No"}</p>
+                  <p className="text-sm"><span className="text-muted-foreground">Pick Duration:</span> {draft.pickDurationMinutes || 60} minutes</p>
+                  <p className="text-sm"><span className="text-muted-foreground">Team Draft Round:</span> {draft.teamDraftRound || "None"}</p>
                   <Button variant="outline" onClick={handleInitSettings} data-testid="button-edit-settings">
                     <Settings className="h-4 w-4 mr-2" />Edit Settings
                   </Button>
