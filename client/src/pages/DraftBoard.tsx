@@ -200,11 +200,15 @@ export default function DraftBoard() {
 
   const availableOrgs = useMemo(() => {
     if (!availablePlayers) return [];
-    const orgs = new Set<string>();
+    const orgs: string[] = [];
+    const seen: Record<string, boolean> = {};
     availablePlayers.forEach(dp => {
-      if (dp.player.parentOrgName) orgs.add(dp.player.parentOrgName);
+      if (dp.player.parentOrgName && !seen[dp.player.parentOrgName]) {
+        seen[dp.player.parentOrgName] = true;
+        orgs.push(dp.player.parentOrgName);
+      }
     });
-    return [...orgs].sort();
+    return orgs.sort();
   }, [availablePlayers]);
 
   const makePick = useMutation({

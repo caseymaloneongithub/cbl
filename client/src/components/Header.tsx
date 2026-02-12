@@ -113,6 +113,7 @@ export function Header() {
     { href: "/", label: "Free Agents" },
     { href: "/my-bids", label: "My Bids" },
     { href: "/results", label: "Results" },
+    { href: "/drafts", label: "Drafts" },
   ];
 
   const myRosterItems = [

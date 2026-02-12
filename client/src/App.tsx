@@ -26,6 +26,7 @@ import CommissionerDraft from "@/pages/commissioner/CommissionerDraft";
 import CommissionerDraftDetail from "@/pages/commissioner/CommissionerDraftDetail";
 import SuperAdmin from "@/pages/SuperAdmin";
 import DraftBoard from "@/pages/DraftBoard";
+import Drafts from "@/pages/Drafts";
 
 function CommissionerRoute({ component: Component }: { component: React.ComponentType<any> }) {
   const { user, isAuthenticated } = useAuth();
@@ -138,6 +139,9 @@ function Router() {
       </Route>
       <Route path="/commissioner/auctions/:auctionId">
         {() => <CommissionerRoute component={CommissionerAuction} />}
+      </Route>
+      <Route path="/drafts">
+        {() => <ProtectedRoute component={Drafts} />}
       </Route>
       <Route path="/draft/:draftId">
         {() => <ProtectedRoute component={DraftBoard} />}
