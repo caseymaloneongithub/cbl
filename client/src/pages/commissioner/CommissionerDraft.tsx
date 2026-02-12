@@ -241,6 +241,8 @@ export default function CommissionerDraft() {
     uploadPlayers.mutate(ids);
   };
 
+  const activeMembers = leagueMembers?.filter(m => !m.isArchived) || [];
+
   const csvPreview = useMemo(() => {
     if (!csvText.trim()) return null;
     const lines = csvText.trim().split("\n").map(l => l.trim()).filter(l => l.length > 0);
@@ -306,8 +308,6 @@ export default function CommissionerDraft() {
       .filter(o => o.roundNumber === roundNumber)
       .sort((a, b) => a.orderIndex - b.orderIndex);
   };
-
-  const activeMembers = leagueMembers?.filter(m => !m.isArchived) || [];
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
