@@ -88,7 +88,13 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
         sortDir,
       });
       if (debouncedSearch) params.set("search", debouncedSearch);
-      if (mlbTeamFilter && mlbTeamFilter !== "all") params.set("currentTeamName", mlbTeamFilter);
+      if (mlbTeamFilter && mlbTeamFilter !== "all") {
+        if (level === "milb") {
+          params.set("parentOrgName", mlbTeamFilter);
+        } else {
+          params.set("currentTeamName", mlbTeamFilter);
+        }
+      }
       const res = await fetch(`/api/mlb-players?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch players");
       return res.json();
@@ -286,7 +292,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
                           <TableCell>
                             <Badge variant="outline">{p.primaryPosition || "—"}</Badge>
                           </TableCell>
-                          <TableCell className="text-muted-foreground">{p.currentTeamName || "—"}</TableCell>
+                          <TableCell className="text-muted-foreground">{level === "milb" ? (p.parentOrgName || p.currentTeamName || "—") : (p.currentTeamName || "—")}</TableCell>
                           <TableCell>{p.age || "—"}</TableCell>
                           <TableCell>{p.batSide || "—"}</TableCell>
                           <TableCell>{p.throwHand || "—"}</TableCell>

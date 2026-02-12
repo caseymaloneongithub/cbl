@@ -305,8 +305,8 @@ export interface IStorage {
   
   // MLB Players reference database
   upsertMlbPlayers(players: InsertMlbPlayer[]): Promise<number>;
-  getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number; currentTeamName?: string; season?: number; sortBy?: string; sortDir?: string }): Promise<MlbPlayer[]>;
-  getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; currentTeamName?: string; season?: number }): Promise<number>;
+  getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number; currentTeamName?: string; parentOrgName?: string; season?: number; sortBy?: string; sortDir?: string }): Promise<MlbPlayer[]>;
+  getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; currentTeamName?: string; parentOrgName?: string; season?: number }): Promise<number>;
   getMlbPlayerTeams(season?: number, sportLevel?: string): Promise<string[]>;
   getMlbPlayerByMlbId(mlbId: number): Promise<MlbPlayer | undefined>;
   clearMlbPlayers(season?: number): Promise<number>;
@@ -2978,7 +2978,7 @@ export class DatabaseStorage implements IStorage {
     return totalUpserted;
   }
 
-  async getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number; currentTeamName?: string; season?: number; sortBy?: string; sortDir?: string }): Promise<MlbPlayer[]> {
+  async getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number; currentTeamName?: string; parentOrgName?: string; season?: number; sortBy?: string; sortDir?: string }): Promise<MlbPlayer[]> {
     const conditions = [];
     if (filters?.sportLevel) {
       if (filters.sportLevel === 'MLB') {
@@ -2994,6 +2994,9 @@ export class DatabaseStorage implements IStorage {
     }
     if (filters?.currentTeamName) {
       conditions.push(eq(mlbPlayers.currentTeamName, filters.currentTeamName));
+    }
+    if (filters?.parentOrgName) {
+      conditions.push(eq(mlbPlayers.parentOrgName, filters.parentOrgName));
     }
     if (filters?.season) {
       conditions.push(eq(mlbPlayers.season, filters.season));
@@ -3011,7 +3014,9 @@ export class DatabaseStorage implements IStorage {
     } else if (sortCol === 'position') {
       query.orderBy(dir === 'DESC' ? sql`${mlbPlayers.primaryPosition} DESC NULLS LAST` : sql`${mlbPlayers.primaryPosition} ASC NULLS LAST`);
     } else if (sortCol === 'team') {
-      query.orderBy(dir === 'DESC' ? sql`${mlbPlayers.currentTeamName} DESC NULLS LAST` : sql`${mlbPlayers.currentTeamName} ASC NULLS LAST`);
+      const isMinors = filters?.sportLevel === 'minors';
+      const teamSortCol = isMinors ? mlbPlayers.parentOrgName : mlbPlayers.currentTeamName;
+      query.orderBy(dir === 'DESC' ? sql`${teamSortCol} DESC NULLS LAST` : sql`${teamSortCol} ASC NULLS LAST`);
     } else {
       query.orderBy(dir === 'DESC' ? sql`${mlbPlayers.fullName} DESC` : mlbPlayers.fullName);
     }
@@ -3026,7 +3031,7 @@ export class DatabaseStorage implements IStorage {
     return await query;
   }
 
-  async getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; currentTeamName?: string; season?: number }): Promise<number> {
+  async getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; currentTeamName?: string; parentOrgName?: string; season?: number }): Promise<number> {
     const conditions = [];
     if (filters?.sportLevel) {
       if (filters.sportLevel === 'MLB') {
@@ -3049,6 +3054,9 @@ export class DatabaseStorage implements IStorage {
     if (filters?.currentTeamName) {
       conditions.push(eq(mlbPlayers.currentTeamName, filters.currentTeamName));
     }
+    if (filters?.parentOrgName) {
+      conditions.push(eq(mlbPlayers.parentOrgName, filters.parentOrgName));
+    }
     if (filters?.season) {
       conditions.push(eq(mlbPlayers.season, filters.season));
     }
@@ -3063,7 +3071,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getMlbPlayerTeams(season?: number, sportLevel?: string): Promise<string[]> {
-    const conditions = [sql`${mlbPlayers.currentTeamName} IS NOT NULL`];
+    const useParentOrg = sportLevel === 'minors';
+    const teamCol = useParentOrg ? mlbPlayers.parentOrgName : mlbPlayers.currentTeamName;
+    const conditions = [sql`${teamCol} IS NOT NULL`];
     if (season) conditions.push(eq(mlbPlayers.season, season));
     if (sportLevel) {
       if (sportLevel === 'MLB') {
@@ -3074,10 +3084,10 @@ export class DatabaseStorage implements IStorage {
         conditions.push(eq(mlbPlayers.sportLevel, sportLevel));
       }
     }
-    const rows = await db.selectDistinct({ team: mlbPlayers.currentTeamName })
+    const rows = await db.selectDistinct({ team: teamCol })
       .from(mlbPlayers)
       .where(and(...conditions))
-      .orderBy(mlbPlayers.currentTeamName);
+      .orderBy(teamCol);
     return rows.map(r => r.team!).filter(Boolean);
   }
 
