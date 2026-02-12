@@ -4672,7 +4672,7 @@ export async function registerRoutes(
   app.post("/api/drafts", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.originalUserId || req.session.userId!;
-      const { name, leagueId, season, rounds, snake } = req.body;
+      const { name, leagueId, season, rounds, snake, pickDurationMinutes, teamDraftRound } = req.body;
 
       if (!name || !leagueId || !season) {
         return res.status(400).json({ message: "name, leagueId, and season are required" });
@@ -4688,6 +4688,8 @@ export async function registerRoutes(
         season,
         rounds: rounds || 1,
         snake: snake !== undefined ? snake : true,
+        pickDurationMinutes: pickDurationMinutes || 60,
+        teamDraftRound: teamDraftRound || null,
         status: "setup",
         createdBy: userId,
       });

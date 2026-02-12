@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
@@ -24,9 +23,8 @@ export default function CommissionerDraft() {
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newSeason, setNewSeason] = useState(2025);
-  const [newRounds, setNewRounds] = useState(5);
-  const [newSnake, setNewSnake] = useState(true);
+  const [newPickDuration, setNewPickDuration] = useState(60);
+  const [newTeamDraftRound, setNewTeamDraftRound] = useState("");
 
   const { data: drafts, isLoading: loadingDrafts } = useQuery<DraftWithDetails[]>({
     queryKey: ["/api/drafts", selectedLeagueId],
@@ -41,7 +39,11 @@ export default function CommissionerDraft() {
   const createDraft = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/drafts", {
-        name: newName, leagueId: selectedLeagueId, season: newSeason, rounds: newRounds, snake: newSnake,
+        name: newName,
+        leagueId: selectedLeagueId,
+        season: new Date().getFullYear(),
+        pickDurationMinutes: newPickDuration,
+        teamDraftRound: newTeamDraftRound ? Number(newTeamDraftRound) : null,
       });
       return res.json();
     },
@@ -49,9 +51,8 @@ export default function CommissionerDraft() {
       toast({ title: "Draft Created" });
       setCreateDialogOpen(false);
       setNewName("");
-      setNewSeason(2025);
-      setNewRounds(5);
-      setNewSnake(true);
+      setNewPickDuration(60);
+      setNewTeamDraftRound("");
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", selectedLeagueId] });
       navigate(`/commissioner/drafts/${data.id}`);
     },
@@ -94,16 +95,14 @@ export default function CommissionerDraft() {
                   <Input id="draft-name" value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g., 2025 MiLB Draft" data-testid="input-draft-name" />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="draft-season">Season</Label>
-                  <Input id="draft-season" type="number" value={newSeason} onChange={e => setNewSeason(Number(e.target.value))} data-testid="input-draft-season" />
+                  <Label htmlFor="draft-pick-duration">Pick Duration (minutes)</Label>
+                  <Input id="draft-pick-duration" type="number" value={newPickDuration} onChange={e => setNewPickDuration(Number(e.target.value))} min={1} max={1440} data-testid="input-draft-pick-duration" />
+                  <p className="text-xs text-muted-foreground">How long each owner has to make their pick.</p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="draft-rounds">Rounds</Label>
-                  <Input id="draft-rounds" type="number" value={newRounds} onChange={e => setNewRounds(Number(e.target.value))} min={1} max={50} data-testid="input-draft-rounds" />
-                </div>
-                <div className="flex items-center gap-3">
-                  <Switch id="draft-snake" checked={newSnake} onCheckedChange={setNewSnake} data-testid="switch-draft-snake" />
-                  <Label htmlFor="draft-snake">Snake draft</Label>
+                  <Label htmlFor="draft-team-round">Team Draft Round (optional)</Label>
+                  <Input id="draft-team-round" type="number" value={newTeamDraftRound} onChange={e => setNewTeamDraftRound(e.target.value)} min={1} placeholder="Leave blank for none" data-testid="input-draft-team-round" />
+                  <p className="text-xs text-muted-foreground">Which round is the team draft (drafts entire affiliated player pool).</p>
                 </div>
               </div>
               <DialogFooter>
