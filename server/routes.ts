@@ -1097,6 +1097,240 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== LEAGUE ROSTER ASSIGNMENTS ====================
+
+  // Get roster assignments for a league (league members only)
+  app.get("/api/leagues/:id/roster-assignments", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+
+      const user = await storage.getUser(userId);
+      if (!user?.isSuperAdmin) {
+        const member = await storage.getLeagueMember(leagueId, userId);
+        if (!member) return res.status(403).json({ message: "League membership required" });
+      }
+
+      const season = parseInt(req.query.season as string) || 2025;
+      const filterUserId = req.query.userId as string | undefined;
+      const rosterType = req.query.rosterType as string | undefined;
+
+      const assignments = await storage.getLeagueRosterAssignments(leagueId, season, {
+        userId: filterUserId,
+        rosterType,
+      });
+      const counts = await storage.getRosterAssignmentCounts(leagueId, season);
+
+      res.json({ assignments, counts });
+    } catch (error: any) {
+      console.error("Error fetching roster assignments:", error);
+      res.status(500).json({ message: "Failed to fetch roster assignments" });
+    }
+  });
+
+  // Get unassigned (free agent) players for a league (league members only)
+  app.get("/api/leagues/:id/unassigned-players", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+
+      const user = await storage.getUser(userId);
+      if (!user?.isSuperAdmin) {
+        const member = await storage.getLeagueMember(leagueId, userId);
+        if (!member) return res.status(403).json({ message: "League membership required" });
+      }
+      const season = parseInt(req.query.season as string) || 2025;
+      const search = req.query.search as string | undefined;
+      const sportLevel = req.query.sportLevel as string | undefined;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const offset = parseInt(req.query.offset as string) || 0;
+
+      const players = await storage.getUnassignedPlayers(leagueId, season, {
+        search, sportLevel, limit, offset,
+      });
+      const total = await storage.getUnassignedPlayerCount(leagueId, season, { search, sportLevel });
+
+      res.json({ players, total });
+    } catch (error: any) {
+      console.error("Error fetching unassigned players:", error);
+      res.status(500).json({ message: "Failed to fetch unassigned players" });
+    }
+  });
+
+  // Assign a player to a team's roster (commissioner only)
+  app.post("/api/leagues/:id/roster-assignments", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+
+      if (!await hasLeagueCommissionerAccess(userId, leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const { mlbPlayerId, assignToUserId, rosterType, season } = req.body;
+      if (!mlbPlayerId || !assignToUserId || !rosterType || !season) {
+        return res.status(400).json({ message: "mlbPlayerId, assignToUserId, rosterType, and season are required" });
+      }
+      if (!['mlb', 'milb', 'draft'].includes(rosterType)) {
+        return res.status(400).json({ message: "rosterType must be 'mlb', 'milb', or 'draft'" });
+      }
+
+      // Check roster limits
+      const league = await storage.getLeague(leagueId);
+      if (!league) return res.status(404).json({ message: "League not found" });
+
+      const counts = await storage.getRosterAssignmentCounts(leagueId, season);
+      const userCounts = counts.filter(c => c.userId === assignToUserId);
+      const mlbCount = userCounts.find(c => c.rosterType === 'mlb')?.count || 0;
+      const milbCount = userCounts.find(c => c.rosterType === 'milb')?.count || 0;
+
+      if (rosterType === 'mlb' && league.mlRosterLimit && mlbCount >= league.mlRosterLimit) {
+        return res.status(400).json({ message: `ML roster limit of ${league.mlRosterLimit} reached` });
+      }
+      if (rosterType === 'milb' && league.milbRosterLimit && milbCount >= league.milbRosterLimit) {
+        return res.status(400).json({ message: `MiLB roster limit of ${league.milbRosterLimit} reached` });
+      }
+
+      const assignment = await storage.assignPlayerToRoster({
+        leagueId,
+        userId: assignToUserId,
+        mlbPlayerId,
+        rosterType,
+        season,
+      });
+
+      res.json(assignment);
+    } catch (error: any) {
+      if (error.code === '23505') {
+        return res.status(400).json({ message: "Player is already assigned in this league for this season" });
+      }
+      console.error("Error assigning player:", error);
+      res.status(500).json({ message: "Failed to assign player" });
+    }
+  });
+
+  // Bulk assign players (commissioner only)
+  app.post("/api/leagues/:id/roster-assignments/bulk", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+
+      if (!await hasLeagueCommissionerAccess(userId, leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const { assignments } = req.body;
+      if (!Array.isArray(assignments) || assignments.length === 0) {
+        return res.status(400).json({ message: "assignments array is required" });
+      }
+
+      const league = await storage.getLeague(leagueId);
+      if (!league) return res.status(404).json({ message: "League not found" });
+
+      const season = assignments[0]?.season;
+      const counts = await storage.getRosterAssignmentCounts(leagueId, season);
+
+      const currentCounts: Record<string, { mlb: number; milb: number }> = {};
+      for (const c of counts) {
+        if (!currentCounts[c.userId]) currentCounts[c.userId] = { mlb: 0, milb: 0 };
+        if (c.rosterType === 'mlb') currentCounts[c.userId].mlb = c.count;
+        if (c.rosterType === 'milb') currentCounts[c.userId].milb = c.count;
+      }
+
+      const pendingCounts: Record<string, { mlb: number; milb: number }> = {};
+      for (const a of assignments) {
+        if (!pendingCounts[a.userId]) pendingCounts[a.userId] = { mlb: 0, milb: 0 };
+        if (a.rosterType === 'mlb') pendingCounts[a.userId].mlb++;
+        if (a.rosterType === 'milb') pendingCounts[a.userId].milb++;
+      }
+
+      for (const [uid, pending] of Object.entries(pendingCounts)) {
+        const existing = currentCounts[uid] || { mlb: 0, milb: 0 };
+        if (league.mlRosterLimit && existing.mlb + pending.mlb > league.mlRosterLimit) {
+          return res.status(400).json({ message: `Bulk assign would exceed ML roster limit for user ${uid}` });
+        }
+        if (league.milbRosterLimit && existing.milb + pending.milb > league.milbRosterLimit) {
+          return res.status(400).json({ message: `Bulk assign would exceed MiLB roster limit for user ${uid}` });
+        }
+      }
+
+      const toInsert = assignments.map((a: any) => ({
+        leagueId,
+        userId: a.userId,
+        mlbPlayerId: a.mlbPlayerId,
+        rosterType: a.rosterType,
+        season: a.season,
+      }));
+
+      const count = await storage.bulkAssignPlayers(toInsert);
+      res.json({ count });
+    } catch (error: any) {
+      console.error("Error bulk assigning players:", error);
+      res.status(500).json({ message: "Failed to bulk assign players" });
+    }
+  });
+
+  // Update a roster assignment (move between rosters or teams)
+  app.patch("/api/leagues/:id/roster-assignments/:assignmentId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+      const assignmentId = parseInt(req.params.assignmentId);
+
+      if (!await hasLeagueCommissionerAccess(userId, leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const { rosterType, userId: newUserId } = req.body;
+      const updated = await storage.updateRosterAssignment(assignmentId, { rosterType, userId: newUserId });
+      if (!updated) {
+        return res.status(404).json({ message: "Assignment not found" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating roster assignment:", error);
+      res.status(500).json({ message: "Failed to update roster assignment" });
+    }
+  });
+
+  // Remove a roster assignment (back to free agent pool)
+  app.delete("/api/leagues/:id/roster-assignments/:assignmentId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+      const assignmentId = parseInt(req.params.assignmentId);
+
+      if (!await hasLeagueCommissionerAccess(userId, leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      await storage.removeRosterAssignment(assignmentId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error removing roster assignment:", error);
+      res.status(500).json({ message: "Failed to remove roster assignment" });
+    }
+  });
+
+  // Clear all roster assignments for a league/season (commissioner only)
+  app.delete("/api/leagues/:id/roster-assignments", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+      const season = parseInt(req.query.season as string) || 2025;
+
+      if (!await hasLeagueCommissionerAccess(userId, leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const count = await storage.removeAllRosterAssignments(leagueId, season);
+      res.json({ count });
+    } catch (error: any) {
+      console.error("Error clearing roster assignments:", error);
+      res.status(500).json({ message: "Failed to clear roster assignments" });
+    }
+  });
+
   // Commissioner: Sync stats from MLB API for free agents in an auction
   app.post("/api/free-agents/sync-mlb-stats", isAuthenticated, async (req: any, res) => {
     try {

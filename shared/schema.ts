@@ -31,9 +31,11 @@ export const leagues = pgTable("leagues", {
   slug: varchar("slug", { length: 100 }).unique().notNull(), // URL-friendly identifier
   timezone: varchar("timezone", { length: 50 }).default("America/New_York").notNull(),
   // League-wide caps for roster management
-  budgetCap: real("budget_cap"), // Total salary cap for the league (null = no cap)
-  ipCap: real("ip_cap"), // Total innings pitched cap (null = no cap)
-  paCap: integer("pa_cap"), // Total plate appearances cap (null = no cap)
+  budgetCap: real("budget_cap"),
+  ipCap: real("ip_cap"),
+  paCap: integer("pa_cap"),
+  mlRosterLimit: integer("ml_roster_limit").default(40),
+  milbRosterLimit: integer("milb_roster_limit").default(125),
   createdById: varchar("created_by_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -471,6 +473,25 @@ export const insertEmailOptOutSchema = createInsertSchema(emailOptOuts).omit({
   createdAt: true,
 });
 
+// League roster assignments - links MLB players to league teams
+export const leagueRosterAssignments = pgTable("league_roster_assignments", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  leagueId: integer("league_id").references(() => leagues.id).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  mlbPlayerId: integer("mlb_player_id").references(() => mlbPlayers.id).notNull(),
+  rosterType: varchar("roster_type", { length: 10 }).notNull(), // 'mlb', 'milb', 'draft'
+  season: integer("season").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_roster_assignments_league_season").on(table.leagueId, table.season),
+  index("idx_roster_assignments_user").on(table.userId),
+]);
+
+export const insertLeagueRosterAssignmentSchema = createInsertSchema(leagueRosterAssignments).omit({
+  id: true,
+  createdAt: true,
+});
+
 // MLB Players reference table - stores all affiliated baseball players
 export const mlbPlayers = pgTable("mlb_players", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -553,6 +574,9 @@ export type InsertEmailOptOut = z.infer<typeof insertEmailOptOutSchema>;
 
 export type MlbPlayer = typeof mlbPlayers.$inferSelect;
 export type InsertMlbPlayer = z.infer<typeof insertMlbPlayerSchema>;
+
+export type LeagueRosterAssignment = typeof leagueRosterAssignments.$inferSelect;
+export type InsertLeagueRosterAssignment = z.infer<typeof insertLeagueRosterAssignmentSchema>;
 
 // Extended types for frontend use
 export type FreeAgentWithBids = FreeAgent & {

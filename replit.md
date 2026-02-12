@@ -119,6 +119,16 @@ Preferred communication style: Simple, everyday language.
     - Opt-out toggle only visible when auction has `emailNotifications="league"`
     - Email footer includes link to manage preferences for league-wide notifications
 
+- **League Roster Assignments**: Per-league system for tracking which MLB players belong to which team's roster
+  - `leagueRosterAssignments` table links `mlbPlayers` to league teams with roster type ('mlb', 'milb', 'draft')
+  - Each team has configurable ML roster limit (default 40) and MiLB system limit (default 125), stored in `leagues` table
+  - Season-scoped: assignments are tracked per season (e.g., 2025)
+  - Unassigned players are dynamically computed as free agents (MLB level = ML free agents, other levels = MiLB free agents)
+  - Commissioner UI in Commissioner page with team summary, assignment management, and free agent pool with search/filter
+  - API routes: `GET/POST/PATCH/DELETE /api/leagues/:id/roster-assignments`, `GET /api/leagues/:id/unassigned-players`
+  - Unique constraint on (leagueId, mlbPlayerId, season) prevents duplicate assignments
+  - Component: `client/src/components/RosterManagement.tsx`
+
 ## External Dependencies
 
 - **Authentication**: `bcryptjs`, `express-session`, `connect-pg-simple`.

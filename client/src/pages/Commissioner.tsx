@@ -65,6 +65,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import RosterManagement from "@/components/RosterManagement";
 
 const settingsSchema = z.object({
   yearFactor1: z.number().min(0.1).max(10),
@@ -1938,6 +1939,29 @@ export default function Commissioner() {
           </div>
         </CardContent>
       </Card>
+
+      {/* League Player Roster Assignments */}
+      {selectedLeagueId && currentLeague && leagueMembers && (
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Player Roster Assignments
+            </CardTitle>
+            <CardDescription className="mt-1">
+              Assign MLB players from the database to team rosters. Each team has a {currentLeague.mlRosterLimit || 40}-man ML roster and {currentLeague.milbRosterLimit || 125}-man MiLB system.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <RosterManagement
+              leagueId={selectedLeagueId}
+              league={currentLeague}
+              members={leagueMembers}
+              isCommissioner={isLeagueCommissioner || user?.isSuperAdmin || false}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {/* League Caps Dialog */}
       <Dialog open={editingLeagueCaps} onOpenChange={setEditingLeagueCaps}>

@@ -45,6 +45,9 @@ import {
   mlbPlayers,
   type MlbPlayer,
   type InsertMlbPlayer,
+  leagueRosterAssignments,
+  type LeagueRosterAssignment,
+  type InsertLeagueRosterAssignment,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, lt, sql, isNull, inArray, or } from "drizzle-orm";
@@ -293,6 +296,17 @@ export interface IStorage {
   getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean }): Promise<number>;
   getMlbPlayerByMlbId(mlbId: number): Promise<MlbPlayer | undefined>;
   clearMlbPlayers(season?: number): Promise<number>;
+  
+  // League Roster Assignments
+  getLeagueRosterAssignments(leagueId: number, season: number, filters?: { userId?: string; rosterType?: string }): Promise<(LeagueRosterAssignment & { player: MlbPlayer })[]>;
+  getRosterAssignmentCounts(leagueId: number, season: number): Promise<{ userId: string; rosterType: string; count: number }[]>;
+  assignPlayerToRoster(assignment: InsertLeagueRosterAssignment): Promise<LeagueRosterAssignment>;
+  updateRosterAssignment(id: number, updates: { rosterType?: string; userId?: string }): Promise<LeagueRosterAssignment | undefined>;
+  removeRosterAssignment(id: number): Promise<void>;
+  removeAllRosterAssignments(leagueId: number, season: number): Promise<number>;
+  getUnassignedPlayers(leagueId: number, season: number, filters?: { search?: string; sportLevel?: string; limit?: number; offset?: number }): Promise<MlbPlayer[]>;
+  getUnassignedPlayerCount(leagueId: number, season: number, filters?: { search?: string; sportLevel?: string }): Promise<number>;
+  bulkAssignPlayers(assignments: InsertLeagueRosterAssignment[]): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2987,6 +3001,128 @@ export class DatabaseStorage implements IStorage {
     }
     const result = await db.delete(mlbPlayers);
     return result.rowCount || 0;
+  }
+
+  async getLeagueRosterAssignments(leagueId: number, season: number, filters?: { userId?: string; rosterType?: string }): Promise<(LeagueRosterAssignment & { player: MlbPlayer })[]> {
+    const conditions = [
+      eq(leagueRosterAssignments.leagueId, leagueId),
+      eq(leagueRosterAssignments.season, season),
+    ];
+    if (filters?.userId) {
+      conditions.push(eq(leagueRosterAssignments.userId, filters.userId));
+    }
+    if (filters?.rosterType) {
+      conditions.push(eq(leagueRosterAssignments.rosterType, filters.rosterType));
+    }
+    const rows = await db
+      .select()
+      .from(leagueRosterAssignments)
+      .innerJoin(mlbPlayers, eq(leagueRosterAssignments.mlbPlayerId, mlbPlayers.id))
+      .where(and(...conditions))
+      .orderBy(mlbPlayers.fullName);
+    return rows.map(r => ({ ...r.league_roster_assignments, player: r.mlb_players }));
+  }
+
+  async getRosterAssignmentCounts(leagueId: number, season: number): Promise<{ userId: string; rosterType: string; count: number }[]> {
+    const rows = await db
+      .select({
+        userId: leagueRosterAssignments.userId,
+        rosterType: leagueRosterAssignments.rosterType,
+        count: sql<number>`COUNT(*)::int`,
+      })
+      .from(leagueRosterAssignments)
+      .where(and(
+        eq(leagueRosterAssignments.leagueId, leagueId),
+        eq(leagueRosterAssignments.season, season),
+      ))
+      .groupBy(leagueRosterAssignments.userId, leagueRosterAssignments.rosterType);
+    return rows;
+  }
+
+  async assignPlayerToRoster(assignment: InsertLeagueRosterAssignment): Promise<LeagueRosterAssignment> {
+    const [result] = await db.insert(leagueRosterAssignments).values(assignment).returning();
+    return result;
+  }
+
+  async updateRosterAssignment(id: number, updates: { rosterType?: string; userId?: string }): Promise<LeagueRosterAssignment | undefined> {
+    const setObj: any = {};
+    if (updates.rosterType) setObj.rosterType = updates.rosterType;
+    if (updates.userId) setObj.userId = updates.userId;
+    const [result] = await db.update(leagueRosterAssignments).set(setObj).where(eq(leagueRosterAssignments.id, id)).returning();
+    return result;
+  }
+
+  async removeRosterAssignment(id: number): Promise<void> {
+    await db.delete(leagueRosterAssignments).where(eq(leagueRosterAssignments.id, id));
+  }
+
+  async removeAllRosterAssignments(leagueId: number, season: number): Promise<number> {
+    const result = await db.delete(leagueRosterAssignments).where(
+      and(eq(leagueRosterAssignments.leagueId, leagueId), eq(leagueRosterAssignments.season, season))
+    );
+    return result.rowCount || 0;
+  }
+
+  async getUnassignedPlayers(leagueId: number, season: number, filters?: { search?: string; sportLevel?: string; limit?: number; offset?: number }): Promise<MlbPlayer[]> {
+    const conditions: any[] = [
+      eq(mlbPlayers.season, season),
+      sql`NOT EXISTS (SELECT 1 FROM league_roster_assignments lra WHERE lra.mlb_player_id = ${mlbPlayers.id} AND lra.league_id = ${leagueId} AND lra.season = ${season})`,
+    ];
+    if (filters?.search) {
+      conditions.push(sql`LOWER(${mlbPlayers.fullName}) LIKE LOWER(${'%' + filters.search + '%'})`);
+    }
+    if (filters?.sportLevel) {
+      if (filters.sportLevel === 'MLB') {
+        conditions.push(eq(mlbPlayers.sportLevel, 'MLB'));
+      } else if (filters.sportLevel === 'MiLB') {
+        conditions.push(sql`${mlbPlayers.sportLevel} != 'MLB'`);
+      } else {
+        conditions.push(eq(mlbPlayers.sportLevel, filters.sportLevel));
+      }
+    }
+    
+    let query = db.select().from(mlbPlayers).where(and(...conditions)).orderBy(mlbPlayers.fullName);
+    if (filters?.limit) {
+      query = query.limit(filters.limit) as any;
+    }
+    if (filters?.offset) {
+      query = query.offset(filters.offset) as any;
+    }
+    return await query;
+  }
+
+  async getUnassignedPlayerCount(leagueId: number, season: number, filters?: { search?: string; sportLevel?: string }): Promise<number> {
+    const conditions: any[] = [
+      eq(mlbPlayers.season, season),
+      sql`NOT EXISTS (SELECT 1 FROM league_roster_assignments lra WHERE lra.mlb_player_id = ${mlbPlayers.id} AND lra.league_id = ${leagueId} AND lra.season = ${season})`,
+    ];
+    if (filters?.search) {
+      conditions.push(sql`LOWER(${mlbPlayers.fullName}) LIKE LOWER(${'%' + filters.search + '%'})`);
+    }
+    if (filters?.sportLevel) {
+      if (filters.sportLevel === 'MLB') {
+        conditions.push(eq(mlbPlayers.sportLevel, 'MLB'));
+      } else if (filters.sportLevel === 'MiLB') {
+        conditions.push(sql`${mlbPlayers.sportLevel} != 'MLB'`);
+      } else {
+        conditions.push(eq(mlbPlayers.sportLevel, filters.sportLevel));
+      }
+    }
+    
+    const [result] = await db.select({ count: sql<number>`COUNT(*)::int` }).from(mlbPlayers).where(and(...conditions));
+    return result?.count || 0;
+  }
+
+  async bulkAssignPlayers(assignments: InsertLeagueRosterAssignment[]): Promise<number> {
+    if (assignments.length === 0) return 0;
+    const BATCH_SIZE = 100;
+    let total = 0;
+    for (let i = 0; i < assignments.length; i += BATCH_SIZE) {
+      const batch = assignments.slice(i, i + BATCH_SIZE);
+      await db.insert(leagueRosterAssignments).values(batch);
+      total += batch.length;
+    }
+    return total;
   }
 }
 
