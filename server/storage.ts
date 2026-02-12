@@ -2945,10 +2945,10 @@ export class DatabaseStorage implements IStorage {
   async getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number; currentTeamName?: string; season?: number; sortBy?: string; sortDir?: string }): Promise<MlbPlayer[]> {
     const conditions = [];
     if (filters?.sportLevel) {
-      if (filters.sportLevel === 'Major League Baseball') {
-        conditions.push(eq(mlbPlayers.sportLevel, 'Major League Baseball'));
+      if (filters.sportLevel === 'MLB') {
+        conditions.push(eq(mlbPlayers.sportLevel, 'MLB'));
       } else if (filters.sportLevel === 'minors') {
-        conditions.push(sql`${mlbPlayers.sportLevel} != 'Major League Baseball'`);
+        conditions.push(sql`${mlbPlayers.sportLevel} != 'MLB'`);
       } else {
         conditions.push(eq(mlbPlayers.sportLevel, filters.sportLevel));
       }
@@ -2993,10 +2993,10 @@ export class DatabaseStorage implements IStorage {
   async getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; currentTeamName?: string; season?: number }): Promise<number> {
     const conditions = [];
     if (filters?.sportLevel) {
-      if (filters.sportLevel === 'Major League Baseball') {
-        conditions.push(eq(mlbPlayers.sportLevel, 'Major League Baseball'));
+      if (filters.sportLevel === 'MLB') {
+        conditions.push(eq(mlbPlayers.sportLevel, 'MLB'));
       } else if (filters.sportLevel === 'minors') {
-        conditions.push(sql`${mlbPlayers.sportLevel} != 'Major League Baseball'`);
+        conditions.push(sql`${mlbPlayers.sportLevel} != 'MLB'`);
       } else {
         conditions.push(eq(mlbPlayers.sportLevel, filters.sportLevel));
       }
@@ -3030,10 +3030,10 @@ export class DatabaseStorage implements IStorage {
     const conditions = [sql`${mlbPlayers.currentTeamName} IS NOT NULL`];
     if (season) conditions.push(eq(mlbPlayers.season, season));
     if (sportLevel) {
-      if (sportLevel === 'Major League Baseball') {
-        conditions.push(eq(mlbPlayers.sportLevel, 'Major League Baseball'));
+      if (sportLevel === 'MLB') {
+        conditions.push(eq(mlbPlayers.sportLevel, 'MLB'));
       } else if (sportLevel === 'minors') {
-        conditions.push(sql`${mlbPlayers.sportLevel} != 'Major League Baseball'`);
+        conditions.push(sql`${mlbPlayers.sportLevel} != 'MLB'`);
       } else {
         conditions.push(eq(mlbPlayers.sportLevel, sportLevel));
       }

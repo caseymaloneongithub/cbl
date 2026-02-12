@@ -49,7 +49,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const season = 2025;
 
-  const sportLevel = level === "mlb" ? "Major League Baseball" : "minors";
+  const sportLevel = level === "mlb" ? "MLB" : "minors";
 
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

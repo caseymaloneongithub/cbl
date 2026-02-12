@@ -75,7 +75,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
   const [selectedRosterType, setSelectedRosterType] = useState<string>(rosterLevel || "all");
   const [rosterSearch, setRosterSearch] = useState("");
   const [faSearch, setFaSearch] = useState("");
-  const [faLevel, setFaLevel] = useState<string>(rosterLevel === "mlb" ? "Major League Baseball" : rosterLevel === "milb" ? "minors" : "all");
+  const [faLevel, setFaLevel] = useState<string>(rosterLevel === "mlb" ? "MLB" : rosterLevel === "milb" ? "minors" : "all");
   const [faPage, setFaPage] = useState(0);
   const FA_PAGE_SIZE = 50;
 
