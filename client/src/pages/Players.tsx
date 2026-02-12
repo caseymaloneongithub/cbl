@@ -169,7 +169,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
   const isLeagueFiltered = leagueTeamFilter !== "all";
   const displayTotal = isLeagueFiltered ? filteredPlayers.length : serverTotal;
   const totalPages = isLeagueFiltered ? 1 : Math.ceil(serverTotal / PAGE_SIZE);
-  const title = level === "mlb" ? "Major League Players" : "Minor League Players";
+  const title = level === "mlb" ? "MLB Players" : "MiLB Players";
   const mlbTeams = teamsData || [];
 
   return (

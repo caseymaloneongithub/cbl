@@ -100,7 +100,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
     return result;
   }, [assignments, search, sortBy, sortDir]);
 
-  const title = level === "mlb" ? "Major League Roster" : "Minor League Roster";
+  const title = level === "mlb" ? "MLB Roster" : "MiLB Roster";
   const limit = level === "mlb"
     ? (currentLeague as any)?.mlRosterLimit || 40
     : (currentLeague as any)?.milbRosterLimit || 125;

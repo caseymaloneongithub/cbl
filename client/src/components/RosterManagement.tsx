@@ -351,7 +351,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="mlb">ML Roster</SelectItem>
+                  <SelectItem value="mlb">MLB Roster</SelectItem>
                   <SelectItem value="milb">MiLB System</SelectItem>
                   <SelectItem value="draft">Draft List</SelectItem>
                 </SelectContent>
@@ -598,8 +598,8 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                     <SelectValue placeholder="Select roster" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="mlb">Major League Roster</SelectItem>
-                    <SelectItem value="milb">Minor League System</SelectItem>
+                    <SelectItem value="mlb">MLB Roster</SelectItem>
+                    <SelectItem value="milb">MiLB System</SelectItem>
                     <SelectItem value="draft">Draft List</SelectItem>
                   </SelectContent>
                 </Select>
@@ -683,8 +683,8 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                     <SelectValue placeholder="Select roster" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="mlb">Major League Roster</SelectItem>
-                    <SelectItem value="milb">Minor League System</SelectItem>
+                    <SelectItem value="mlb">MLB Roster</SelectItem>
+                    <SelectItem value="milb">MiLB System</SelectItem>
                     <SelectItem value="draft">Draft List</SelectItem>
                   </SelectContent>
                 </Select>

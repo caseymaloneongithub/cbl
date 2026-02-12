@@ -21,10 +21,10 @@ export default function CommissionerRosters({ level }: { level: "mlb" | "milb" }
     enabled: !!selectedLeagueId,
   });
 
-  const title = level === "mlb" ? "Major League Rosters" : "Minor League Rosters";
+  const title = level === "mlb" ? "MLB Rosters" : "MiLB Rosters";
   const description = level === "mlb"
-    ? `Assign MLB players to team ${currentLeague?.mlRosterLimit || 40}-man ML rosters`
-    : `Assign minor league players to team ${currentLeague?.milbRosterLimit || 125}-man MiLB systems`;
+    ? `Assign MLB players to team ${currentLeague?.mlRosterLimit || 40}-man MLB rosters`
+    : `Assign MiLB players to team ${currentLeague?.milbRosterLimit || 125}-man MiLB systems`;
 
   if (!selectedLeagueId || !currentLeague) {
     return (

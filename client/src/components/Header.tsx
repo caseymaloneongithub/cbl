@@ -116,19 +116,19 @@ export function Header() {
   ];
 
   const myRosterItems = [
-    { href: "/my-roster/mlb", label: "Major League" },
-    { href: "/my-roster/milb", label: "Minor League" },
+    { href: "/my-roster/mlb", label: "MLB" },
+    { href: "/my-roster/milb", label: "MiLB" },
   ];
 
   const playersItems = [
-    { href: "/players/mlb", label: "Major League" },
-    { href: "/players/milb", label: "Minor League" },
+    { href: "/players/mlb", label: "MLB" },
+    { href: "/players/milb", label: "MiLB" },
   ];
 
   const commissionerItems = [
     { href: "/commissioner/free-agency", label: "Auction Management" },
     { href: "/commissioner/teams", label: "Teams" },
-    { href: "/commissioner/rosters/mlb", label: "ML Rosters" },
+    { href: "/commissioner/rosters/mlb", label: "MLB Rosters" },
     { href: "/commissioner/rosters/milb", label: "MiLB Rosters" },
     { href: "/commissioner/settings", label: "League Settings" },
   ];
