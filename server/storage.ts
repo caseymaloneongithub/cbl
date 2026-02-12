@@ -50,12 +50,14 @@ import {
   type InsertLeagueRosterAssignment,
   drafts,
   draftPlayers,
+  draftRounds,
   draftOrder,
   draftPicks,
   type Draft,
   type InsertDraft,
   type DraftPlayer,
   type DraftPlayerWithDetails,
+  type DraftRound,
   type DraftOrder,
   type DraftPick,
   type InsertDraftPick,
@@ -336,14 +338,21 @@ export interface IStorage {
   clearDraftPlayers(draftId: number): Promise<number>;
   updateDraftPlayerStatus(draftId: number, mlbPlayerId: number, status: string): Promise<void>;
   
+  // Draft rounds
+  getDraftRounds(draftId: number): Promise<DraftRound[]>;
+  setDraftRounds(draftId: number, rounds: { roundNumber: number; name: string; isTeamDraft: boolean }[]): Promise<void>;
+  updateDraftRound(id: number, data: Partial<DraftRound>): Promise<DraftRound | undefined>;
+
   // Draft order
-  getDraftOrder(draftId: number): Promise<(DraftOrder & { user: User })[]>;
-  setDraftOrder(draftId: number, order: { userId: string; orderIndex: number }[]): Promise<void>;
+  getDraftOrder(draftId: number, roundNumber?: number): Promise<(DraftOrder & { user: User })[]>;
+  setDraftOrder(draftId: number, order: { userId: string; orderIndex: number; roundNumber: number }[]): Promise<void>;
+  clearDraftOrder(draftId: number): Promise<void>;
   
   // Draft picks
   getDraftPicks(draftId: number): Promise<DraftPickWithDetails[]>;
   createDraftPick(pick: InsertDraftPick): Promise<DraftPick>;
   getDraftPickCount(draftId: number): Promise<number>;
+  getDraftPlayersByParentOrg(draftId: number, parentOrgName: string): Promise<DraftPlayerWithDetails[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3328,24 +3337,56 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(draftPlayers.draftId, draftId), eq(draftPlayers.mlbPlayerId, mlbPlayerId)));
   }
 
+  // Draft rounds
+  async getDraftRounds(draftId: number): Promise<DraftRound[]> {
+    return await db.select().from(draftRounds)
+      .where(eq(draftRounds.draftId, draftId))
+      .orderBy(draftRounds.roundNumber);
+  }
+
+  async setDraftRounds(draftId: number, rounds: { roundNumber: number; name: string; isTeamDraft: boolean }[]): Promise<void> {
+    await db.delete(draftRounds).where(eq(draftRounds.draftId, draftId));
+    if (rounds.length > 0) {
+      await db.insert(draftRounds).values(rounds.map(r => ({ draftId, ...r })));
+    }
+  }
+
+  async updateDraftRound(id: number, data: Partial<DraftRound>): Promise<DraftRound | undefined> {
+    const { id: _id, ...updateData } = data as any;
+    const [result] = await db.update(draftRounds).set(updateData).where(eq(draftRounds.id, id)).returning();
+    return result;
+  }
+
   // Draft order
-  async getDraftOrder(draftId: number): Promise<(DraftOrder & { user: User })[]> {
+  async getDraftOrder(draftId: number, roundNumber?: number): Promise<(DraftOrder & { user: User })[]> {
+    const conditions = [eq(draftOrder.draftId, draftId)];
+    if (roundNumber !== undefined) {
+      conditions.push(eq(draftOrder.roundNumber, roundNumber));
+    }
     const rows = await db.select({
       order: draftOrder,
       user: users,
     })
       .from(draftOrder)
       .innerJoin(users, eq(draftOrder.userId, users.id))
-      .where(eq(draftOrder.draftId, draftId))
-      .orderBy(draftOrder.orderIndex);
+      .where(and(...conditions))
+      .orderBy(draftOrder.roundNumber, draftOrder.orderIndex);
     return rows.map(r => ({ ...r.order, user: r.user }));
   }
 
-  async setDraftOrder(draftId: number, order: { userId: string; orderIndex: number }[]): Promise<void> {
+  async setDraftOrder(draftId: number, order: { userId: string; orderIndex: number; roundNumber: number }[]): Promise<void> {
     await db.delete(draftOrder).where(eq(draftOrder.draftId, draftId));
     if (order.length > 0) {
-      await db.insert(draftOrder).values(order.map(o => ({ draftId, ...o })));
+      const BATCH_SIZE = 200;
+      for (let i = 0; i < order.length; i += BATCH_SIZE) {
+        const batch = order.slice(i, i + BATCH_SIZE);
+        await db.insert(draftOrder).values(batch.map(o => ({ draftId, ...o })));
+      }
     }
+  }
+
+  async clearDraftOrder(draftId: number): Promise<void> {
+    await db.delete(draftOrder).where(eq(draftOrder.draftId, draftId));
   }
 
   // Draft picks
@@ -3382,6 +3423,21 @@ export class DatabaseStorage implements IStorage {
     const [result] = await db.select({ count: sql<number>`COUNT(*)::int` })
       .from(draftPicks).where(eq(draftPicks.draftId, draftId));
     return result?.count || 0;
+  }
+
+  async getDraftPlayersByParentOrg(draftId: number, parentOrgName: string): Promise<DraftPlayerWithDetails[]> {
+    const rows = await db.select({
+      dp: draftPlayers,
+      player: mlbPlayers,
+    })
+      .from(draftPlayers)
+      .innerJoin(mlbPlayers, eq(draftPlayers.mlbPlayerId, mlbPlayers.id))
+      .where(and(
+        eq(draftPlayers.draftId, draftId),
+        eq(draftPlayers.status, "available"),
+        eq(mlbPlayers.parentOrgName, parentOrgName),
+      ));
+    return rows.map(r => ({ ...r.dp, player: r.player }));
   }
 }
 

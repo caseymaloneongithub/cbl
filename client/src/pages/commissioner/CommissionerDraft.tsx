@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLeague } from "@/hooks/useLeague";
 import { useToast } from "@/hooks/use-toast";
@@ -21,8 +21,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { DraftWithDetails, DraftPlayerWithDetails, DraftPickWithDetails, DraftOrder, User, LeagueMember } from "@shared/schema";
-import { Plus, Loader2, Trash2, Play, CheckCircle, Settings, ChevronUp, ChevronDown, Upload, Users, ListOrdered } from "lucide-react";
+import type { DraftWithDetails, DraftPlayerWithDetails, DraftPickWithDetails, DraftRound, DraftOrder, User, LeagueMember } from "@shared/schema";
+import { Plus, Loader2, Trash2, Play, Settings, Upload, Users, ListOrdered, FileSpreadsheet } from "lucide-react";
 
 export default function CommissionerDraft() {
   const { selectedLeagueId } = useLeague();
@@ -39,6 +39,7 @@ export default function CommissionerDraft() {
   const [editRounds, setEditRounds] = useState(5);
   const [editSnake, setEditSnake] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [csvText, setCsvText] = useState("");
 
   const { data: drafts, isLoading: loadingDrafts } = useQuery<DraftWithDetails[]>({
     queryKey: ["/api/drafts", selectedLeagueId],
@@ -57,6 +58,16 @@ export default function CommissionerDraft() {
     queryFn: async () => {
       const res = await fetch(`/api/drafts/${selectedDraftId}/players`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch players");
+      return res.json();
+    },
+    enabled: !!selectedDraftId,
+  });
+
+  const { data: draftRounds } = useQuery<DraftRound[]>({
+    queryKey: ["/api/drafts", selectedDraftId, "rounds"],
+    queryFn: async () => {
+      const res = await fetch(`/api/drafts/${selectedDraftId}/rounds`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch rounds");
       return res.json();
     },
     enabled: !!selectedDraftId,
@@ -167,14 +178,28 @@ export default function CommissionerDraft() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const saveOrder = useMutation({
-    mutationFn: async (order: { userId: string; orderIndex: number }[]) => {
-      const res = await apiRequest("POST", `/api/drafts/${selectedDraftId}/order`, { order });
+  const uploadCsvOrder = useMutation({
+    mutationFn: async (csvData: string) => {
+      const res = await apiRequest("POST", `/api/drafts/${selectedDraftId}/order/upload-csv`, { csvData });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Draft Order Uploaded", description: `${data.rounds} rounds, ${data.picksPerRound} picks per round` });
+      setCsvText("");
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", selectedDraftId, "rounds"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", selectedDraftId, "order"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", selectedLeagueId] });
+    },
+    onError: (e: Error) => toast({ title: "Upload Failed", description: e.message, variant: "destructive" }),
+  });
+
+  const updateRound = useMutation({
+    mutationFn: async ({ roundId, data }: { roundId: number; data: { name?: string; isTeamDraft?: boolean } }) => {
+      const res = await apiRequest("PATCH", `/api/drafts/${selectedDraftId}/rounds/${roundId}`, data);
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Draft Order Saved" });
-      queryClient.invalidateQueries({ queryKey: ["/api/drafts", selectedDraftId, "order"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", selectedDraftId, "rounds"] });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -216,40 +241,52 @@ export default function CommissionerDraft() {
     uploadPlayers.mutate(ids);
   };
 
-  const [localOrder, setLocalOrder] = useState<{ userId: string; user: User }[]>([]);
-  const [orderInitialized, setOrderInitialized] = useState(false);
+  const csvPreview = useMemo(() => {
+    if (!csvText.trim()) return null;
+    const lines = csvText.trim().split("\n").map(l => l.trim()).filter(l => l.length > 0);
+    if (lines.length < 2) return { error: "CSV must have a header row and at least one pick row" };
 
-  if (selectedDraft?.status === "setup" && draftOrderData && !orderInitialized) {
-    if (draftOrderData.length > 0) {
-      setLocalOrder(draftOrderData.sort((a, b) => a.orderIndex - b.orderIndex).map(o => ({ userId: o.userId, user: o.user })));
-    } else if (leagueMembers) {
-      setLocalOrder(leagueMembers.filter(m => !m.isArchived).map(m => ({ userId: m.userId, user: m.user })));
+    const headers = lines[0].split(",").map(h => h.trim());
+    const abbrSet = new Set(activeMembers.map(m => (m.user?.teamAbbreviation || "").toUpperCase()).filter(Boolean));
+    const unknownAbbrs: string[] = [];
+    const rows: string[][] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const cells = lines[i].split(",").map(c => c.trim().toUpperCase());
+      rows.push(cells);
+      cells.forEach(c => {
+        if (c && !abbrSet.has(c) && !unknownAbbrs.includes(c)) unknownAbbrs.push(c);
+      });
     }
-    setOrderInitialized(true);
-  }
 
-  const moveOrder = (index: number, direction: "up" | "down") => {
-    const newOrder = [...localOrder];
-    const swapIdx = direction === "up" ? index - 1 : index + 1;
-    if (swapIdx < 0 || swapIdx >= newOrder.length) return;
-    [newOrder[index], newOrder[swapIdx]] = [newOrder[swapIdx], newOrder[index]];
-    setLocalOrder(newOrder);
-  };
+    return { headers, rows, unknownAbbrs, rounds: headers.length, picks: rows.length };
+  }, [csvText, activeMembers]);
 
-  const handleSaveOrder = () => {
-    saveOrder.mutate(localOrder.map((item, idx) => ({ userId: item.userId, orderIndex: idx + 1 })));
+  const handleUploadCsv = () => {
+    if (!csvText.trim()) {
+      toast({ title: "No CSV Data", description: "Paste your draft order CSV first.", variant: "destructive" });
+      return;
+    }
+    if (csvPreview?.error) {
+      toast({ title: "Invalid CSV", description: csvPreview.error, variant: "destructive" });
+      return;
+    }
+    if (csvPreview?.unknownAbbrs && csvPreview.unknownAbbrs.length > 0) {
+      toast({ title: "Unknown Abbreviations", description: `Fix these before uploading: ${csvPreview.unknownAbbrs.join(", ")}`, variant: "destructive" });
+      return;
+    }
+    uploadCsvOrder.mutate(csvText);
   };
 
   const handleSelectDraft = (draftId: number) => {
     if (selectedDraftId === draftId) {
       setSelectedDraftId(null);
-      setOrderInitialized(false);
       return;
     }
     setSelectedDraftId(draftId);
-    setOrderInitialized(false);
     setShowSettings(false);
     setPlayerIdsText("");
+    setCsvText("");
     const draft = drafts?.find(d => d.id === draftId);
     if (draft) {
       setEditName(draft.name);
@@ -262,6 +299,15 @@ export default function CommissionerDraft() {
     const variant = status === "active" ? "default" : status === "completed" ? "secondary" : "outline";
     return <Badge variant={variant} data-testid={`badge-status-${status}`}>{status.charAt(0).toUpperCase() + status.slice(1)}</Badge>;
   };
+
+  const orderByRound = (roundNumber: number) => {
+    if (!draftOrderData) return [];
+    return draftOrderData
+      .filter(o => o.roundNumber === roundNumber)
+      .sort((a, b) => a.orderIndex - b.orderIndex);
+  };
+
+  const activeMembers = leagueMembers?.filter(m => !m.isArchived) || [];
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -396,7 +442,7 @@ export default function CommissionerDraft() {
               {loadingPlayers ? (
                 <Skeleton className="h-32 w-full" />
               ) : draftPlayers && draftPlayers.length > 0 ? (
-                <div className="border rounded-lg overflow-hidden max-h-64 overflow-y-auto">
+                <div className="border rounded-md overflow-hidden max-h-64 overflow-y-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -426,49 +472,119 @@ export default function CommissionerDraft() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2"><ListOrdered className="h-5 w-5" />Draft Order</CardTitle>
+              <CardTitle className="flex items-center gap-2"><FileSpreadsheet className="h-5 w-5" />Draft Order (CSV Upload)</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {localOrder.length > 0 ? (
-                <>
-                  <div className="border rounded-lg overflow-hidden">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-12">#</TableHead>
-                          <TableHead>Team</TableHead>
-                          <TableHead className="text-right w-24">Move</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {localOrder.map((item, idx) => (
-                          <TableRow key={item.userId} data-testid={`row-order-${item.userId}`}>
-                            <TableCell className="font-medium">{idx + 1}</TableCell>
-                            <TableCell>{item.user.teamName || `${item.user.firstName || ""} ${item.user.lastName || ""}`.trim() || item.user.email}</TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                <Button size="icon" variant="ghost" disabled={idx === 0} onClick={e => { e.stopPropagation(); moveOrder(idx, "up"); }} data-testid={`button-move-up-${item.userId}`}>
-                                  <ChevronUp className="h-4 w-4" />
-                                </Button>
-                                <Button size="icon" variant="ghost" disabled={idx === localOrder.length - 1} onClick={e => { e.stopPropagation(); moveOrder(idx, "down"); }} data-testid={`button-move-down-${item.userId}`}>
-                                  <ChevronDown className="h-4 w-4" />
-                                </Button>
+              <div className="text-sm text-muted-foreground space-y-1">
+                <p>Upload a CSV where column headers are round names and each row is a pick position.</p>
+                <p>Cell values should be team abbreviations (e.g., NYY, BOS, LAD).</p>
+                {activeMembers.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <span className="text-xs font-medium">Available abbreviations:</span>
+                    {activeMembers.map(m => (
+                      <Badge key={m.userId} variant="outline" className="text-xs">
+                        {m.user?.teamAbbreviation || "?"} = {m.user?.teamName || m.user?.email}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <Textarea
+                placeholder={`Round 1,Round 2,Round 3\nNYY,BOS,NYY\nBOS,NYY,BOS\nLAD,LAD,LAD`}
+                value={csvText}
+                onChange={e => setCsvText(e.target.value)}
+                rows={8}
+                className="font-mono text-sm"
+                data-testid="textarea-csv-order"
+              />
+              {csvPreview && !csvPreview.error && (
+                <div className="border rounded-md p-3 bg-muted/30 space-y-2" data-testid="csv-preview">
+                  <div className="flex flex-wrap items-center gap-3 text-sm">
+                    <span className="font-medium">{csvPreview.rounds} rounds</span>
+                    <span className="text-muted-foreground">{csvPreview.picks} picks per round</span>
+                  </div>
+                  {csvPreview.unknownAbbrs && csvPreview.unknownAbbrs.length > 0 && (
+                    <div className="text-sm text-destructive flex flex-wrap gap-1 items-center" data-testid="csv-unknown-abbrs">
+                      <span className="font-medium">Unknown abbreviations:</span>
+                      {csvPreview.unknownAbbrs.map(a => (
+                        <Badge key={a} variant="destructive" className="text-xs">{a}</Badge>
+                      ))}
+                    </div>
+                  )}
+                  {csvPreview.unknownAbbrs && csvPreview.unknownAbbrs.length === 0 && (
+                    <p className="text-sm text-green-600 dark:text-green-400" data-testid="csv-valid">All team abbreviations valid</p>
+                  )}
+                </div>
+              )}
+              {csvPreview?.error && (
+                <p className="text-sm text-destructive" data-testid="csv-error">{csvPreview.error}</p>
+              )}
+              <Button onClick={handleUploadCsv} disabled={uploadCsvOrder.isPending || !csvText.trim() || !!(csvPreview?.error) || !!(csvPreview?.unknownAbbrs?.length)} data-testid="button-upload-csv-order">
+                {uploadCsvOrder.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Uploading...</> : <><FileSpreadsheet className="mr-2 h-4 w-4" />Upload Draft Order</>}
+              </Button>
+            </CardContent>
+          </Card>
+
+          {draftRounds && draftRounds.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><ListOrdered className="h-5 w-5" />Round Configuration</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="border rounded-md overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-16">#</TableHead>
+                        <TableHead>Round Name</TableHead>
+                        <TableHead className="w-32 text-center">Team Draft</TableHead>
+                        <TableHead>Order Preview</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {draftRounds.map(round => {
+                        const roundEntries = orderByRound(round.roundNumber);
+                        return (
+                          <TableRow key={round.id} data-testid={`row-round-${round.id}`}>
+                            <TableCell className="font-mono">{round.roundNumber}</TableCell>
+                            <TableCell>
+                              <Input
+                                value={round.name}
+                                onChange={e => updateRound.mutate({ roundId: round.id, data: { name: e.target.value } })}
+                                className="h-8 text-sm"
+                                data-testid={`input-round-name-${round.id}`}
+                              />
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Switch
+                                checked={round.isTeamDraft}
+                                onCheckedChange={checked => updateRound.mutate({ roundId: round.id, data: { isTeamDraft: checked } })}
+                                data-testid={`switch-team-draft-${round.id}`}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-wrap gap-1">
+                                {roundEntries.map((entry, idx) => (
+                                  <Badge key={`${entry.userId}-${idx}`} variant="outline" className="text-xs">
+                                    {entry.user.teamAbbreviation || entry.user.teamName || entry.user.email}
+                                  </Badge>
+                                ))}
                               </div>
                             </TableCell>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                  <Button onClick={handleSaveOrder} disabled={saveOrder.isPending} data-testid="button-save-order">
-                    {saveOrder.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</> : "Save Order"}
-                  </Button>
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground">No league members available for draft order.</p>
-              )}
-            </CardContent>
-          </Card>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+                {draftRounds.some(r => r.isTeamDraft) && (
+                  <p className="text-sm text-muted-foreground mt-3">
+                    Rounds marked as "Team Draft" will let the picking team select an MLB organization, drafting all remaining affiliated players at once.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>
@@ -481,14 +597,6 @@ export default function CommissionerDraft() {
                     <Label htmlFor="edit-name">Name</Label>
                     <Input id="edit-name" value={editName} onChange={e => setEditName(e.target.value)} data-testid="input-edit-draft-name" />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-rounds">Rounds</Label>
-                    <Input id="edit-rounds" type="number" value={editRounds} onChange={e => setEditRounds(Number(e.target.value))} min={1} max={50} data-testid="input-edit-draft-rounds" />
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Switch id="edit-snake" checked={editSnake} onCheckedChange={setEditSnake} data-testid="switch-edit-draft-snake" />
-                    <Label htmlFor="edit-snake">Snake draft</Label>
-                  </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <Button onClick={() => updateDraft.mutate()} disabled={updateDraft.isPending} data-testid="button-save-settings">
                       {updateDraft.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</> : "Save Settings"}
@@ -500,7 +608,6 @@ export default function CommissionerDraft() {
                 <div className="space-y-2">
                   <p className="text-sm"><span className="text-muted-foreground">Name:</span> {selectedDraft.name}</p>
                   <p className="text-sm"><span className="text-muted-foreground">Rounds:</span> {selectedDraft.rounds}</p>
-                  <p className="text-sm"><span className="text-muted-foreground">Snake:</span> {selectedDraft.snake ? "Yes" : "No"}</p>
                   <Button variant="outline" onClick={() => setShowSettings(true)} data-testid="button-edit-settings">
                     <Settings className="h-4 w-4 mr-2" />Edit Settings
                   </Button>
@@ -535,12 +642,12 @@ export default function CommissionerDraft() {
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete Draft</AlertDialogTitle>
-                  <AlertDialogDescription>This will permanently delete "{selectedDraft.name}" and all associated data. This cannot be undone.</AlertDialogDescription>
+                  <AlertDialogDescription>This will permanently delete the draft and all associated data. This action cannot be undone.</AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                   <AlertDialogAction onClick={() => deleteDraft.mutate()} data-testid="button-confirm-delete-draft">
-                    {deleteDraft.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Deleting...</> : "Delete Draft"}
+                    Delete
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -551,75 +658,71 @@ export default function CommissionerDraft() {
 
       {selectedDraft && selectedDraft.status === "active" && (
         <Card>
-          <CardContent className="py-6 space-y-4">
-            <div className="flex items-center gap-3">
-              <Play className="h-5 w-5 text-green-600" />
-              <span className="font-medium text-lg">Draft is Active</span>
-              {statusBadge("active")}
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Round {selectedDraft.currentRound} &middot; Pick {selectedDraft.currentPickIndex + 1} &middot; {draftPicks?.length ?? 0} picks made
+          <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
+            <CardTitle>Active Draft</CardTitle>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" data-testid="button-complete-draft">Complete Draft</Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Complete Draft</AlertDialogTitle>
+                  <AlertDialogDescription>End this draft early? Any remaining picks will not be made.</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => completeDraft.mutate()} data-testid="button-confirm-complete-draft">
+                    Complete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-3">
+              Round {selectedDraft.currentRound} of {selectedDraft.rounds} &middot; Pick {selectedDraft.currentPickIndex + 1}
             </p>
-            <div className="flex items-center gap-3 flex-wrap">
-              <Button variant="outline" onClick={() => window.open(`/draft/${selectedDraft.id}`, "_blank")} data-testid="button-view-draft-board">
-                View Draft Board
-              </Button>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button data-testid="button-complete-draft"><CheckCircle className="h-4 w-4 mr-2" />Complete Draft</Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Complete Draft</AlertDialogTitle>
-                    <AlertDialogDescription>Mark this draft as completed? No more picks can be made after this.</AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => completeDraft.mutate()} data-testid="button-confirm-complete-draft">Complete Draft</AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
+            <Button variant="outline" onClick={() => window.open(`/draft/${selectedDraft.id}`, '_blank')} data-testid="button-open-draft-board">
+              Open Draft Board
+            </Button>
           </CardContent>
         </Card>
       )}
 
-      {selectedDraft && selectedDraft.status === "completed" && (
+      {selectedDraft && selectedDraft.status === "completed" && draftPicks && (
         <Card>
-          <CardContent className="py-6 space-y-4">
-            <div className="flex items-center gap-3">
-              <CheckCircle className="h-5 w-5 text-muted-foreground" />
-              <span className="font-medium text-lg">Draft Completed</span>
-              {statusBadge("completed")}
-            </div>
-            <div className="text-sm text-muted-foreground space-y-1">
-              <p>{selectedDraft.rounds} rounds &middot; {selectedDraft.snake ? "Snake" : "Linear"} format</p>
-              <p>{selectedDraft.playerCount} players in pool &middot; {selectedDraft.pickCount} picks made &middot; {selectedDraft.teamCount} teams</p>
-            </div>
-            {draftPicks && draftPicks.length > 0 && (
-              <div className="border rounded-lg overflow-hidden max-h-64 overflow-y-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-16">Pick</TableHead>
-                      <TableHead>Player</TableHead>
-                      <TableHead>Team</TableHead>
-                      <TableHead>Roster</TableHead>
+          <CardHeader>
+            <CardTitle>Draft Results</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto max-h-96 overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Pick</TableHead>
+                    <TableHead>Round</TableHead>
+                    <TableHead>Team</TableHead>
+                    <TableHead>Player</TableHead>
+                    <TableHead>Roster</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {draftPicks.map(pick => (
+                    <TableRow key={pick.id} data-testid={`row-pick-${pick.id}`}>
+                      <TableCell className="font-mono">{pick.pickNumber}</TableCell>
+                      <TableCell className="font-mono">{pick.round}</TableCell>
+                      <TableCell className="font-medium">{pick.user.teamName || `${pick.user.firstName} ${pick.user.lastName}`}</TableCell>
+                      <TableCell>{pick.player.fullName}</TableCell>
+                      <TableCell>
+                        <Badge variant={pick.rosterType === "mlb" ? "default" : "outline"}>
+                          {pick.rosterType === "mlb" ? "MLB" : "MiLB"}
+                        </Badge>
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {draftPicks.map(pick => (
-                      <TableRow key={pick.id} data-testid={`row-pick-${pick.id}`}>
-                        <TableCell className="font-medium">{pick.round}.{pick.pickNumber}</TableCell>
-                        <TableCell>{pick.player.fullName}</TableCell>
-                        <TableCell>{pick.user.teamName || `${pick.user.firstName || ""} ${pick.user.lastName || ""}`.trim()}</TableCell>
-                        <TableCell><Badge variant="outline">{pick.rosterType.toUpperCase()}</Badge></TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       )}

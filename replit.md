@@ -1,7 +1,7 @@
 # CBL Auctions Platform
 
 ## Overview
-The CBL Auctions Platform is a fantasy baseball league management system focused on free agent auctions. It enables automated bidding, supports multi-year contracts with configurable multipliers, and provides real-time updates. The platform is designed to allow team owners to bid on free agents, with features for both manual and automated bidding, and offers extensive commissioner controls for league management. Its primary purpose is to streamline the free agent acquisition process in fantasy baseball leagues.
+The CBL Auctions Platform is a fantasy baseball league management system specifically designed for free agent auctions. It automates the bidding process, supports multi-year contracts with customizable multipliers, and delivers real-time updates. The platform provides tools for both manual and automated bidding by team owners and offers extensive commissioner controls for comprehensive league management, aiming to streamline the free agent acquisition process in fantasy baseball leagues.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -9,140 +9,48 @@ Preferred communication style: Simple, everyday language.
 ## System Architecture
 
 ### Frontend
-- **Framework**: React with TypeScript, using Vite.
-- **UI Component System**: shadcn/ui (Radix UI-based) with a Material Design aesthetic, prioritizing data clarity, information density, and a professional sports look (Roboto font).
-- **Styling**: Tailwind CSS with custom CSS variables for theming, supporting light/dark modes.
+- **Framework**: React with TypeScript, utilizing Vite.
+- **UI/UX**: shadcn/ui (Radix UI-based) with a Material Design aesthetic, emphasizing data clarity, density, and a professional sports appearance (Roboto font). Supports light/dark modes using Tailwind CSS with custom CSS variables.
 - **State Management**: TanStack Query for server state management with aggressive caching.
-- **Routing**: Wouter, handling Landing, Home, My Bids, Results, Commissioner sub-pages, and SuperAdmin pages.
-  - **Navigation**: Dropdown menus for Free Agency (Free Agents, My Bids, Results), My Roster (ML, MiLB), Players (ML, MiLB), Commissioner (Auction Management, Draft, Teams, MLB Rosters, MiLB Rosters, League Settings)
-  - **SuperAdmin page**: Super-admin only; league CRUD, member management, user creation
-  - **Commissioner sub-pages** (split from single 2118-line page):
-    - `/commissioner/free-agency` - Auction CRUD, activate/reset/delete, data exports
-    - `/commissioner/teams` - Team owner upload (CSV), edit details, archive, commissioner roles
-    - `/commissioner/rosters/mlb` - ML roster assignments (reuses RosterManagement with rosterLevel="mlb")
-    - `/commissioner/rosters/milb` - MiLB roster assignments (reuses RosterManagement with rosterLevel="milb")
-    - `/commissioner/settings` - League caps, roster CSV upload/clear, roster usage tracking
-    - `/commissioner/draft` - Draft CRUD, player pool upload via MLB API IDs, draft order management, start/complete drafts
-    - `/commissioner/auctions/:id` - Per-auction management (free agents, settings, teams, MLB sync)
-  - `/draft/:draftId` - Live draft board for picking players during active drafts
-  - `/commissioner` redirects to `/commissioner/free-agency`
-- **Key Design Decisions**: Component co-location, path aliases, React Hook Form with Zod for validation, real-time countdowns.
+- **Routing**: Wouter, supporting core pages (Landing, Home, My Bids, Results) and comprehensive Commissioner and SuperAdmin sub-pages.
+- **Design Decisions**: Component co-location, path aliases, React Hook Form with Zod for validation, and real-time countdowns.
 
 ### Backend
-- **Server Framework**: Express.js with TypeScript on Node.js.
-- **Build Strategy**: esbuild for production bundling into a single `dist/index.cjs`.
-- **API Design**: RESTful JSON API, organized by resource (e.g., `/api/auth`, `/api/free-agents`).
-- **Session Management**: Express sessions with `connect-pg-simple` for PostgreSQL-backed persistent storage (7-day duration, secure, httpOnly cookies).
-- **Development Server**: Vite integrated with Express for HMR.
+- **Server**: Express.js with TypeScript on Node.js, bundled with esbuild into a single CJS module.
+- **API**: RESTful JSON API.
+- **Session Management**: Express sessions with `connect-pg-simple` for PostgreSQL-backed persistent storage.
 
 ### Database Layer
 - **ORM**: Drizzle ORM with PostgreSQL.
-- **Schema**: Centralized in `shared/schema.ts`, using Drizzle-Zod for runtime validation.
-- **Core Tables**: `users`, `auctions`, `auctionTeams`, `leagueSettings`, `freeAgents`, `bids`, `autoBids`, `sessions`, `drafts`, `draftPlayers`, `draftPicks`, `draftOrder`.
-- **Storage Abstraction**: `server/storage.ts` for database operations encapsulation.
-- **Migrations**: Drizzle Kit for schema changes, stored in `/migrations`.
-- **User Table**: Stores only basic account info: email, firstName, lastName, teamName, isCommissioner, isSuperAdmin. No budget or limits.
-- **AuctionTeams Table**: Per-auction team participation with budget, rosterLimit, ipLimit, paLimit. Teams must be enrolled to participate.
-- **Query Optimization**: `enrichFreeAgentsWithBids` uses batch queries (GROUP BY, DISTINCT ON, IN clauses) instead of N+1 queries for fast free agent loading.
+- **Schema**: Centralized in `shared/schema.ts` with Drizzle-Zod for runtime validation.
+- **Core Tables**: `users`, `auctions`, `auctionTeams`, `leagueSettings`, `freeAgents`, `bids`, `autoBids`, `sessions`, `drafts`, `draftPlayers`, `draftPicks`, `draftOrder`, `leagueRosterAssignments`.
+- **Storage**: `server/storage.ts` encapsulates database operations.
+- **Migrations**: Drizzle Kit.
+- **Query Optimization**: Employs batch queries to prevent N+1 issues, particularly for free agent loading.
 
 ### Authentication & Authorization
-- **Authentication**: Email/password with bcrypt hashing (cost 12).
-- **Authorization**: Multi-tier role-based system:
-  - **Super Admin**: Global access to all leagues, can manage leagues and assign commissioners
-  - **League Commissioner**: Per-league role stored in `leagueMembers.role` column. A user can be commissioner in one league and regular owner in another.
-  - **Owner**: Regular team owner who participates in auctions within their leagues
-- **Per-League Commissioner Checks**: All commissioner operations now use league-scoped checks:
-  - `hasLeagueCommissionerAccess(userId, leagueId)`: Check if user is commissioner of a specific league
-  - `hasAuctionCommissionerAccess(userId, auctionId)`: Check if user is commissioner of the auction's parent league
-- **Session Flow**: Standard login, session creation, protected routes via middleware, logout.
-- **User Management**: League commissioners can upload users via CSV, auto-generated passwords, `mustResetPassword` flag.
-- **Password Reset Flow**: Forces users with `mustResetPassword=true` to set a new password upon login.
+- **Authentication**: Email/password with bcrypt hashing.
+- **Authorization**: Multi-tier role-based system including Super Admin, League Commissioner (per-league), and Owner.
+- **Security**: League-scoped commissioner checks and secure session management.
+- **User Management**: Commissioners can upload users via CSV, with auto-generated passwords and forced password resets.
 
-### Key Features & System Design
-- **Auction Platform**: Comprehensive bidding system with configurable bid increment, auto-bids, real-time countdowns.
-- **Per-Auction Settings**: Year multipliers (yearFactor1-5), defaultBudget, enforceBudget, and bidIncrement are stored per-auction in the `auctions` table.
-  - Bid calculations use per-auction year factors: Total Value = Annual Salary × yearFactor[years]
-  - Budget enforcement is per-auction: auction.enforceBudget flag controls whether budget limits are enforced
-  - Commissioner can configure each auction's settings via Settings dialog in Auction Management
-- **Optional Auction Features** (configurable per auction via Settings dialog):
-  - `allowAutoBidding` (default: true): When disabled, users cannot create auto-bids for this auction
-  - `allowBundledBids` (default: true): When disabled, users cannot create bid bundles for this auction
-  - `extendAuctionOnBid` (default: false): When enabled, bids placed within 24 hours of auction end time automatically extend the end time by 24 hours
-  - Server-side validation enforces these restrictions; frontend hides UI elements when features are disabled
-- **Commissioner Dashboard**: CSV uploads for free agents, user management, and roster management; auction control (create, rename, activate, reset, delete).
-- **Roster Management**: Track existing player contracts (player name, team abbreviation, player type, IP, PA, salary, contract years) and calculate available budgets for auctions based on league caps.
-  - League-level caps (budgetCap, ipCap, paCap) stored in `leagues` table
-  - `rosterPlayers` table stores existing contracts by team
-  - CSV upload supports flexible column headers (case-insensitive, multiple name variants)
-  - Roster usage calculated by summing IP/PA/salary from rosterPlayers per team
-  - API routes: `GET /api/leagues/:id/roster-usage`, `POST /api/leagues/:id/roster/upload`, `PATCH /api/leagues/:id/caps`, `DELETE /api/leagues/:id/roster`
-- **Auction Limit Source**: Auctions can derive team limits from rosters or use manually uploaded/entered values.
-  - `limitSource` field in auctions table: "manual" (default) or "roster"
-  - "Sync from Roster" button calculates available = league cap - roster usage for each team
-  - Teams with no roster data get full league cap values
-  - API route: `POST /api/auctions/:id/sync-from-roster`
-- **Budget System**: Per-auction team budgets stored in `auctionTeams` table, tracking dollar amount of bids per auction.
-  - Budget calculations scope to specific auctions via `?auctionId=X` parameter
-  - Home page automatically uses the active auction's ID for budget display
-- **Bid Validation**: Ensures bids meet minimum increment and respect player `minimumBid` and `minimumYears`.
-  - Limit checks (roster/IP/PA) now use per-auction settings from `auctionTeams` table
-- **Relist Feature**: Allows commissioners to relist players with no bids.
-- **Player Type System**: Classifies players as "Hitter" or "Pitcher" with specific sortable stats.
-- **Team Limits**: Per-auction roster, IP, and PA limits stored in `auctionTeams` table.
-  - API: `GET /api/limits?auctionId=X`, `PATCH /api/auctions/:id/teams/:userId/limits`
-  - Bid validation uses player's `auctionId` to determine which limits apply
-- **Super Admin & Impersonation**: Super admin can impersonate any user, with UI indicators and dedicated API endpoints.
-- **Commissioner Role Management**: Super admin-only assignment, one active commissioner at a time, transactional updates.
-- **Team Deletion**: Allows deletion of inactive teams (no bids, no won players, etc.).
-- **Multi-Auction Support**: Only one auction can be active at a time for bidding; commissioners and users can review archived/completed auctions.
-  - Results page has auction selector to filter by specific auction
-  - Home page shows the currently active auction name and filters data by active auction
-  - Commissioners can create, rename, activate, reset (with password), and delete (with password) auctions
-  - API supports `?auctionId=X` query parameter for filtering free agents, results, budget, and limits
-  - Free agents are required to be associated with an auction when created (via auction selector in Commissioner page)
-- **Background Jobs**:
-  - Auction Finalization (every minute): Automatically sets winnerId and winningBidId for closed auctions based on highest bid
-  - Auto-Bid Deployment (every minute): Deploys pending auto-bids when a player's auction start time arrives. If a user creates an auto-bid on a player whose auction hasn't started yet, the bid will automatically deploy within 1 minute of the auction starting.
-  - Hourly Email Summary: Per-auction email notification setting controls who receives results emails
-  - "Ending Today" calculation uses Eastern Time for midnight boundary
-- **MLB Stats Integration**: Commissioners can sync player statistics directly from MLB's official Stats API
-  - "Sync from MLB" button in Commissioner page fetches stats for all players in an auction
-  - Select season year (last 10 years available) to pull appropriate stats
-  - **Stat selection**: Choose which specific stats to update via checkboxes (can select individual stats or use Select All/Clear All)
-  - Fuzzy name matching handles player name variations (e.g., "Mike Trout" vs "Trout, Michael")
-  - Batch processing (5 players at a time with 100ms delays) respects API rate limits
-  - Results dialog shows: updated players with stats summary, players not found in MLB database
-  - Available hitter stats: PA, HR, RBI, Runs, SB, AVG, OPS
-  - Available pitcher stats: IP, Wins, Losses, ERA, WHIP, Strikeouts
-  - Players not found need manual stats update via CSV upload
-  - API route: `POST /api/free-agents/sync-mlb-stats` (accepts optional `selectedStats` array)
-  - Implementation: `server/mlb-api.ts` (no API key required - free public API)
-- **Email Notifications**: Resend integration for password reset, new user credentials, and hourly auction summaries
-  - Per-auction `emailNotifications` setting with values: "none", "commissioner", "bidders" (default), or "league"
-  - "commissioner" sends hourly results to league commissioner only
-  - "bidders" sends hourly results only to teams who submitted bids on the closing auctions (deduplicated - one email per user even if they bid on multiple players)
-  - "league" sends hourly results to all league members
-  - Configurable in Auction Settings dialog
-  - **Individual Opt-Out**: Team owners can opt out of league-wide emails via toggle on Home page
-    - `emailOptOuts` table stores per-auction opt-out preferences (auctionId, userId)
-    - API: `GET/POST /api/auctions/:id/email-opt-out`
-    - Opt-out toggle only visible when auction has `emailNotifications="league"`
-    - Email footer includes link to manage preferences for league-wide notifications
-
-- **League Roster Assignments**: Per-league system for tracking which MLB players belong to which team's roster
-  - `leagueRosterAssignments` table links `mlbPlayers` to league teams with roster type ('mlb', 'milb', 'draft')
-  - Each team has configurable ML roster limit (default 40) and MiLB system limit (default 125), stored in `leagues` table
-  - Season-scoped: assignments are tracked per season (e.g., 2025)
-  - Unassigned players are dynamically computed as free agents (MLB level = ML free agents, other levels = MiLB free agents)
-  - Commissioner UI in Commissioner page with team summary, assignment management, and free agent pool with search/filter
-  - API routes: `GET/POST/PATCH/DELETE /api/leagues/:id/roster-assignments`, `GET /api/leagues/:id/unassigned-players`
-  - Unique constraint on (leagueId, mlbPlayerId, season) prevents duplicate assignments
-  - Component: `client/src/components/RosterManagement.tsx`
+### Key Features
+- **Auction System**: Comprehensive bidding with configurable increments, auto-bids, real-time countdowns, and per-auction settings for year multipliers, budget enforcement, and optional features like bundled bids or auction extensions.
+- **Commissioner Dashboard**: Tools for free agent and user management via CSV, roster management, and full auction lifecycle control (create, activate, reset, delete).
+- **Roster Management**: Tracks existing player contracts, calculates available budgets based on league caps, and supports flexible CSV uploads.
+- **Budget System**: Per-auction team budgets stored in `auctionTeams`, influencing bid validation and real-time budget displays.
+- **Player Management**: Relist feature for unsold players, player type classification (Hitter/Pitcher), and per-auction team limits (roster, IP, PA).
+- **Super Admin**: Impersonation capabilities and role management for commissioners.
+- **Multi-Auction Support**: Manages multiple auctions, with only one active for bidding at a time; supports filtering for historical auctions.
+- **Background Jobs**: Automated auction finalization, auto-bid deployment, and hourly email summaries.
+- **MLB Stats Integration**: Commissioners can sync player statistics from MLB's official Stats API, supporting fuzzy name matching, selective stat updates, and batch processing to respect API rate limits.
+- **Email Notifications**: Integrated with Resend for password resets, new user credentials, and hourly auction summaries with configurable notification settings (none, commissioner, bidders, league) and individual opt-out options.
+- **Draft System**: Full draft management with CSV-based order configuration, customizable rounds, and "Team Draft" functionality for drafting entire affiliated player pools.
+- **League Roster Assignments**: Tracks MLB players assigned to league teams per season, supporting ML and MiLB roster limits, and dynamically identifying unassigned players as free agents.
 
 ## External Dependencies
-
 - **Authentication**: `bcryptjs`, `express-session`, `connect-pg-simple`.
-- **Database**: PostgreSQL (`pg` library for pooling).
+- **Database**: PostgreSQL (`pg`).
 - **UI Libraries**: Radix UI, Lucide React, date-fns, Embla Carousel.
 - **Development Tools**: Vite, TypeScript, ESBuild.
-- **Environment Variables**: `DATABASE_URL`, `SESSION_SECRET`.
+- **Email Service**: Resend.

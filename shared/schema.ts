@@ -515,14 +515,31 @@ export const insertDraftPlayerSchema = createInsertSchema(draftPlayers).omit({
   status: true,
 });
 
-// Draft order - defines pick order for each draft
+// Draft rounds - configures each round of a draft (name, team draft flag)
+export const draftRounds = pgTable("draft_rounds", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  draftId: integer("draft_id").references(() => drafts.id, { onDelete: "cascade" }).notNull(),
+  roundNumber: integer("round_number").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  isTeamDraft: boolean("is_team_draft").notNull().default(false),
+}, (table) => [
+  index("idx_draft_rounds_draft").on(table.draftId),
+]);
+
+export const insertDraftRoundSchema = createInsertSchema(draftRounds).omit({
+  id: true,
+});
+
+// Draft order - defines pick order for each round of each draft
 export const draftOrder = pgTable("draft_order", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   draftId: integer("draft_id").references(() => drafts.id, { onDelete: "cascade" }).notNull(),
+  roundNumber: integer("round_number").notNull().default(1),
   userId: varchar("user_id").references(() => users.id).notNull(),
   orderIndex: integer("order_index").notNull(),
 }, (table) => [
   index("idx_draft_order_draft").on(table.draftId),
+  index("idx_draft_order_round").on(table.draftId, table.roundNumber),
 ]);
 
 export const insertDraftOrderSchema = createInsertSchema(draftOrder).omit({
@@ -658,6 +675,9 @@ export type InsertDraft = z.infer<typeof insertDraftSchema>;
 
 export type DraftPlayer = typeof draftPlayers.$inferSelect;
 export type InsertDraftPlayer = z.infer<typeof insertDraftPlayerSchema>;
+
+export type DraftRound = typeof draftRounds.$inferSelect;
+export type InsertDraftRound = z.infer<typeof insertDraftRoundSchema>;
 
 export type DraftOrder = typeof draftOrder.$inferSelect;
 export type InsertDraftOrder = z.infer<typeof insertDraftOrderSchema>;

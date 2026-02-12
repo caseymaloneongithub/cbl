@@ -18,8 +18,8 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Clock, Search, Trophy, Users, Loader2, CheckCircle } from "lucide-react";
-import type { Draft, DraftPlayerWithDetails, DraftPickWithDetails, DraftOrder, User } from "@shared/schema";
+import { Clock, Search, Trophy, Users, Loader2, CheckCircle, Building2 } from "lucide-react";
+import type { Draft, DraftRound, DraftPlayerWithDetails, DraftPickWithDetails, DraftOrder, User } from "@shared/schema";
 
 const DRAFT_POLL_INTERVAL = 3000;
 
@@ -31,6 +31,9 @@ export default function DraftBoard() {
   const [pickDialogOpen, setPickDialogOpen] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState<DraftPlayerWithDetails | null>(null);
   const [rosterType, setRosterType] = useState<string>("mlb");
+  const [teamDraftDialogOpen, setTeamDraftDialogOpen] = useState(false);
+  const [selectedOrg, setSelectedOrg] = useState<string>("");
+  const [teamDraftRosterType, setTeamDraftRosterType] = useState<string>("milb");
 
   const draftIdNum = draftId ? parseInt(draftId, 10) : null;
 
@@ -43,6 +46,16 @@ export default function DraftBoard() {
     },
     enabled: !!draftIdNum,
     refetchInterval: DRAFT_POLL_INTERVAL,
+  });
+
+  const { data: draftRounds } = useQuery<DraftRound[]>({
+    queryKey: ["/api/drafts", draftIdNum, "rounds"],
+    queryFn: async () => {
+      const res = await fetch(`/api/drafts/${draftIdNum}/rounds`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch rounds");
+      return res.json();
+    },
+    enabled: !!draftIdNum,
   });
 
   const { data: draftOrderData } = useQuery<(DraftOrder & { user: User })[]>({
@@ -80,19 +93,24 @@ export default function DraftBoard() {
     refetchInterval: DRAFT_POLL_INTERVAL,
   });
 
-  const sortedOrder = useMemo(() => {
-    if (!draftOrderData) return [];
-    return [...draftOrderData].sort((a, b) => a.orderIndex - b.orderIndex);
-  }, [draftOrderData]);
+  const currentRoundConfig = useMemo(() => {
+    if (!draft || !draftRounds) return null;
+    return draftRounds.find(r => r.roundNumber === draft.currentRound) || null;
+  }, [draft, draftRounds]);
+
+  const isTeamDraftRound = currentRoundConfig?.isTeamDraft === true;
+
+  const currentRoundOrder = useMemo(() => {
+    if (!draftOrderData || !draft) return [];
+    return draftOrderData
+      .filter(o => o.roundNumber === draft.currentRound)
+      .sort((a, b) => a.orderIndex - b.orderIndex);
+  }, [draftOrderData, draft]);
 
   const currentTeam = useMemo(() => {
-    if (!draft || !sortedOrder.length || draft.status !== "active") return null;
-    const round = draft.currentRound;
-    const pickIndex = draft.currentPickIndex;
-    const isEvenRound = round % 2 === 0;
-    const order = isEvenRound ? [...sortedOrder].reverse() : sortedOrder;
-    return order[pickIndex] || null;
-  }, [draft, sortedOrder]);
+    if (!draft || !currentRoundOrder.length || draft.status !== "active") return null;
+    return currentRoundOrder[draft.currentPickIndex] || null;
+  }, [draft, currentRoundOrder]);
 
   const isMyTurn = useMemo(() => {
     if (!currentTeam || !user) return false;
@@ -105,6 +123,15 @@ export default function DraftBoard() {
     if (user?.isCommissioner || user?.isSuperAdmin) return true;
     return false;
   }, [draft, isMyTurn, user]);
+
+  const availableOrgs = useMemo(() => {
+    if (!availablePlayers) return [];
+    const orgs = new Set<string>();
+    availablePlayers.forEach(dp => {
+      if (dp.player.parentOrgName) orgs.add(dp.player.parentOrgName);
+    });
+    return [...orgs].sort();
+  }, [availablePlayers]);
 
   const makePick = useMutation({
     mutationFn: async ({ mlbPlayerId, rosterType }: { mlbPlayerId: number; rosterType: string }) => {
@@ -125,6 +152,26 @@ export default function DraftBoard() {
     },
   });
 
+  const makeTeamDraftPick = useMutation({
+    mutationFn: async ({ parentOrgName, rosterType }: { parentOrgName: string; rosterType: string }) => {
+      const res = await apiRequest("POST", `/api/drafts/${draftIdNum}/pick`, { parentOrgName, rosterType });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Team Draft Pick", description: `Drafted ${data.playersDrafted} players from ${data.orgName}` });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "picks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "players"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "order"] });
+      setTeamDraftDialogOpen(false);
+      setSelectedOrg("");
+      setTeamDraftRosterType("milb");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Team Draft Pick failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   const handlePickClick = (player: DraftPlayerWithDetails) => {
     setSelectedPlayer(player);
     setRosterType("mlb");
@@ -134,6 +181,17 @@ export default function DraftBoard() {
   const handleConfirmPick = () => {
     if (!selectedPlayer) return;
     makePick.mutate({ mlbPlayerId: selectedPlayer.mlbPlayerId, rosterType });
+  };
+
+  const handleTeamDraftClick = () => {
+    setSelectedOrg("");
+    setTeamDraftRosterType("milb");
+    setTeamDraftDialogOpen(true);
+  };
+
+  const handleConfirmTeamDraft = () => {
+    if (!selectedOrg) return;
+    makeTeamDraftPick.mutate({ parentOrgName: selectedOrg, rosterType: teamDraftRosterType });
   };
 
   if (loadingDraft) {
@@ -222,7 +280,8 @@ export default function DraftBoard() {
     );
   }
 
-  const totalPicks = sortedOrder.length * draft.rounds;
+  const roundName = currentRoundConfig?.name || `Round ${draft.currentRound}`;
+  const totalPicksInRound = currentRoundOrder.length;
   const picksMade = picks?.length || 0;
 
   return (
@@ -234,11 +293,17 @@ export default function DraftBoard() {
             {draft.status === "active" ? "Live" : draft.status}
           </Badge>
           <span className="text-muted-foreground text-sm" data-testid="text-round-info">
-            Round {draft.currentRound} of {draft.rounds}
+            {roundName} (Round {draft.currentRound} of {draft.rounds})
           </span>
           <span className="text-muted-foreground text-sm">
-            Pick {picksMade + 1} of {totalPicks}
+            Pick {draft.currentPickIndex + 1} of {totalPicksInRound}
           </span>
+          {isTeamDraftRound && (
+            <Badge variant="secondary" data-testid="badge-team-draft-round">
+              <Building2 className="h-3 w-3 mr-1" />
+              Team Draft Round
+            </Badge>
+          )}
         </div>
       </div>
 
@@ -255,11 +320,32 @@ export default function DraftBoard() {
                 <Badge variant="default" data-testid="badge-your-pick">Your Pick</Badge>
               )}
             </div>
+            {isTeamDraftRound && (
+              <p className="text-sm text-muted-foreground mt-2">
+                This is a team draft round. Pick an MLB organization to draft all remaining affiliated players.
+              </p>
+            )}
             {!canPick && (
               <p className="text-muted-foreground mt-2" data-testid="text-waiting">
                 Waiting for {currentTeam.user.teamName || `${currentTeam.user.firstName} ${currentTeam.user.lastName}`} to pick...
               </p>
             )}
+            {canPick && isTeamDraftRound && (
+              <Button className="mt-3" onClick={handleTeamDraftClick} data-testid="button-team-draft-pick">
+                <Building2 className="h-4 w-4 mr-2" />
+                Select Organization
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {draft.status === "active" && !currentTeam && currentRoundOrder.length === 0 && (
+        <Card className="mb-6">
+          <CardContent className="py-8 text-center">
+            <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <h3 className="text-lg font-medium mb-2">Draft Order Not Set</h3>
+            <p className="text-muted-foreground">The draft order has not been configured for this round. The commissioner needs to upload the draft order.</p>
           </CardContent>
         </Card>
       )}
@@ -278,7 +364,9 @@ export default function DraftBoard() {
         <div className="lg:col-span-2">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
-              <CardTitle className="text-lg">Available Players</CardTitle>
+              <CardTitle className="text-lg">
+                {isTeamDraftRound ? "Available Organizations" : "Available Players"}
+              </CardTitle>
               <div className="relative w-64">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -291,7 +379,51 @@ export default function DraftBoard() {
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              {loadingPlayers ? (
+              {isTeamDraftRound && draft.status === "active" ? (
+                <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+                  {availableOrgs.length === 0 ? (
+                    <div className="p-8 text-center text-muted-foreground">No available organizations remaining.</div>
+                  ) : (
+                    <Table>
+                      <TableHeader className="sticky top-0 z-10 bg-background">
+                        <TableRow className="bg-muted/50">
+                          <TableHead className="font-semibold">Organization</TableHead>
+                          <TableHead className="font-semibold text-center">Available Players</TableHead>
+                          {canPick && <TableHead className="font-semibold text-right">Action</TableHead>}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {availableOrgs.map(org => {
+                          const orgPlayerCount = availablePlayers?.filter(p => p.player.parentOrgName === org).length || 0;
+                          return (
+                            <TableRow key={org} data-testid={`row-org-${org.replace(/\s/g, '-')}`}>
+                              <TableCell className="font-medium">{org}</TableCell>
+                              <TableCell className="text-center">
+                                <Badge variant="outline">{orgPlayerCount}</Badge>
+                              </TableCell>
+                              {canPick && (
+                                <TableCell className="text-right">
+                                  <Button
+                                    size="sm"
+                                    onClick={() => {
+                                      setSelectedOrg(org);
+                                      setTeamDraftRosterType("milb");
+                                      setTeamDraftDialogOpen(true);
+                                    }}
+                                    data-testid={`button-draft-org-${org.replace(/\s/g, '-')}`}
+                                  >
+                                    Draft
+                                  </Button>
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  )}
+                </div>
+              ) : loadingPlayers ? (
                 <div className="p-6 space-y-3">
                   {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
                 </div>
@@ -308,7 +440,7 @@ export default function DraftBoard() {
                         <TableHead className="font-semibold">Pos</TableHead>
                         <TableHead className="font-semibold">Team</TableHead>
                         <TableHead className="font-semibold">Level</TableHead>
-                        {canPick && <TableHead className="font-semibold text-right">Action</TableHead>}
+                        {canPick && !isTeamDraftRound && <TableHead className="font-semibold text-right">Action</TableHead>}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -320,7 +452,7 @@ export default function DraftBoard() {
                           <TableCell>
                             <Badge variant="outline" className="text-xs">{dp.player.sportLevel}</Badge>
                           </TableCell>
-                          {canPick && (
+                          {canPick && !isTeamDraftRound && (
                             <TableCell className="text-right">
                               <Button
                                 size="sm"
@@ -387,15 +519,17 @@ export default function DraftBoard() {
             </CardContent>
           </Card>
 
-          {sortedOrder.length > 0 && (
+          {currentRoundOrder.length > 0 && (
             <Card className="mt-4">
               <CardHeader className="pb-3">
-                <CardTitle className="text-lg">Draft Order</CardTitle>
+                <CardTitle className="text-lg">
+                  {roundName} Order
+                </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
                 <Table>
                   <TableBody>
-                    {sortedOrder.map((entry, idx) => (
+                    {currentRoundOrder.map((entry, idx) => (
                       <TableRow
                         key={entry.id}
                         className={currentTeam?.userId === entry.userId ? "bg-primary/10" : ""}
@@ -462,6 +596,74 @@ export default function DraftBoard() {
             >
               {makePick.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Confirm Pick
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={teamDraftDialogOpen} onOpenChange={setTeamDraftDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Team Draft Pick</DialogTitle>
+            <DialogDescription>
+              Select an MLB organization to draft all their remaining affiliated players for {currentTeam?.user.teamName || "your team"}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">MLB Organization</label>
+              <Select value={selectedOrg} onValueChange={setSelectedOrg}>
+                <SelectTrigger data-testid="select-org">
+                  <SelectValue placeholder="Select an organization..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableOrgs.map(org => {
+                    const count = availablePlayers?.filter(p => p.player.parentOrgName === org).length || 0;
+                    return (
+                      <SelectItem key={org} value={org}>
+                        {org} ({count} players)
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Roster Assignment</label>
+              <Select value={teamDraftRosterType} onValueChange={setTeamDraftRosterType}>
+                <SelectTrigger data-testid="select-team-draft-roster-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mlb">MLB Roster</SelectItem>
+                  <SelectItem value="milb">MiLB System</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {selectedOrg && (
+              <div className="bg-muted/50 rounded-md p-3">
+                <p className="text-sm font-medium mb-1">Players to be drafted:</p>
+                <div className="text-sm text-muted-foreground max-h-32 overflow-y-auto">
+                  {availablePlayers
+                    ?.filter(p => p.player.parentOrgName === selectedOrg)
+                    .map(p => (
+                      <div key={p.id}>{p.player.fullName} - {p.player.primaryPosition}</div>
+                    ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setTeamDraftDialogOpen(false)} data-testid="button-cancel-team-draft">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmTeamDraft}
+              disabled={makeTeamDraftPick.isPending || !selectedOrg}
+              data-testid="button-confirm-team-draft"
+            >
+              {makeTeamDraftPick.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Draft Organization
             </Button>
           </DialogFooter>
         </DialogContent>
