@@ -4993,10 +4993,12 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
-      const { name, isTeamDraft } = req.body;
+      const { name, isTeamDraft, startTime, pickDurationMinutes } = req.body;
       const updateData: any = {};
       if (name !== undefined) updateData.name = name;
       if (isTeamDraft !== undefined) updateData.isTeamDraft = isTeamDraft;
+      if (startTime !== undefined) updateData.startTime = startTime ? new Date(startTime) : null;
+      if (pickDurationMinutes !== undefined) updateData.pickDurationMinutes = parseInt(pickDurationMinutes) || 60;
 
       const updated = await storage.updateDraftRound(roundId, updateData);
       res.json(updated);
@@ -5180,6 +5182,67 @@ export async function registerRoutes(
     }
   });
 
+  // GET /api/drafts/:id/timing - Get timing info for current round
+  app.get("/api/drafts/:id/timing", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid draft ID" });
+
+      const draft = await storage.getDraft(id);
+      if (!draft) return res.status(404).json({ message: "Draft not found" });
+
+      const rounds = await storage.getDraftRounds(id);
+      const currentRoundConfig = rounds.find(r => r.roundNumber === draft.currentRound);
+
+      if (!currentRoundConfig?.startTime) {
+        return res.json({ hasTiming: false, currentRound: draft.currentRound, currentPickIndex: draft.currentPickIndex });
+      }
+
+      const roundStart = new Date(currentRoundConfig.startTime).getTime();
+      const pickDuration = (currentRoundConfig.pickDurationMinutes || 60) * 60 * 1000;
+      const now = Date.now();
+
+      const roundOrder = await storage.getDraftOrder(id, draft.currentRound);
+      const sortedRoundOrder = [...roundOrder].sort((a, b) => a.orderIndex - b.orderIndex);
+
+      const pickTimings = sortedRoundOrder.map((entry, idx) => {
+        const pickStart = roundStart + (idx * pickDuration);
+        const pickDeadline = roundStart + ((idx + 1) * pickDuration);
+        const isExpired = now >= pickDeadline;
+        const isActive = now >= pickStart && now < pickDeadline;
+        return {
+          orderIndex: idx,
+          userId: entry.userId,
+          pickStart: new Date(pickStart).toISOString(),
+          pickDeadline: new Date(pickDeadline).toISOString(),
+          isExpired,
+          isActive,
+        };
+      });
+
+      const eligiblePickerIds: string[] = [];
+      for (let i = draft.currentPickIndex; i < sortedRoundOrder.length; i++) {
+        const pickStart = roundStart + (i * pickDuration);
+        if (i === draft.currentPickIndex || now >= pickStart) {
+          eligiblePickerIds.push(sortedRoundOrder[i].userId);
+        }
+      }
+
+      res.json({
+        hasTiming: true,
+        currentRound: draft.currentRound,
+        currentPickIndex: draft.currentPickIndex,
+        roundStartTime: currentRoundConfig.startTime,
+        pickDurationMinutes: currentRoundConfig.pickDurationMinutes,
+        pickTimings,
+        eligiblePickerIds,
+      });
+    } catch (error) {
+      console.error("Error fetching draft timing:", error);
+      res.status(500).json({ message: "Failed to fetch draft timing" });
+    }
+  });
+
   // POST /api/drafts/:id/pick - Make a pick (supports regular and team draft rounds)
   app.post("/api/drafts/:id/pick", isAuthenticated, async (req: any, res) => {
     try {
@@ -5206,15 +5269,34 @@ export async function registerRoutes(
         return res.status(500).json({ message: "Could not determine current picker" });
       }
 
-      const isCommissioner = await hasLeagueCommissionerAccess(commissionerUserId, draft.leagueId);
-      if (userId !== currentPicker.userId && !isCommissioner) {
-        return res.status(403).json({ message: "It is not your turn to pick" });
-      }
-
-      const pickingUserId = currentPicker.userId;
-
       const rounds = await storage.getDraftRounds(id);
       const currentRoundConfig = rounds.find(r => r.roundNumber === currentRound);
+
+      const isCommissioner = await hasLeagueCommissionerAccess(commissionerUserId, draft.leagueId);
+      let pickingUserId = currentPicker.userId;
+      let isAllowedToPick = (userId === currentPicker.userId) || isCommissioner;
+
+      if (!isAllowedToPick && currentRoundConfig?.startTime) {
+        const roundStart = new Date(currentRoundConfig.startTime).getTime();
+        const pickDuration = (currentRoundConfig.pickDurationMinutes || 60) * 60 * 1000;
+        const now = Date.now();
+
+        const currentPickDeadline = roundStart + ((currentPickIndex + 1) * pickDuration);
+        if (now >= currentPickDeadline) {
+          const userPickIndex = sortedRoundOrder.findIndex(o => o.userId === userId);
+          if (userPickIndex > currentPickIndex) {
+            const userPickStart = roundStart + (userPickIndex * pickDuration);
+            if (now >= userPickStart) {
+              isAllowedToPick = true;
+              pickingUserId = userId;
+            }
+          }
+        }
+      }
+
+      if (!isAllowedToPick) {
+        return res.status(403).json({ message: "It is not your turn to pick" });
+      }
       const isTeamDraftRound = currentRoundConfig?.isTeamDraft === true;
 
       if (isTeamDraftRound) {

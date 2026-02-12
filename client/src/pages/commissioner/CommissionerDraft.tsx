@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { DraftWithDetails, DraftPlayerWithDetails, DraftPickWithDetails, DraftRound, DraftOrder, User, LeagueMember } from "@shared/schema";
-import { Plus, Loader2, Trash2, Play, Settings, Upload, Users, ListOrdered, FileSpreadsheet } from "lucide-react";
+import { Plus, Loader2, Trash2, Play, Settings, Upload, Users, ListOrdered, FileSpreadsheet, Clock } from "lucide-react";
 
 export default function CommissionerDraft() {
   const { selectedLeagueId } = useLeague();
@@ -531,19 +531,24 @@ export default function CommissionerDraft() {
                 <CardTitle className="flex items-center gap-2"><ListOrdered className="h-5 w-5" />Round Configuration</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="border rounded-md overflow-hidden">
+                <div className="border rounded-md overflow-hidden overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-16">#</TableHead>
-                        <TableHead>Round Name</TableHead>
-                        <TableHead className="w-32 text-center">Team Draft</TableHead>
-                        <TableHead>Order Preview</TableHead>
+                        <TableHead className="w-12">#</TableHead>
+                        <TableHead className="min-w-[140px]">Round Name</TableHead>
+                        <TableHead className="w-28 text-center">Team Draft</TableHead>
+                        <TableHead className="min-w-[200px]">Start Date/Time</TableHead>
+                        <TableHead className="min-w-[100px]">Pick Duration</TableHead>
+                        <TableHead className="min-w-[200px]">Order Preview</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {draftRounds.map(round => {
                         const roundEntries = orderByRound(round.roundNumber);
+                        const startTimeLocal = round.startTime
+                          ? new Date(round.startTime).toISOString().slice(0, 16)
+                          : "";
                         return (
                           <TableRow key={round.id} data-testid={`row-round-${round.id}`}>
                             <TableCell className="font-mono">{round.roundNumber}</TableCell>
@@ -563,6 +568,38 @@ export default function CommissionerDraft() {
                               />
                             </TableCell>
                             <TableCell>
+                              <Input
+                                type="datetime-local"
+                                value={startTimeLocal}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  updateRound.mutate({
+                                    roundId: round.id,
+                                    data: { startTime: val ? new Date(val).toISOString() : null },
+                                  });
+                                }}
+                                className="h-8 text-sm"
+                                data-testid={`input-round-start-${round.id}`}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  max={1440}
+                                  value={round.pickDurationMinutes}
+                                  onChange={e => updateRound.mutate({
+                                    roundId: round.id,
+                                    data: { pickDurationMinutes: e.target.value },
+                                  })}
+                                  className="h-8 text-sm w-16"
+                                  data-testid={`input-pick-duration-${round.id}`}
+                                />
+                                <span className="text-xs text-muted-foreground">min</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
                               <div className="flex flex-wrap gap-1">
                                 {roundEntries.map((entry, idx) => (
                                   <Badge key={`${entry.userId}-${idx}`} variant="outline" className="text-xs">
@@ -577,11 +614,17 @@ export default function CommissionerDraft() {
                     </TableBody>
                   </Table>
                 </div>
-                {draftRounds.some(r => r.isTeamDraft) && (
-                  <p className="text-sm text-muted-foreground mt-3">
-                    Rounds marked as "Team Draft" will let the picking team select an MLB organization, drafting all remaining affiliated players at once.
+                <div className="mt-3 space-y-1">
+                  <p className="text-sm text-muted-foreground">
+                    <Clock className="inline h-3.5 w-3.5 mr-1" />
+                    Set a start time per round. Each pick gets the configured duration (default 60 min). If a pick's time expires, they can still pick, but subsequent picks become eligible too.
                   </p>
-                )}
+                  {draftRounds.some(r => r.isTeamDraft) && (
+                    <p className="text-sm text-muted-foreground">
+                      Rounds marked as "Team Draft" let the picking team select an MLB organization, drafting all remaining affiliated players at once.
+                    </p>
+                  )}
+                </div>
               </CardContent>
             </Card>
           )}

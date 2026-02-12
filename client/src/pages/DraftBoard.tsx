@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
@@ -18,8 +18,25 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Clock, Search, Trophy, Users, Loader2, CheckCircle, Building2 } from "lucide-react";
+import { Clock, Search, Trophy, Users, Loader2, CheckCircle, Building2, AlertTriangle } from "lucide-react";
 import type { Draft, DraftRound, DraftPlayerWithDetails, DraftPickWithDetails, DraftOrder, User } from "@shared/schema";
+
+interface TimingInfo {
+  hasTiming: boolean;
+  currentRound: number;
+  currentPickIndex: number;
+  roundStartTime?: string;
+  pickDurationMinutes?: number;
+  pickTimings?: {
+    orderIndex: number;
+    userId: string;
+    pickStart: string;
+    pickDeadline: string;
+    isExpired: boolean;
+    isActive: boolean;
+  }[];
+  eligiblePickerIds?: string[];
+}
 
 const DRAFT_POLL_INTERVAL = 3000;
 
@@ -34,6 +51,7 @@ export default function DraftBoard() {
   const [teamDraftDialogOpen, setTeamDraftDialogOpen] = useState(false);
   const [selectedOrg, setSelectedOrg] = useState<string>("");
   const [teamDraftRosterType, setTeamDraftRosterType] = useState<string>("milb");
+  const [countdown, setCountdown] = useState<string>("");
 
   const draftIdNum = draftId ? parseInt(draftId, 10) : null;
 
@@ -93,6 +111,17 @@ export default function DraftBoard() {
     refetchInterval: DRAFT_POLL_INTERVAL,
   });
 
+  const { data: timingInfo } = useQuery<TimingInfo>({
+    queryKey: ["/api/drafts", draftIdNum, "timing"],
+    queryFn: async () => {
+      const res = await fetch(`/api/drafts/${draftIdNum}/timing`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch timing");
+      return res.json();
+    },
+    enabled: !!draftIdNum && draft?.status === "active",
+    refetchInterval: DRAFT_POLL_INTERVAL,
+  });
+
   const currentRoundConfig = useMemo(() => {
     if (!draft || !draftRounds) return null;
     return draftRounds.find(r => r.roundNumber === draft.currentRound) || null;
@@ -117,12 +146,57 @@ export default function DraftBoard() {
     return currentTeam.userId === user.id;
   }, [currentTeam, user]);
 
+  const myPickTiming = useMemo(() => {
+    if (!timingInfo?.hasTiming || !timingInfo.pickTimings || !user) return null;
+    return timingInfo.pickTimings.find(t => t.userId === user.id) || null;
+  }, [timingInfo, user]);
+
+  const currentPickTiming = useMemo(() => {
+    if (!timingInfo?.hasTiming || !timingInfo.pickTimings || !draft) return null;
+    return timingInfo.pickTimings[draft.currentPickIndex] || null;
+  }, [timingInfo, draft]);
+
+  const isEligibleByTiming = useMemo(() => {
+    if (!timingInfo?.hasTiming || !user) return false;
+    return timingInfo.eligiblePickerIds?.includes(user.id) || false;
+  }, [timingInfo, user]);
+
   const canPick = useMemo(() => {
     if (!draft || draft.status !== "active") return false;
     if (isMyTurn) return true;
     if (user?.isCommissioner || user?.isSuperAdmin) return true;
+    if (isEligibleByTiming) return true;
     return false;
-  }, [draft, isMyTurn, user]);
+  }, [draft, isMyTurn, user, isEligibleByTiming]);
+
+  useEffect(() => {
+    if (!currentPickTiming) {
+      setCountdown("");
+      return;
+    }
+    const deadline = new Date(currentPickTiming.pickDeadline).getTime();
+    const updateCountdown = () => {
+      const now = Date.now();
+      const diff = deadline - now;
+      if (diff <= 0) {
+        setCountdown("Expired");
+        return;
+      }
+      const hours = Math.floor(diff / 3600000);
+      const minutes = Math.floor((diff % 3600000) / 60000);
+      const seconds = Math.floor((diff % 60000) / 1000);
+      if (hours > 0) {
+        setCountdown(`${hours}h ${minutes}m ${seconds}s`);
+      } else if (minutes > 0) {
+        setCountdown(`${minutes}m ${seconds}s`);
+      } else {
+        setCountdown(`${seconds}s`);
+      }
+    };
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [currentPickTiming]);
 
   const availableOrgs = useMemo(() => {
     if (!availablePlayers) return [];
@@ -319,6 +393,21 @@ export default function DraftBoard() {
               {isMyTurn && (
                 <Badge variant="default" data-testid="badge-your-pick">Your Pick</Badge>
               )}
+              {countdown && (
+                <Badge
+                  variant={countdown === "Expired" ? "destructive" : "outline"}
+                  className="ml-auto text-sm font-mono"
+                  data-testid="badge-countdown"
+                >
+                  <Clock className="h-3.5 w-3.5 mr-1" />
+                  {countdown === "Expired" ? (
+                    <span className="flex items-center gap-1">
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      Time Expired
+                    </span>
+                  ) : countdown}
+                </Badge>
+              )}
             </div>
             {isTeamDraftRound && (
               <p className="text-sm text-muted-foreground mt-2">
@@ -328,6 +417,11 @@ export default function DraftBoard() {
             {!canPick && (
               <p className="text-muted-foreground mt-2" data-testid="text-waiting">
                 Waiting for {currentTeam.user.teamName || `${currentTeam.user.firstName} ${currentTeam.user.lastName}`} to pick...
+              </p>
+            )}
+            {canPick && !isMyTurn && isEligibleByTiming && (
+              <p className="text-sm text-primary mt-2" data-testid="text-your-turn-eligible">
+                The current pick has expired. Your pick window is open - you can make your selection now.
               </p>
             )}
             {canPick && isTeamDraftRound && (
@@ -529,21 +623,36 @@ export default function DraftBoard() {
               <CardContent className="p-0">
                 <Table>
                   <TableBody>
-                    {currentRoundOrder.map((entry, idx) => (
-                      <TableRow
-                        key={entry.id}
-                        className={currentTeam?.userId === entry.userId ? "bg-primary/10" : ""}
-                        data-testid={`row-order-${entry.id}`}
-                      >
-                        <TableCell className="font-mono text-sm">{idx + 1}</TableCell>
-                        <TableCell className="font-medium text-sm">
-                          {entry.user.teamName || `${entry.user.firstName} ${entry.user.lastName}`}
-                          {currentTeam?.userId === entry.userId && (
-                            <Badge variant="default" className="ml-2 text-xs">Current</Badge>
+                    {currentRoundOrder.map((entry, idx) => {
+                      const pickTiming = timingInfo?.hasTiming && timingInfo.pickTimings
+                        ? timingInfo.pickTimings[idx]
+                        : null;
+                      const isPicked = idx < (draft?.currentPickIndex ?? 0);
+                      return (
+                        <TableRow
+                          key={entry.id}
+                          className={currentTeam?.userId === entry.userId ? "bg-primary/10" : ""}
+                          data-testid={`row-order-${entry.id}`}
+                        >
+                          <TableCell className="font-mono text-sm">{idx + 1}</TableCell>
+                          <TableCell className="font-medium text-sm">
+                            {entry.user.teamName || `${entry.user.firstName} ${entry.user.lastName}`}
+                            {currentTeam?.userId === entry.userId && (
+                              <Badge variant="default" className="ml-2 text-xs">Current</Badge>
+                            )}
+                          </TableCell>
+                          {pickTiming && !isPicked && (
+                            <TableCell className="text-xs text-muted-foreground text-right">
+                              {new Date(pickTiming.pickDeadline) > new Date()
+                                ? `Due ${new Date(pickTiming.pickDeadline).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
+                                : pickTiming.isExpired
+                                  ? "Expired"
+                                  : ""}
+                            </TableCell>
                           )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </CardContent>

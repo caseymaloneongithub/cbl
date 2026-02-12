@@ -522,6 +522,8 @@ export const draftRounds = pgTable("draft_rounds", {
   roundNumber: integer("round_number").notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   isTeamDraft: boolean("is_team_draft").notNull().default(false),
+  startTime: timestamp("start_time"),
+  pickDurationMinutes: integer("pick_duration_minutes").notNull().default(60),
 }, (table) => [
   index("idx_draft_rounds_draft").on(table.draftId),
 ]);
