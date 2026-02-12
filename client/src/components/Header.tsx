@@ -13,16 +13,15 @@ import {
   DropdownMenuTrigger,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import { Diamond, Users, Gavel, Trophy, Settings, LogOut, Menu, UserCog, X, Globe, Check, Building2, ChevronDown, ClipboardList, Database, FileSpreadsheet } from "lucide-react";
+import { Diamond, LogOut, Menu, UserCog, X, Globe, Check, Building2, ChevronDown } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { User } from "@shared/schema";
 
-function NavDropdown({ label, icon: Icon, items, location: loc, testId }: {
+function NavDropdown({ label, items, location: loc, testId }: {
   label: string;
-  icon: any;
-  items: { href: string; label: string; icon: any }[];
+  items: { href: string; label: string }[];
   location: string;
   testId: string;
 }) {
@@ -35,14 +34,12 @@ function NavDropdown({ label, icon: Icon, items, location: loc, testId }: {
           size="sm"
           data-testid={testId}
         >
-          <Icon className="h-4 w-4 mr-2" />
           {label}
           <ChevronDown className="h-3 w-3 ml-1" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
         {items.map((item) => {
-          const ItemIcon = item.icon;
           const itemActive = item.href === loc || (item.href !== "/" && loc.startsWith(item.href));
           return (
             <DropdownMenuItem
@@ -52,7 +49,6 @@ function NavDropdown({ label, icon: Icon, items, location: loc, testId }: {
               data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
             >
               <Link href={item.href}>
-                <ItemIcon className="mr-2 h-4 w-4" />
                 {item.label}
               </Link>
             </DropdownMenuItem>
@@ -114,27 +110,27 @@ export function Header() {
   };
 
   const freeAgencyItems = [
-    { href: "/", label: "Free Agents", icon: Users },
-    { href: "/my-bids", label: "My Bids", icon: Gavel },
-    { href: "/results", label: "Results", icon: Trophy },
+    { href: "/", label: "Free Agents" },
+    { href: "/my-bids", label: "My Bids" },
+    { href: "/results", label: "Results" },
   ];
 
   const myRosterItems = [
-    { href: "/my-roster/mlb", label: "Major League", icon: ClipboardList },
-    { href: "/my-roster/milb", label: "Minor League", icon: ClipboardList },
+    { href: "/my-roster/mlb", label: "Major League" },
+    { href: "/my-roster/milb", label: "Minor League" },
   ];
 
   const playersItems = [
-    { href: "/players/mlb", label: "Major League", icon: Database },
-    { href: "/players/milb", label: "Minor League", icon: Database },
+    { href: "/players/mlb", label: "Major League" },
+    { href: "/players/milb", label: "Minor League" },
   ];
 
   const commissionerItems = [
-    { href: "/commissioner/free-agency", label: "Auction Management", icon: Trophy },
-    { href: "/commissioner/teams", label: "Teams", icon: Users },
-    { href: "/commissioner/rosters/mlb", label: "ML Rosters", icon: ClipboardList },
-    { href: "/commissioner/rosters/milb", label: "MiLB Rosters", icon: ClipboardList },
-    { href: "/commissioner/settings", label: "League Settings", icon: Settings },
+    { href: "/commissioner/free-agency", label: "Auction Management" },
+    { href: "/commissioner/teams", label: "Teams" },
+    { href: "/commissioner/rosters/mlb", label: "ML Rosters" },
+    { href: "/commissioner/rosters/milb", label: "MiLB Rosters" },
+    { href: "/commissioner/settings", label: "League Settings" },
   ];
 
   return (
@@ -178,21 +174,18 @@ export function Header() {
             <nav className="hidden md:flex items-center gap-1">
               <NavDropdown
                 label="Free Agency"
-                icon={Gavel}
                 items={freeAgencyItems}
                 location={location}
                 testId="nav-free-agency"
               />
               <NavDropdown
                 label="My Roster"
-                icon={ClipboardList}
                 items={myRosterItems}
                 location={location}
                 testId="nav-my-roster"
               />
               <NavDropdown
                 label="Players"
-                icon={Database}
                 items={playersItems}
                 location={location}
                 testId="nav-players"
@@ -200,7 +193,6 @@ export function Header() {
               {(hasAnyCommissionerRole || user?.isSuperAdmin) && (
                 <NavDropdown
                   label="Commissioner"
-                  icon={Settings}
                   items={commissionerItems}
                   location={location}
                   testId="nav-commissioner"
@@ -264,7 +256,6 @@ export function Header() {
                         <span className="text-xs text-muted-foreground font-medium">Free Agency</span>
                       </div>
                       {freeAgencyItems.map((link) => {
-                        const Icon = link.icon;
                         const isActive = link.href === location;
                         return (
                           <Link key={link.href} href={link.href} onClick={() => setMobileMenuOpen(false)}>
@@ -273,7 +264,6 @@ export function Header() {
                               className="w-full justify-start"
                               size="sm"
                             >
-                              <Icon className="h-4 w-4 mr-2" />
                               {link.label}
                             </Button>
                           </Link>
@@ -284,7 +274,6 @@ export function Header() {
                         <span className="text-xs text-muted-foreground font-medium">My Roster</span>
                       </div>
                       {myRosterItems.map((link) => {
-                        const Icon = link.icon;
                         const isActive = location === link.href;
                         return (
                           <Link key={link.href} href={link.href} onClick={() => setMobileMenuOpen(false)}>
@@ -293,7 +282,6 @@ export function Header() {
                               className="w-full justify-start"
                               size="sm"
                             >
-                              <Icon className="h-4 w-4 mr-2" />
                               {link.label}
                             </Button>
                           </Link>
@@ -304,7 +292,6 @@ export function Header() {
                         <span className="text-xs text-muted-foreground font-medium">Players</span>
                       </div>
                       {playersItems.map((link) => {
-                        const Icon = link.icon;
                         const isActive = location === link.href;
                         return (
                           <Link key={link.href} href={link.href} onClick={() => setMobileMenuOpen(false)}>
@@ -313,7 +300,6 @@ export function Header() {
                               className="w-full justify-start"
                               size="sm"
                             >
-                              <Icon className="h-4 w-4 mr-2" />
                               {link.label}
                             </Button>
                           </Link>
@@ -326,7 +312,6 @@ export function Header() {
                             <span className="text-xs text-muted-foreground font-medium">Commissioner</span>
                           </div>
                           {commissionerItems.map((link) => {
-                            const Icon = link.icon;
                             const isActive = location === link.href;
                             return (
                               <Link key={link.href} href={link.href} onClick={() => setMobileMenuOpen(false)}>
@@ -335,7 +320,6 @@ export function Header() {
                                   className="w-full justify-start"
                                   size="sm"
                                 >
-                                  <Icon className="h-4 w-4 mr-2" />
                                   {link.label}
                                 </Button>
                               </Link>
