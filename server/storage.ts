@@ -3344,7 +3344,7 @@ export class DatabaseStorage implements IStorage {
       .orderBy(draftRounds.roundNumber);
   }
 
-  async setDraftRounds(draftId: number, rounds: { roundNumber: number; name: string; isTeamDraft: boolean }[]): Promise<void> {
+  async setDraftRounds(draftId: number, rounds: { roundNumber: number; name: string; isTeamDraft: boolean; startTime?: Date }[]): Promise<void> {
     await db.delete(draftRounds).where(eq(draftRounds.draftId, draftId));
     if (rounds.length > 0) {
       await db.insert(draftRounds).values(rounds.map(r => ({ draftId, ...r })));

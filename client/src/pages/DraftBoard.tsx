@@ -421,7 +421,7 @@ export default function DraftBoard() {
             )}
             {canPick && !isMyTurn && isEligibleByTiming && (
               <p className="text-sm text-primary mt-2" data-testid="text-your-turn-eligible">
-                The current pick has expired. Your pick window is open - you can make your selection now.
+                Your pick window is open - you can make your selection now.
               </p>
             )}
             {canPick && isTeamDraftRound && (

@@ -4997,7 +4997,7 @@ export async function registerRoutes(
       const updateData: any = {};
       if (name !== undefined) updateData.name = name;
       if (isTeamDraft !== undefined) updateData.isTeamDraft = isTeamDraft;
-      if (startTime !== undefined) updateData.startTime = startTime ? new Date(startTime) : null;
+      if (startTime !== undefined) updateData.startTime = new Date(startTime || Date.now());
       if (pickDurationMinutes !== undefined) updateData.pickDurationMinutes = parseInt(pickDurationMinutes) || 60;
 
       const updated = await storage.updateDraftRound(roundId, updateData);
@@ -5104,6 +5104,7 @@ export async function registerRoutes(
         roundNumber: idx + 1,
         name: name || `Round ${idx + 1}`,
         isTeamDraft: false,
+        startTime: new Date(),
       }));
 
       await storage.setDraftRounds(id, roundConfigs);
@@ -5222,9 +5223,15 @@ export async function registerRoutes(
 
       const eligiblePickerIds: string[] = [];
       for (let i = draft.currentPickIndex; i < sortedRoundOrder.length; i++) {
-        const pickStart = roundStart + (i * pickDuration);
-        if (i === draft.currentPickIndex || now >= pickStart) {
+        if (i === draft.currentPickIndex) {
           eligiblePickerIds.push(sortedRoundOrder[i].userId);
+        } else {
+          const pickStart = roundStart + (i * pickDuration);
+          if (now >= pickStart) {
+            eligiblePickerIds.push(sortedRoundOrder[i].userId);
+          } else {
+            break;
+          }
         }
       }
 
@@ -5274,17 +5281,17 @@ export async function registerRoutes(
 
       const isCommissioner = await hasLeagueCommissionerAccess(commissionerUserId, draft.leagueId);
       let pickingUserId = currentPicker.userId;
-      let isAllowedToPick = (userId === currentPicker.userId) || isCommissioner;
+      let isAllowedToPick = isCommissioner;
 
-      if (!isAllowedToPick && currentRoundConfig?.startTime) {
-        const roundStart = new Date(currentRoundConfig.startTime).getTime();
-        const pickDuration = (currentRoundConfig.pickDurationMinutes || 60) * 60 * 1000;
-        const now = Date.now();
-
-        const currentPickDeadline = roundStart + ((currentPickIndex + 1) * pickDuration);
-        if (now >= currentPickDeadline) {
-          const userPickIndex = sortedRoundOrder.findIndex(o => o.userId === userId);
-          if (userPickIndex > currentPickIndex) {
+      if (!isAllowedToPick) {
+        const userPickIndex = sortedRoundOrder.findIndex(o => o.userId === userId);
+        if (userPickIndex >= 0) {
+          if (userPickIndex === currentPickIndex) {
+            isAllowedToPick = true;
+          } else if (userPickIndex > currentPickIndex && currentRoundConfig?.startTime) {
+            const roundStart = new Date(currentRoundConfig.startTime).getTime();
+            const pickDuration = (currentRoundConfig.pickDurationMinutes || 60) * 60 * 1000;
+            const now = Date.now();
             const userPickStart = roundStart + (userPickIndex * pickDuration);
             if (now >= userPickStart) {
               isAllowedToPick = true;

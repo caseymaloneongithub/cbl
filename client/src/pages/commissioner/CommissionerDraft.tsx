@@ -575,7 +575,7 @@ export default function CommissionerDraft() {
                                   const val = e.target.value;
                                   updateRound.mutate({
                                     roundId: round.id,
-                                    data: { startTime: val ? new Date(val).toISOString() : null },
+                                    data: { startTime: val ? new Date(val).toISOString() : new Date().toISOString() },
                                   });
                                 }}
                                 className="h-8 text-sm"
