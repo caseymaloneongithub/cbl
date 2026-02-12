@@ -13,9 +13,17 @@ Preferred communication style: Simple, everyday language.
 - **UI Component System**: shadcn/ui (Radix UI-based) with a Material Design aesthetic, prioritizing data clarity, information density, and a professional sports look (Roboto font).
 - **Styling**: Tailwind CSS with custom CSS variables for theming, supporting light/dark modes.
 - **State Management**: TanStack Query for server state management with aggressive caching.
-- **Routing**: Wouter, handling Landing, Home, My Bids, Results, Commissioner, and SuperAdmin pages.
+- **Routing**: Wouter, handling Landing, Home, My Bids, Results, Commissioner sub-pages, and SuperAdmin pages.
+  - **Navigation**: Dropdown menus for Free Agency (Free Agents, My Bids, Results), My Roster (ML, MiLB), Players (ML, MiLB), Commissioner (Auction Management, Teams, ML Rosters, MiLB Rosters, League Settings)
   - **SuperAdmin page**: Super-admin only; league CRUD, member management, user creation
-  - **Commissioner page**: Per-league; auction management, team management, free agent uploads, exports
+  - **Commissioner sub-pages** (split from single 2118-line page):
+    - `/commissioner/free-agency` - Auction CRUD, activate/reset/delete, data exports
+    - `/commissioner/teams` - Team owner upload (CSV), edit details, archive, commissioner roles
+    - `/commissioner/rosters/mlb` - ML roster assignments (reuses RosterManagement with rosterLevel="mlb")
+    - `/commissioner/rosters/milb` - MiLB roster assignments (reuses RosterManagement with rosterLevel="milb")
+    - `/commissioner/settings` - League caps, roster CSV upload/clear, roster usage tracking
+    - `/commissioner/auctions/:id` - Per-auction management (free agents, settings, teams, MLB sync)
+  - `/commissioner` redirects to `/commissioner/free-agency`
 - **Key Design Decisions**: Component co-location, path aliases, React Hook Form with Zod for validation, real-time countdowns.
 
 ### Backend

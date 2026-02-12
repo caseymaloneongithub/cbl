@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import { Diamond, Users, Gavel, Trophy, Settings, LogOut, Menu, UserCog, X, Globe, Check, Building2, ChevronDown, ClipboardList, Database } from "lucide-react";
+import { Diamond, Users, Gavel, Trophy, Settings, LogOut, Menu, UserCog, X, Globe, Check, Building2, ChevronDown, ClipboardList, Database, FileSpreadsheet } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -129,6 +129,14 @@ export function Header() {
     { href: "/players/milb", label: "Minor League", icon: Database },
   ];
 
+  const commissionerItems = [
+    { href: "/commissioner/free-agency", label: "Auction Management", icon: Trophy },
+    { href: "/commissioner/teams", label: "Teams", icon: Users },
+    { href: "/commissioner/rosters/mlb", label: "ML Rosters", icon: ClipboardList },
+    { href: "/commissioner/rosters/milb", label: "MiLB Rosters", icon: ClipboardList },
+    { href: "/commissioner/settings", label: "League Settings", icon: Settings },
+  ];
+
   return (
     <>
       {isImpersonating && (
@@ -190,16 +198,13 @@ export function Header() {
                 testId="nav-players"
               />
               {(hasAnyCommissionerRole || user?.isSuperAdmin) && (
-                <Link href="/commissioner">
-                  <Button
-                    variant={location === "/commissioner" || location.startsWith("/commissioner/") ? "secondary" : "ghost"}
-                    size="sm"
-                    data-testid="nav-commissioner"
-                  >
-                    <Settings className="h-4 w-4 mr-2" />
-                    Commissioner
-                  </Button>
-                </Link>
+                <NavDropdown
+                  label="Commissioner"
+                  icon={Settings}
+                  items={commissionerItems}
+                  location={location}
+                  testId="nav-commissioner"
+                />
               )}
               {user?.isSuperAdmin && (
                 <Link href="/super-admin">
@@ -316,15 +321,28 @@ export function Header() {
                       })}
                       <div className="border-b my-2" />
                       {(hasAnyCommissionerRole || user?.isSuperAdmin) && (
-                        <Link href="/commissioner" onClick={() => setMobileMenuOpen(false)}>
-                          <Button
-                            variant={location === "/commissioner" || location.startsWith("/commissioner/") ? "secondary" : "ghost"}
-                            className="w-full justify-start"
-                          >
-                            <Settings className="h-4 w-4 mr-2" />
-                            Commissioner
-                          </Button>
-                        </Link>
+                        <>
+                          <div className="px-2 py-1">
+                            <span className="text-xs text-muted-foreground font-medium">Commissioner</span>
+                          </div>
+                          {commissionerItems.map((link) => {
+                            const Icon = link.icon;
+                            const isActive = location === link.href;
+                            return (
+                              <Link key={link.href} href={link.href} onClick={() => setMobileMenuOpen(false)}>
+                                <Button
+                                  variant={isActive ? "secondary" : "ghost"}
+                                  className="w-full justify-start"
+                                  size="sm"
+                                >
+                                  <Icon className="h-4 w-4 mr-2" />
+                                  {link.label}
+                                </Button>
+                              </Link>
+                            );
+                          })}
+                          <div className="border-b my-2" />
+                        </>
                       )}
                       {user?.isSuperAdmin && (
                         <Link href="/super-admin" onClick={() => setMobileMenuOpen(false)}>

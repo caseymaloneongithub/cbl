@@ -65,16 +65,17 @@ interface RosterManagementProps {
   league: League;
   members: LeagueMember[];
   isCommissioner: boolean;
+  rosterLevel?: "mlb" | "milb";
 }
 
-export default function RosterManagement({ leagueId, league, members, isCommissioner }: RosterManagementProps) {
+export default function RosterManagement({ leagueId, league, members, isCommissioner, rosterLevel }: RosterManagementProps) {
   const { toast } = useToast();
   const [season] = useState(2025);
   const [selectedTeamId, setSelectedTeamId] = useState<string>("all");
-  const [selectedRosterType, setSelectedRosterType] = useState<string>("all");
+  const [selectedRosterType, setSelectedRosterType] = useState<string>(rosterLevel || "all");
   const [rosterSearch, setRosterSearch] = useState("");
   const [faSearch, setFaSearch] = useState("");
-  const [faLevel, setFaLevel] = useState<string>("all");
+  const [faLevel, setFaLevel] = useState<string>(rosterLevel === "mlb" ? "Major League Baseball" : rosterLevel === "milb" ? "minors" : "all");
   const [faPage, setFaPage] = useState(0);
   const FA_PAGE_SIZE = 50;
 
@@ -343,17 +344,19 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                 ))}
               </SelectContent>
             </Select>
-            <Select value={selectedRosterType} onValueChange={v => setSelectedRosterType(v)}>
-              <SelectTrigger className="w-32" data-testid="select-roster-type">
-                <SelectValue placeholder="All Types" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                <SelectItem value="mlb">ML Roster</SelectItem>
-                <SelectItem value="milb">MiLB System</SelectItem>
-                <SelectItem value="draft">Draft List</SelectItem>
-              </SelectContent>
-            </Select>
+            {!rosterLevel && (
+              <Select value={selectedRosterType} onValueChange={v => setSelectedRosterType(v)}>
+                <SelectTrigger className="w-32" data-testid="select-roster-type">
+                  <SelectValue placeholder="All Types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="mlb">ML Roster</SelectItem>
+                  <SelectItem value="milb">MiLB System</SelectItem>
+                  <SelectItem value="draft">Draft List</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
             {isCommissioner && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>

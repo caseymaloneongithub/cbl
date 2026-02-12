@@ -17,8 +17,11 @@ import MyBids from "@/pages/MyBids";
 import Results from "@/pages/Results";
 import MyRoster from "@/pages/MyRoster";
 import Players from "@/pages/Players";
-import Commissioner from "@/pages/Commissioner";
 import CommissionerAuction from "@/pages/CommissionerAuction";
+import CommissionerFreeAgency from "@/pages/commissioner/CommissionerFreeAgency";
+import CommissionerTeams from "@/pages/commissioner/CommissionerTeams";
+import CommissionerRosters from "@/pages/commissioner/CommissionerRosters";
+import CommissionerSettings from "@/pages/commissioner/CommissionerSettings";
 import SuperAdmin from "@/pages/SuperAdmin";
 
 function CommissionerRoute({ component: Component }: { component: React.ComponentType<any> }) {
@@ -107,7 +110,22 @@ function Router() {
         {() => <ProtectedRoute component={() => <Players level="milb" />} />}
       </Route>
       <Route path="/commissioner">
-        {() => <CommissionerRoute component={Commissioner} />}
+        {() => <CommissionerRoute component={() => <Redirect to="/commissioner/free-agency" />} />}
+      </Route>
+      <Route path="/commissioner/free-agency">
+        {() => <CommissionerRoute component={CommissionerFreeAgency} />}
+      </Route>
+      <Route path="/commissioner/teams">
+        {() => <CommissionerRoute component={CommissionerTeams} />}
+      </Route>
+      <Route path="/commissioner/rosters/mlb">
+        {() => <CommissionerRoute component={() => <CommissionerRosters level="mlb" />} />}
+      </Route>
+      <Route path="/commissioner/rosters/milb">
+        {() => <CommissionerRoute component={() => <CommissionerRosters level="milb" />} />}
+      </Route>
+      <Route path="/commissioner/settings">
+        {() => <CommissionerRoute component={CommissionerSettings} />}
       </Route>
       <Route path="/commissioner/auctions/:auctionId">
         {() => <CommissionerRoute component={CommissionerAuction} />}
