@@ -41,7 +41,7 @@ import {
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { MlbPlayer, LeagueMember, League } from "@shared/schema";
-import { Search, UserPlus, Trash2, ArrowRightLeft, Loader2, Users, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, UserPlus, Trash2, ArrowRightLeft, Loader2, Users, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
 
 interface RosterAssignment {
   id: number;
@@ -601,6 +601,25 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                   </SelectContent>
                 </Select>
               </div>
+              {assignUserId && (() => {
+                const counts = teamCountMap[assignUserId] || { mlb: 0, milb: 0, draft: 0 };
+                const mlbLimit = league.mlRosterLimit || 40;
+                const milbLimit = league.milbRosterLimit || 125;
+                const wouldExceed =
+                  (assignRosterType === 'mlb' && counts.mlb >= mlbLimit) ||
+                  (assignRosterType === 'milb' && counts.milb >= milbLimit);
+                if (!wouldExceed) return null;
+                const limitLabel = assignRosterType === 'mlb' ? `ML limit of ${mlbLimit}` : `MiLB limit of ${milbLimit}`;
+                const currentCount = assignRosterType === 'mlb' ? counts.mlb : counts.milb;
+                return (
+                  <div className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3" data-testid="warning-roster-limit">
+                    <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                    <p className="text-sm text-destructive">
+                      This team already has {currentCount} players on this roster, which meets or exceeds the {limitLabel}. You can still assign, but the team will be over the limit.
+                    </p>
+                  </div>
+                );
+              })()}
             </div>
           )}
           <DialogFooter>

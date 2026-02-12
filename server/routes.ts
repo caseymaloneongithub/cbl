@@ -1175,22 +1175,6 @@ export async function registerRoutes(
         return res.status(400).json({ message: "rosterType must be 'mlb', 'milb', or 'draft'" });
       }
 
-      // Check roster limits
-      const league = await storage.getLeague(leagueId);
-      if (!league) return res.status(404).json({ message: "League not found" });
-
-      const counts = await storage.getRosterAssignmentCounts(leagueId, season);
-      const userCounts = counts.filter(c => c.userId === assignToUserId);
-      const mlbCount = userCounts.find(c => c.rosterType === 'mlb')?.count || 0;
-      const milbCount = userCounts.find(c => c.rosterType === 'milb')?.count || 0;
-
-      if (rosterType === 'mlb' && league.mlRosterLimit && mlbCount >= league.mlRosterLimit) {
-        return res.status(400).json({ message: `ML roster limit of ${league.mlRosterLimit} reached` });
-      }
-      if (rosterType === 'milb' && league.milbRosterLimit && milbCount >= league.milbRosterLimit) {
-        return res.status(400).json({ message: `MiLB roster limit of ${league.milbRosterLimit} reached` });
-      }
-
       const assignment = await storage.assignPlayerToRoster({
         leagueId,
         userId: assignToUserId,
@@ -1222,36 +1206,6 @@ export async function registerRoutes(
       const { assignments } = req.body;
       if (!Array.isArray(assignments) || assignments.length === 0) {
         return res.status(400).json({ message: "assignments array is required" });
-      }
-
-      const league = await storage.getLeague(leagueId);
-      if (!league) return res.status(404).json({ message: "League not found" });
-
-      const season = assignments[0]?.season;
-      const counts = await storage.getRosterAssignmentCounts(leagueId, season);
-
-      const currentCounts: Record<string, { mlb: number; milb: number }> = {};
-      for (const c of counts) {
-        if (!currentCounts[c.userId]) currentCounts[c.userId] = { mlb: 0, milb: 0 };
-        if (c.rosterType === 'mlb') currentCounts[c.userId].mlb = c.count;
-        if (c.rosterType === 'milb') currentCounts[c.userId].milb = c.count;
-      }
-
-      const pendingCounts: Record<string, { mlb: number; milb: number }> = {};
-      for (const a of assignments) {
-        if (!pendingCounts[a.userId]) pendingCounts[a.userId] = { mlb: 0, milb: 0 };
-        if (a.rosterType === 'mlb') pendingCounts[a.userId].mlb++;
-        if (a.rosterType === 'milb') pendingCounts[a.userId].milb++;
-      }
-
-      for (const [uid, pending] of Object.entries(pendingCounts)) {
-        const existing = currentCounts[uid] || { mlb: 0, milb: 0 };
-        if (league.mlRosterLimit && existing.mlb + pending.mlb > league.mlRosterLimit) {
-          return res.status(400).json({ message: `Bulk assign would exceed ML roster limit for user ${uid}` });
-        }
-        if (league.milbRosterLimit && existing.milb + pending.milb > league.milbRosterLimit) {
-          return res.status(400).json({ message: `Bulk assign would exceed MiLB roster limit for user ${uid}` });
-        }
       }
 
       const toInsert = assignments.map((a: any) => ({
