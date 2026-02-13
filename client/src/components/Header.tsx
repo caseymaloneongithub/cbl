@@ -113,6 +113,9 @@ export function Header() {
     { href: "/", label: "Free Agents" },
     { href: "/my-bids", label: "My Bids" },
     { href: "/results", label: "Results" },
+  ];
+
+  const draftItems = [
     { href: "/drafts", label: "Drafts" },
   ];
 
@@ -192,6 +195,15 @@ export function Header() {
                 location={location}
                 testId="nav-players"
               />
+              <Link href="/drafts">
+                <Button
+                  variant={location === "/drafts" || location.startsWith("/draft/") ? "secondary" : "ghost"}
+                  size="sm"
+                  data-testid="nav-drafts"
+                >
+                  Drafts
+                </Button>
+              </Link>
               {(hasAnyCommissionerRole || user?.isSuperAdmin) && (
                 <NavDropdown
                   label="Commissioner"
@@ -307,6 +319,19 @@ export function Header() {
                           </Link>
                         );
                       })}
+                      <div className="border-b my-2" />
+                      <div className="px-2 py-1">
+                        <span className="text-xs text-muted-foreground font-medium">Drafts</span>
+                      </div>
+                      <Link href="/drafts" onClick={() => setMobileMenuOpen(false)}>
+                        <Button
+                          variant={location === "/drafts" || location.startsWith("/draft/") ? "secondary" : "ghost"}
+                          className="w-full justify-start"
+                          size="sm"
+                        >
+                          Drafts
+                        </Button>
+                      </Link>
                       <div className="border-b my-2" />
                       {(hasAnyCommissionerRole || user?.isSuperAdmin) && (
                         <>
