@@ -53,6 +53,7 @@ import {
   draftRounds,
   draftOrder,
   draftPicks,
+  autoDraftLists,
   type Draft,
   type InsertDraft,
   type DraftPlayer,
@@ -63,6 +64,8 @@ import {
   type InsertDraftPick,
   type DraftPickWithDetails,
   type DraftWithDetails,
+  type AutoDraftList,
+  type AutoDraftListWithPlayer,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, lt, sql, isNull, inArray, or } from "drizzle-orm";
@@ -357,6 +360,16 @@ export interface IStorage {
   getLastDraftPick(draftId: number): Promise<DraftPick | undefined>;
   getDraftPlayersByParentOrg(draftId: number, parentOrgName: string): Promise<DraftPlayerWithDetails[]>;
   removeRosterAssignmentByPlayer(leagueId: number, userId: string, mlbPlayerId: number, season: number): Promise<void>;
+
+  // Auto-draft lists
+  getAutoDraftList(draftId: number, userId: string): Promise<AutoDraftListWithPlayer[]>;
+  getAutoDraftItem(id: number): Promise<AutoDraftList | undefined>;
+  addAutoDraftItem(draftId: number, userId: string, mlbPlayerId: number, rosterType: string): Promise<AutoDraftList>;
+  removeAutoDraftItem(id: number): Promise<void>;
+  updateAutoDraftItemRosterType(id: number, rosterType: string): Promise<void>;
+  reorderAutoDraftList(draftId: number, userId: string, orderedIds: number[]): Promise<void>;
+  getTopAvailableAutoDraftPick(draftId: number, userId: string): Promise<AutoDraftList | undefined>;
+  clearAutoDraftItem(draftId: number, mlbPlayerId: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3468,6 +3481,92 @@ export class DatabaseStorage implements IStorage {
         eq(mlbPlayers.parentOrgName, parentOrgName),
       ));
     return rows.map(r => ({ ...r.dp, player: r.player }));
+  }
+
+  async getAutoDraftList(draftId: number, userId: string): Promise<AutoDraftListWithPlayer[]> {
+    const rows = await db.select({
+      item: autoDraftLists,
+      player: mlbPlayers,
+    })
+      .from(autoDraftLists)
+      .innerJoin(mlbPlayers, eq(autoDraftLists.mlbPlayerId, mlbPlayers.id))
+      .where(and(
+        eq(autoDraftLists.draftId, draftId),
+        eq(autoDraftLists.userId, userId),
+      ))
+      .orderBy(autoDraftLists.rank);
+    return rows.map(r => ({ ...r.item, player: r.player }));
+  }
+
+  async getAutoDraftItem(id: number): Promise<AutoDraftList | undefined> {
+    const [item] = await db.select().from(autoDraftLists).where(eq(autoDraftLists.id, id));
+    return item;
+  }
+
+  async addAutoDraftItem(draftId: number, userId: string, mlbPlayerId: number, rosterType: string): Promise<AutoDraftList> {
+    const existing = await db.select()
+      .from(autoDraftLists)
+      .where(and(
+        eq(autoDraftLists.draftId, draftId),
+        eq(autoDraftLists.userId, userId),
+      ))
+      .orderBy(desc(autoDraftLists.rank));
+    const nextRank = existing.length > 0 ? existing[0].rank + 1 : 1;
+    const [item] = await db.insert(autoDraftLists).values({
+      draftId,
+      userId,
+      mlbPlayerId,
+      rank: nextRank,
+      rosterType,
+    }).returning();
+    return item;
+  }
+
+  async removeAutoDraftItem(id: number): Promise<void> {
+    await db.delete(autoDraftLists).where(eq(autoDraftLists.id, id));
+  }
+
+  async updateAutoDraftItemRosterType(id: number, rosterType: string): Promise<void> {
+    await db.update(autoDraftLists).set({ rosterType }).where(eq(autoDraftLists.id, id));
+  }
+
+  async reorderAutoDraftList(draftId: number, userId: string, orderedIds: number[]): Promise<void> {
+    for (let i = 0; i < orderedIds.length; i++) {
+      await db.update(autoDraftLists)
+        .set({ rank: i + 1 })
+        .where(and(
+          eq(autoDraftLists.id, orderedIds[i]),
+          eq(autoDraftLists.draftId, draftId),
+          eq(autoDraftLists.userId, userId),
+        ));
+    }
+  }
+
+  async getTopAvailableAutoDraftPick(draftId: number, userId: string): Promise<AutoDraftList | undefined> {
+    const rows = await db.select({
+      item: autoDraftLists,
+      dpStatus: draftPlayers.status,
+    })
+      .from(autoDraftLists)
+      .innerJoin(draftPlayers, and(
+        eq(draftPlayers.draftId, autoDraftLists.draftId),
+        eq(draftPlayers.mlbPlayerId, autoDraftLists.mlbPlayerId),
+      ))
+      .where(and(
+        eq(autoDraftLists.draftId, draftId),
+        eq(autoDraftLists.userId, userId),
+        eq(draftPlayers.status, "available"),
+      ))
+      .orderBy(autoDraftLists.rank)
+      .limit(1);
+    return rows.length > 0 ? rows[0].item : undefined;
+  }
+
+  async clearAutoDraftItem(draftId: number, mlbPlayerId: number): Promise<void> {
+    await db.delete(autoDraftLists).where(and(
+      eq(autoDraftLists.draftId, draftId),
+      eq(autoDraftLists.mlbPlayerId, mlbPlayerId),
+    ));
   }
 }
 

@@ -5358,6 +5358,7 @@ export async function registerRoutes(
           await storage.updateDraft(id, { status: "completed", currentPickIndex, currentRound });
         } else {
           await storage.updateDraft(id, { currentPickIndex: nextPickIndex, currentRound: nextRound });
+          setTimeout(() => processAutoDraft(id, storage), 500);
         }
 
         res.status(201).json({ teamDraft: true, orgName: parentOrgName, playersDrafted: createdPicks.length, picks: createdPicks });
@@ -5408,6 +5409,7 @@ export async function registerRoutes(
           await storage.updateDraft(id, { status: "completed", currentPickIndex, currentRound });
         } else {
           await storage.updateDraft(id, { currentPickIndex: nextPickIndex, currentRound: nextRound });
+          setTimeout(() => processAutoDraft(id, storage), 500);
         }
 
         res.status(201).json(pick);
@@ -5481,6 +5483,7 @@ export async function registerRoutes(
         await storage.updateDraft(id, { status: "completed", currentPickIndex, currentRound });
       } else {
         await storage.updateDraft(id, { currentPickIndex: nextPickIndex, currentRound: nextRound });
+        setTimeout(() => processAutoDraft(id, storage), 500);
       }
 
       res.status(201).json(pick);
@@ -5540,7 +5543,186 @@ export async function registerRoutes(
     }
   });
 
+  // GET /api/drafts/:id/auto-draft-list - Get user's auto-draft list
+  app.get("/api/drafts/:id/auto-draft-list", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid draft ID" });
+
+      const draft = await storage.getDraft(id);
+      if (!draft) return res.status(404).json({ message: "Draft not found" });
+
+      const list = await storage.getAutoDraftList(id, userId);
+      res.json(list);
+    } catch (error) {
+      console.error("Error fetching auto-draft list:", error);
+      res.status(500).json({ message: "Failed to fetch auto-draft list" });
+    }
+  });
+
+  // POST /api/drafts/:id/auto-draft-list - Add a player to auto-draft list
+  app.post("/api/drafts/:id/auto-draft-list", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid draft ID" });
+
+      const { mlbPlayerId, rosterType } = req.body;
+      if (!mlbPlayerId) return res.status(400).json({ message: "mlbPlayerId is required" });
+
+      const draft = await storage.getDraft(id);
+      if (!draft) return res.status(404).json({ message: "Draft not found" });
+
+      const existing = await storage.getAutoDraftList(id, userId);
+      if (existing.some(item => item.mlbPlayerId === mlbPlayerId)) {
+        return res.status(400).json({ message: "Player is already in your auto-draft list" });
+      }
+
+      const item = await storage.addAutoDraftItem(id, userId, mlbPlayerId, rosterType || "mlb");
+      res.status(201).json(item);
+    } catch (error) {
+      console.error("Error adding to auto-draft list:", error);
+      res.status(500).json({ message: "Failed to add to auto-draft list" });
+    }
+  });
+
+  // DELETE /api/drafts/:id/auto-draft-list/:itemId - Remove from auto-draft list
+  app.delete("/api/drafts/:id/auto-draft-list/:itemId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const draftId = parseInt(req.params.id);
+      const itemId = parseInt(req.params.itemId);
+      if (isNaN(itemId) || isNaN(draftId)) return res.status(400).json({ message: "Invalid ID" });
+
+      const item = await storage.getAutoDraftItem(itemId);
+      if (!item || item.draftId !== draftId || item.userId !== userId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+
+      await storage.removeAutoDraftItem(itemId);
+      res.json({ message: "Removed from auto-draft list" });
+    } catch (error) {
+      console.error("Error removing from auto-draft list:", error);
+      res.status(500).json({ message: "Failed to remove from auto-draft list" });
+    }
+  });
+
+  // PUT /api/drafts/:id/auto-draft-list/reorder - Reorder auto-draft list
+  app.put("/api/drafts/:id/auto-draft-list/reorder", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid draft ID" });
+
+      const { orderedIds } = req.body;
+      if (!orderedIds || !Array.isArray(orderedIds)) {
+        return res.status(400).json({ message: "orderedIds array is required" });
+      }
+
+      await storage.reorderAutoDraftList(id, userId, orderedIds);
+      res.json({ message: "Auto-draft list reordered" });
+    } catch (error) {
+      console.error("Error reordering auto-draft list:", error);
+      res.status(500).json({ message: "Failed to reorder auto-draft list" });
+    }
+  });
+
+  // PUT /api/drafts/:id/auto-draft-list/:itemId - Update roster type for an auto-draft item
+  app.put("/api/drafts/:id/auto-draft-list/:itemId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const draftId = parseInt(req.params.id);
+      const itemId = parseInt(req.params.itemId);
+      if (isNaN(itemId) || isNaN(draftId)) return res.status(400).json({ message: "Invalid ID" });
+
+      const { rosterType } = req.body;
+      if (!rosterType || (rosterType !== "mlb" && rosterType !== "milb")) {
+        return res.status(400).json({ message: "rosterType must be 'mlb' or 'milb'" });
+      }
+
+      const item = await storage.getAutoDraftItem(itemId);
+      if (!item || item.draftId !== draftId || item.userId !== userId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+
+      await storage.updateAutoDraftItemRosterType(itemId, rosterType);
+      res.json({ message: "Updated" });
+    } catch (error) {
+      console.error("Error updating auto-draft item:", error);
+      res.status(500).json({ message: "Failed to update auto-draft item" });
+    }
+  });
+
   return httpServer;
+}
+
+async function processAutoDraft(draftId: number, storage: any): Promise<boolean> {
+  try {
+    const draft = await storage.getDraft(draftId);
+    if (!draft || draft.status !== "active") return false;
+
+    const currentRound = draft.currentRound;
+    if (currentRound > draft.rounds) return false;
+
+    const roundOrder = await storage.getDraftOrder(draftId, currentRound);
+    if (roundOrder.length === 0) return false;
+
+    const sortedRoundOrder = [...roundOrder].sort((a: any, b: any) => a.orderIndex - b.orderIndex);
+    const currentPicker = sortedRoundOrder[draft.currentPickIndex];
+    if (!currentPicker) return false;
+
+    const rounds = await storage.getDraftRounds(draftId);
+    const currentRoundConfig = rounds.find((r: any) => r.roundNumber === currentRound);
+
+    if (currentRoundConfig?.isTeamDraft) return false;
+
+    const topPick = await storage.getTopAvailableAutoDraftPick(draftId, currentPicker.userId);
+    if (!topPick) return false;
+
+    const pickCount = await storage.getDraftPickCount(draftId);
+    const pickNumber = pickCount + 1;
+
+    await storage.createDraftPick({
+      draftId,
+      round: currentRound,
+      pickNumber,
+      userId: currentPicker.userId,
+      mlbPlayerId: topPick.mlbPlayerId,
+      rosterType: topPick.rosterType,
+    });
+    await storage.updateDraftPlayerStatus(draftId, topPick.mlbPlayerId, "drafted");
+    await storage.assignPlayerToRoster({
+      leagueId: draft.leagueId,
+      userId: currentPicker.userId,
+      mlbPlayerId: topPick.mlbPlayerId,
+      rosterType: topPick.rosterType,
+      season: draft.season,
+    });
+
+    await storage.clearAutoDraftItem(draftId, topPick.mlbPlayerId);
+
+    let nextPickIndex = draft.currentPickIndex + 1;
+    let nextRound = currentRound;
+
+    if (nextPickIndex >= sortedRoundOrder.length) {
+      nextPickIndex = 0;
+      nextRound = currentRound + 1;
+    }
+
+    if (nextRound > draft.rounds) {
+      await storage.updateDraft(draftId, { status: "completed", currentPickIndex: draft.currentPickIndex, currentRound });
+    } else {
+      await storage.updateDraft(draftId, { currentPickIndex: nextPickIndex, currentRound: nextRound });
+      setTimeout(() => processAutoDraft(draftId, storage), 500);
+    }
+
+    console.log(`[AutoDraft] Auto-drafted player ${topPick.mlbPlayerId} for user ${currentPicker.userId} in draft ${draftId}`);
+    return true;
+  } catch (error) {
+    console.error("[AutoDraft] Error processing auto-draft:", error);
+    return false;
+  }
 }
 
 // Unified auto-bid processor that handles both regular auto-bids and bundle items

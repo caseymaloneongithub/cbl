@@ -569,6 +569,23 @@ export const insertDraftPickSchema = createInsertSchema(draftPicks).omit({
   createdAt: true,
 });
 
+// Auto-draft lists - ranked player preferences for automatic drafting
+export const autoDraftLists = pgTable("auto_draft_lists", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  draftId: integer("draft_id").references(() => drafts.id, { onDelete: "cascade" }).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  mlbPlayerId: integer("mlb_player_id").references(() => mlbPlayers.id).notNull(),
+  rank: integer("rank").notNull(),
+  rosterType: varchar("roster_type", { length: 10 }).notNull().default("mlb"),
+}, (table) => [
+  index("idx_auto_draft_lists_draft_user").on(table.draftId, table.userId),
+  index("idx_auto_draft_lists_rank").on(table.draftId, table.userId, table.rank),
+]);
+
+export const insertAutoDraftListSchema = createInsertSchema(autoDraftLists).omit({
+  id: true,
+});
+
 // League roster assignments - links MLB players to league teams
 export const leagueRosterAssignments = pgTable("league_roster_assignments", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -730,4 +747,11 @@ export type BidBundleItemWithAgent = BidBundleItem & {
 
 export type BidBundleWithItems = BidBundle & {
   items: BidBundleItemWithAgent[];
+};
+
+export type AutoDraftList = typeof autoDraftLists.$inferSelect;
+export type InsertAutoDraftList = z.infer<typeof insertAutoDraftListSchema>;
+
+export type AutoDraftListWithPlayer = AutoDraftList & {
+  player: MlbPlayer;
 };

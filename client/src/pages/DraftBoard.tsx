@@ -18,8 +18,8 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Clock, Search, Trophy, Users, Loader2, CheckCircle, Building2, AlertTriangle } from "lucide-react";
-import type { Draft, DraftRound, DraftPlayerWithDetails, DraftPickWithDetails, DraftOrder, User } from "@shared/schema";
+import { Clock, Search, Trophy, Users, Loader2, CheckCircle, Building2, AlertTriangle, ListOrdered, ArrowUp, ArrowDown, Plus, Trash2 } from "lucide-react";
+import type { Draft, DraftRound, DraftPlayerWithDetails, DraftPickWithDetails, DraftOrder, User, AutoDraftListWithPlayer } from "@shared/schema";
 
 interface TimingInfo {
   hasTiming: boolean;
@@ -249,6 +249,65 @@ export default function DraftBoard() {
       toast({ title: "Team Draft Pick failed", description: error.message, variant: "destructive" });
     },
   });
+
+  const { data: autoDraftList } = useQuery<AutoDraftListWithPlayer[]>({
+    queryKey: ["/api/drafts", draftIdNum, "auto-draft-list"],
+    queryFn: async () => {
+      const res = await fetch(`/api/drafts/${draftIdNum}/auto-draft-list`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch auto-draft list");
+      return res.json();
+    },
+    enabled: !!draftIdNum,
+    refetchInterval: DRAFT_POLL_INTERVAL,
+  });
+
+  const autoDraftListIds = useMemo(() => {
+    if (!autoDraftList) return new Set<number>();
+    return new Set(autoDraftList.map(item => item.mlbPlayerId));
+  }, [autoDraftList]);
+
+  const addToAutoDraft = useMutation({
+    mutationFn: async ({ mlbPlayerId, rosterType }: { mlbPlayerId: number; rosterType: string }) => {
+      await apiRequest("POST", `/api/drafts/${draftIdNum}/auto-draft-list`, { mlbPlayerId, rosterType });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "auto-draft-list"] });
+      toast({ title: "Added to auto-draft list" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to add", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const removeFromAutoDraft = useMutation({
+    mutationFn: async (itemId: number) => {
+      await apiRequest("DELETE", `/api/drafts/${draftIdNum}/auto-draft-list/${itemId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "auto-draft-list"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to remove", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const reorderAutoDraft = useMutation({
+    mutationFn: async (orderedIds: number[]) => {
+      await apiRequest("PUT", `/api/drafts/${draftIdNum}/auto-draft-list/reorder`, { orderedIds });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "auto-draft-list"] });
+    },
+  });
+
+  const moveAutoDraftItem = (index: number, direction: "up" | "down") => {
+    if (!autoDraftList) return;
+    const newList = [...autoDraftList];
+    const swapIndex = direction === "up" ? index - 1 : index + 1;
+    if (swapIndex < 0 || swapIndex >= newList.length) return;
+    [newList[index], newList[swapIndex]] = [newList[swapIndex], newList[index]];
+    reorderAutoDraft.mutate(newList.map(item => item.id));
+  };
 
   const handlePickClick = (player: DraftPlayerWithDetails) => {
     setSelectedPlayer(player);
@@ -538,7 +597,7 @@ export default function DraftBoard() {
                         <TableHead className="font-semibold">Pos</TableHead>
                         <TableHead className="font-semibold">Team</TableHead>
                         <TableHead className="font-semibold">Level</TableHead>
-                        {canPick && !isTeamDraftRound && <TableHead className="font-semibold text-right">Action</TableHead>}
+                        {!isTeamDraftRound && <TableHead className="font-semibold text-right">Action</TableHead>}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -550,15 +609,37 @@ export default function DraftBoard() {
                           <TableCell>
                             <Badge variant="outline" className="text-xs">{dp.player.sportLevel}</Badge>
                           </TableCell>
-                          {canPick && !isTeamDraftRound && (
+                          {!isTeamDraftRound && (
                             <TableCell className="text-right">
-                              <Button
-                                size="sm"
-                                onClick={() => handlePickClick(dp)}
-                                data-testid={`button-pick-${dp.id}`}
-                              >
-                                Pick
-                              </Button>
+                              <div className="flex items-center justify-end gap-1">
+                                {canPick && (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handlePickClick(dp)}
+                                    data-testid={`button-pick-${dp.id}`}
+                                  >
+                                    Pick
+                                  </Button>
+                                )}
+                                {draft?.status !== "completed" && !autoDraftListIds.has(dp.mlbPlayerId) && (
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => addToAutoDraft.mutate({ mlbPlayerId: dp.mlbPlayerId, rosterType: "mlb" })}
+                                    disabled={addToAutoDraft.isPending}
+                                    data-testid={`button-auto-draft-add-${dp.id}`}
+                                    title="Add to auto-draft list"
+                                  >
+                                    <Plus className="h-4 w-4" />
+                                  </Button>
+                                )}
+                                {autoDraftListIds.has(dp.mlbPlayerId) && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    <ListOrdered className="h-3 w-3 mr-1" />
+                                    Queued
+                                  </Badge>
+                                )}
+                              </div>
                             </TableCell>
                           )}
                         </TableRow>
@@ -659,6 +740,87 @@ export default function DraftBoard() {
                     })}
                   </TableBody>
                 </Table>
+              </CardContent>
+            </Card>
+          )}
+
+          {draft.status !== "completed" && (
+            <Card className="mt-4">
+              <CardHeader className="pb-3 flex flex-row items-center justify-between gap-2">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <ListOrdered className="h-5 w-5" />
+                  Auto-Draft List
+                </CardTitle>
+                {autoDraftList && autoDraftList.length > 0 && (
+                  <Badge variant="secondary" data-testid="badge-auto-draft-count">{autoDraftList.length}</Badge>
+                )}
+              </CardHeader>
+              <CardContent className="p-0">
+                {!autoDraftList?.length ? (
+                  <div className="p-4 text-center text-muted-foreground text-sm">
+                    No players in your auto-draft list. Use the + button on available players to add them.
+                  </div>
+                ) : (
+                  <div className="max-h-[400px] overflow-y-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 z-10 bg-background">
+                        <TableRow className="bg-muted/50">
+                          <TableHead className="font-semibold w-8">#</TableHead>
+                          <TableHead className="font-semibold">Player</TableHead>
+                          <TableHead className="font-semibold">Roster</TableHead>
+                          <TableHead className="font-semibold text-right w-24">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {autoDraftList.map((item, idx) => (
+                          <TableRow key={item.id} data-testid={`row-auto-draft-${item.id}`}>
+                            <TableCell className="font-mono text-xs text-muted-foreground">{idx + 1}</TableCell>
+                            <TableCell>
+                              <div className="text-sm font-medium">{item.player.fullName}</div>
+                              <div className="text-xs text-muted-foreground">{item.player.primaryPosition} - {item.player.currentTeamName || item.player.parentOrgName}</div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={item.rosterType === "mlb" ? "default" : "outline"} className="text-xs">
+                                {item.rosterType === "mlb" ? "MLB" : "MiLB"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-0">
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => moveAutoDraftItem(idx, "up")}
+                                  disabled={idx === 0 || reorderAutoDraft.isPending}
+                                  data-testid={`button-auto-draft-up-${item.id}`}
+                                >
+                                  <ArrowUp className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => moveAutoDraftItem(idx, "down")}
+                                  disabled={idx === autoDraftList.length - 1 || reorderAutoDraft.isPending}
+                                  data-testid={`button-auto-draft-down-${item.id}`}
+                                >
+                                  <ArrowDown className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => removeFromAutoDraft.mutate(item.id)}
+                                  disabled={removeFromAutoDraft.isPending}
+                                  data-testid={`button-auto-draft-remove-${item.id}`}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
