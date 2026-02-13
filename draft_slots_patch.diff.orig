@@ -1,0 +1,1128 @@
+diff -ruN /mnt/data/cbl-orig/cbl-main/client/src/pages/DraftBoard.tsx /mnt/data/cbl-main/client/src/pages/DraftBoard.tsx
+--- /mnt/data/cbl-orig/cbl-main/client/src/pages/DraftBoard.tsx	2026-02-13 00:45:21.000000000 +0000
++++ /mnt/data/cbl-main/client/src/pages/DraftBoard.tsx	2026-02-13 22:43:22.735634597 +0000
+@@ -25,16 +25,16 @@
+   hasTiming: boolean;
+   currentRound: number;
+   currentPickIndex: number;
+-  roundStartTime?: string;
+-  pickDurationMinutes?: number;
+-  pickTimings?: {
+-    orderIndex: number;
++  now?: string;
++  currentSlot?: {
++    slotId: number;
+     userId: string;
+-    pickStart: string;
+-    pickDeadline: string;
+-    isExpired: boolean;
+-    isActive: boolean;
+-  }[];
++    round: number;
++    roundPickIndex: number;
++    overallPickNumber: number;
++    scheduledAt: string;
++    deadlineAt: string;
++  };
+   eligiblePickerIds?: string[];
+ }
+ 
+@@ -122,39 +122,37 @@
+     refetchInterval: DRAFT_POLL_INTERVAL,
+   });
+ 
++  const activeRoundNumber = timingInfo?.currentSlot?.round ?? draft?.currentRound ?? 1;
++
+   const currentRoundConfig = useMemo(() => {
+-    if (!draft || !draftRounds) return null;
+-    return draftRounds.find(r => r.roundNumber === draft.currentRound) || null;
+-  }, [draft, draftRounds]);
++    if (!draftRounds) return null;
++    return draftRounds.find(r => r.roundNumber === activeRoundNumber) || null;
++  }, [draftRounds, activeRoundNumber]);
+ 
+   const isTeamDraftRound = currentRoundConfig?.isTeamDraft === true;
+ 
+   const currentRoundOrder = useMemo(() => {
+-    if (!draftOrderData || !draft) return [];
++    if (!draftOrderData) return [];
+     return draftOrderData
+-      .filter(o => o.roundNumber === draft.currentRound)
++      .filter(o => o.roundNumber === activeRoundNumber)
+       .sort((a, b) => a.orderIndex - b.orderIndex);
+-  }, [draftOrderData, draft]);
++  }, [draftOrderData, activeRoundNumber]);
+ 
+   const currentTeam = useMemo(() => {
+     if (!draft || !currentRoundOrder.length || draft.status !== "active") return null;
+-    return currentRoundOrder[draft.currentPickIndex] || null;
+-  }, [draft, currentRoundOrder]);
++    const idx = timingInfo?.currentSlot?.roundPickIndex ?? 0;
++    return currentRoundOrder[idx] || null;
++  }, [draft, currentRoundOrder, timingInfo]);
+ 
+   const isMyTurn = useMemo(() => {
+     if (!currentTeam || !user) return false;
+     return currentTeam.userId === user.id;
+   }, [currentTeam, user]);
+ 
+-  const myPickTiming = useMemo(() => {
+-    if (!timingInfo?.hasTiming || !timingInfo.pickTimings || !user) return null;
+-    return timingInfo.pickTimings.find(t => t.userId === user.id) || null;
+-  }, [timingInfo, user]);
+-
+   const currentPickTiming = useMemo(() => {
+-    if (!timingInfo?.hasTiming || !timingInfo.pickTimings || !draft) return null;
+-    return timingInfo.pickTimings[draft.currentPickIndex] || null;
+-  }, [timingInfo, draft]);
++    if (!timingInfo?.hasTiming || !timingInfo.currentSlot) return null;
++    return { pickDeadline: timingInfo.currentSlot.deadlineAt };
++  }, [timingInfo]);
+ 
+   const isEligibleByTiming = useMemo(() => {
+     if (!timingInfo?.hasTiming || !user) return false;
+@@ -393,14 +391,22 @@
+                   </TableRow>
+                 </TableHeader>
+                 <TableBody>
+-                  {picks?.map((pick) => (
++                  {picks?.filter(p => !!p.madeAt).map((pick) => (
+                     <TableRow key={pick.id} data-testid={`row-pick-${pick.id}`}>
+-                      <TableCell className="font-mono">{pick.pickNumber}</TableCell>
++                      <TableCell className="font-mono">{pick.overallPickNumber}</TableCell>
+                       <TableCell className="font-mono">{pick.round}</TableCell>
+                       <TableCell className="font-medium">{pick.user.teamName || `${pick.user.firstName} ${pick.user.lastName}`}</TableCell>
+-                      <TableCell className="font-medium">{pick.player.fullName}</TableCell>
+-                      <TableCell>{pick.player.primaryPosition}</TableCell>
+-                      <TableCell className="text-muted-foreground">{pick.player.currentTeamName || pick.player.parentOrgName}</TableCell>
++                      <TableCell className="font-medium">
++                        {pick.teamDraftOrgName ? (
++                          <span>
++                            Team Draft: {pick.teamDraftOrgName} ({(pick.teamDraftPlayerIds || []).length})
++                          </span>
++                        ) : (
++                          pick.player?.fullName || "—"
++                        )}
++                      </TableCell>
++                      <TableCell>{pick.player?.primaryPosition || "—"}</TableCell>
++                      <TableCell className="text-muted-foreground">{pick.player ? (pick.player.currentTeamName || pick.player.parentOrgName) : "—"}</TableCell>
+                       <TableCell>
+                         <Badge variant={pick.rosterType === "mlb" ? "default" : "outline"}>
+                           {pick.rosterType === "mlb" ? "MLB" : "MiLB"}
+@@ -417,9 +423,9 @@
+     );
+   }
+ 
+-  const roundName = currentRoundConfig?.name || `Round ${draft.currentRound}`;
++  const roundName = currentRoundConfig?.name || `Round ${activeRoundNumber}`;
+   const totalPicksInRound = currentRoundOrder.length;
+-  const picksMade = picks?.length || 0;
++  const picksMade = (picks?.filter(p => !!p.madeAt).length) || 0;
+ 
+   return (
+     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+@@ -672,17 +678,23 @@
+                       </TableRow>
+                     </TableHeader>
+                     <TableBody>
+-                      {[...picks].reverse().map((pick) => (
++                      {[...picks].filter(p => !!p.madeAt).reverse().map((pick) => (
+                         <TableRow key={pick.id} data-testid={`row-pick-${pick.id}`}>
+                           <TableCell className="font-mono text-xs">
+-                            {pick.round}.{pick.pickNumber}
++                            {pick.round}.{(pick.roundPickIndex ?? 0) + 1}
+                           </TableCell>
+                           <TableCell className="text-sm font-medium">
+                             {pick.user.teamName || `${pick.user.firstName}`}
+                           </TableCell>
+                           <TableCell>
+-                            <div className="text-sm font-medium">{pick.player.fullName}</div>
+-                            <div className="text-xs text-muted-foreground">{pick.player.primaryPosition} - {pick.player.currentTeamName || pick.player.parentOrgName}</div>
++                            <div className="text-sm font-medium">
++                              {pick.teamDraftOrgName ? `Team Draft: ${pick.teamDraftOrgName}` : (pick.player?.fullName || "—")}
++                            </div>
++                            <div className="text-xs text-muted-foreground">
++                              {pick.teamDraftOrgName
++                                ? `${(pick.teamDraftPlayerIds || []).length} players`
++                                : (pick.player ? `${pick.player.primaryPosition} - ${pick.player.currentTeamName || pick.player.parentOrgName}` : "—")}
++                            </div>
+                           </TableCell>
+                           <TableCell>
+                             <Badge variant={pick.rosterType === "mlb" ? "default" : "outline"} className="text-xs">
+diff -ruN /mnt/data/cbl-orig/cbl-main/client/src/pages/commissioner/CommissionerDraftDetail.tsx /mnt/data/cbl-main/client/src/pages/commissioner/CommissionerDraftDetail.tsx
+--- /mnt/data/cbl-orig/cbl-main/client/src/pages/commissioner/CommissionerDraftDetail.tsx	2026-02-13 00:45:21.000000000 +0000
++++ /mnt/data/cbl-main/client/src/pages/commissioner/CommissionerDraftDetail.tsx	2026-02-13 22:44:37.453029266 +0000
+@@ -731,16 +731,22 @@
+                     <TableBody>
+                       {draftPicks.map(pick => (
+                         <TableRow key={pick.id} data-testid={`row-pick-${pick.id}`}>
+-                          <TableCell className="font-mono">{pick.pickNumber}</TableCell>
++                          <TableCell className="font-mono">{pick.overallPickNumber}</TableCell>
+                           <TableCell className="font-mono">{pick.round}</TableCell>
+                           <TableCell className="font-medium">{pick.user.teamName || `${pick.user.firstName} ${pick.user.lastName}`}</TableCell>
+-                          <TableCell>{pick.player.fullName}</TableCell>
++                          <TableCell>
++                            {pick.teamDraftOrgName ? (
++                              <span>Team Draft: {pick.teamDraftOrgName} ({(pick.teamDraftPlayerIds || []).length})</span>
++                            ) : (
++                              pick.player?.fullName || "—"
++                            )}
++                          </TableCell>
+                           <TableCell>
+                             <Badge variant={pick.rosterType === "mlb" ? "default" : "outline"}>
+                               {pick.rosterType === "mlb" ? "MLB" : "MiLB"}
+                             </Badge>
+                           </TableCell>
+-                          {draft.status === "active" && (
++                          {draft.status === "active" && pick.madeAt && (
+                             <TableCell>
+                               <AlertDialog>
+                                 <AlertDialogTrigger asChild>
+@@ -752,7 +758,7 @@
+                                   <AlertDialogHeader>
+                                     <AlertDialogTitle>Nullify Pick</AlertDialogTitle>
+                                     <AlertDialogDescription>
+-                                      Undo this pick? {pick.player.fullName} will be returned to the available pool and removed from {pick.user.teamName || "the team"}'s roster.
++                                      Undo this pick? {pick.teamDraftOrgName ? "This team draft selection" : (pick.player?.fullName || "This player")} will be returned to the available pool and removed from {pick.user.teamName || "the team"}'s roster.
+                                     </AlertDialogDescription>
+                                   </AlertDialogHeader>
+                                   <AlertDialogFooter>
+diff -ruN /mnt/data/cbl-orig/cbl-main/drizzle/0001_draft_slots_and_timezones.sql /mnt/data/cbl-main/drizzle/0001_draft_slots_and_timezones.sql
+--- /mnt/data/cbl-orig/cbl-main/drizzle/0001_draft_slots_and_timezones.sql	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/cbl-main/drizzle/0001_draft_slots_and_timezones.sql	2026-02-13 22:45:49.049376495 +0000
+@@ -0,0 +1,44 @@
++-- Draft slot support + Central default timezone
++
++-- League default timezone should be Central
++ALTER TABLE leagues ALTER COLUMN timezone SET DEFAULT 'America/Chicago';
++UPDATE leagues SET timezone = 'America/Chicago' WHERE timezone IS NULL OR timezone = 'America/New_York';
++
++-- Optional per-user timezone (UI can still default to browser timezone)
++ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone varchar(50);
++
++-- Drafts: snake defaults false (commissioner defines order per-round)
++ALTER TABLE drafts ALTER COLUMN snake SET DEFAULT false;
++
++-- Draft rounds: store start_time as timestamptz (UTC). Interpret existing values as Central.
++ALTER TABLE draft_rounds
++  ALTER COLUMN start_time TYPE timestamptz
++  USING (start_time AT TIME ZONE 'America/Chicago');
++
++-- Draft picks: convert from "made picks" to "pick slots"
++ALTER TABLE draft_picks RENAME COLUMN pick_number TO overall_pick_number;
++ALTER TABLE draft_picks ADD COLUMN IF NOT EXISTS round_pick_index integer NOT NULL DEFAULT 0;
++ALTER TABLE draft_picks ADD COLUMN IF NOT EXISTS scheduled_at timestamptz NOT NULL DEFAULT now();
++ALTER TABLE draft_picks ADD COLUMN IF NOT EXISTS deadline_at timestamptz NOT NULL DEFAULT now();
++ALTER TABLE draft_picks ADD COLUMN IF NOT EXISTS made_at timestamptz;
++ALTER TABLE draft_picks ADD COLUMN IF NOT EXISTS made_by_user_id varchar;
++ALTER TABLE draft_picks ADD COLUMN IF NOT EXISTS team_draft_org_name varchar(255);
++ALTER TABLE draft_picks ADD COLUMN IF NOT EXISTS team_draft_player_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
++
++-- Allow unfilled slots
++ALTER TABLE draft_picks ALTER COLUMN mlb_player_id DROP NOT NULL;
++ALTER TABLE draft_picks ALTER COLUMN roster_type DROP NOT NULL;
++
++-- Constraints / indexes
++CREATE INDEX IF NOT EXISTS idx_draft_picks_overall ON draft_picks(draft_id, overall_pick_number);
++CREATE INDEX IF NOT EXISTS idx_draft_picks_round ON draft_picks(draft_id, round, round_pick_index);
++
++-- Best-effort FK (ignore if already exists)
++DO $$
++BEGIN
++  ALTER TABLE draft_picks
++    ADD CONSTRAINT fk_draft_picks_made_by_user
++    FOREIGN KEY (made_by_user_id) REFERENCES users(id);
++EXCEPTION
++  WHEN duplicate_object THEN NULL;
++END $$;
+diff -ruN /mnt/data/cbl-orig/cbl-main/node_modules/typescript/tsbuildinfo /mnt/data/cbl-main/node_modules/typescript/tsbuildinfo
+--- /mnt/data/cbl-orig/cbl-main/node_modules/typescript/tsbuildinfo	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/cbl-main/node_modules/typescript/tsbuildinfo	2026-02-13 22:46:14.896545154 +0000
+@@ -0,0 +1 @@
++{"fileNames":["../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es5.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2015.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2016.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2017.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2018.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2019.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2020.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2021.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2022.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2023.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2024.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.esnext.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.dom.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.dom.iterable.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2015.core.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2015.collection.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2015.generator.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2015.iterable.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2015.promise.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2015.proxy.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2015.reflect.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2015.symbol.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2015.symbol.wellknown.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2016.array.include.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2016.intl.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2017.arraybuffer.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2017.date.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2017.object.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2017.sharedmemory.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2017.string.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2017.intl.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2017.typedarrays.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2018.asyncgenerator.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2018.asynciterable.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2018.intl.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2018.promise.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2018.regexp.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2019.array.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2019.object.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2019.string.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2019.symbol.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2019.intl.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2020.bigint.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2020.date.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2020.promise.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2020.sharedmemory.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2020.string.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2020.symbol.wellknown.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2020.intl.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2020.number.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2021.promise.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2021.string.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2021.weakref.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2021.intl.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2022.array.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2022.error.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2022.intl.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2022.object.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2022.string.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2022.regexp.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2023.array.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2023.collection.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2023.intl.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2024.arraybuffer.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2024.collection.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2024.object.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2024.promise.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2024.regexp.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2024.sharedmemory.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.es2024.string.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.esnext.array.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.esnext.collection.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.esnext.intl.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.esnext.disposable.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.esnext.promise.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.esnext.decorators.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.esnext.iterator.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.esnext.float16.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.decorators.d.ts","../../../../../opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/lib.decorators.legacy.d.ts","../../client/src/lib/queryClient.ts","../../client/src/lib/utils.ts","../../client/src/components/ui/toast.tsx","../../client/src/hooks/use-toast.ts","../../client/src/components/ui/toaster.tsx","../../client/src/components/ui/tooltip.tsx","../../client/src/components/ThemeProvider.tsx","../../shared/schema.ts","../../client/src/contexts/LeagueContext.tsx","../../client/src/hooks/useAuth.ts","../../client/src/hooks/useLeague.ts","../../client/src/components/ui/button.tsx","../../client/src/components/ThemeToggle.tsx","../../client/src/components/ui/badge.tsx","../../client/src/components/ui/avatar.tsx","../../client/src/components/ui/dropdown-menu.tsx","../../client/src/components/ui/sheet.tsx","../../client/src/components/Header.tsx","../../client/src/components/ui/input.tsx","../../client/src/components/ui/label.tsx","../../client/src/components/ui/dialog.tsx","../../client/src/components/PasswordResetDialog.tsx","../../client/src/components/ui/card.tsx","../../client/src/pages/not-found.tsx","../../client/src/pages/Landing.tsx","../../client/src/pages/ResetPassword.tsx","../../client/src/components/ui/skeleton.tsx","../../client/src/components/ui/dual-progress.tsx","../../client/src/components/ui/switch.tsx","../../client/src/components/ui/select.tsx","../../client/src/components/ui/table.tsx","../../client/src/components/ui/alert-dialog.tsx","../../client/src/components/CountdownTimer.tsx","../../client/src/components/ui/form.tsx","../../client/src/components/ui/separator.tsx","../../client/src/lib/authUtils.ts","../../client/src/components/BidDialog.tsx","../../client/src/components/AutoBidDialog.tsx","../../client/src/components/BidHistoryModal.tsx","../../client/src/components/FreeAgentsTable.tsx","../../client/src/pages/Home.tsx","../../client/src/components/ui/tabs.tsx","../../client/src/components/ui/popover.tsx","../../client/src/components/ui/command.tsx","../../client/src/components/BundleDialog.tsx","../../client/src/pages/MyBids.tsx","../../client/src/pages/Results.tsx","../../client/src/pages/MyRoster.tsx","../../client/src/pages/Players.tsx","../../client/src/components/ui/checkbox.tsx","../../client/src/components/ui/calendar.tsx","../../client/src/pages/CommissionerAuction.tsx","../../client/src/pages/commissioner/CommissionerFreeAgency.tsx","../../client/src/pages/commissioner/CommissionerTeams.tsx","../../client/src/components/RosterManagement.tsx","../../client/src/pages/commissioner/CommissionerRosters.tsx","../../client/src/pages/commissioner/CommissionerSettings.tsx","../../client/src/pages/commissioner/CommissionerDraft.tsx","../../client/src/components/ui/textarea.tsx","../../client/src/pages/commissioner/CommissionerDraftDetail.tsx","../../client/src/pages/SuperAdmin.tsx","../../client/src/pages/DraftBoard.tsx","../../client/src/pages/Drafts.tsx","../../client/src/App.tsx","../../client/src/main.tsx","../../client/src/components/ui/accordion.tsx","../../client/src/components/ui/alert.tsx","../../client/src/components/ui/aspect-ratio.tsx","../../client/src/components/ui/breadcrumb.tsx","../../client/src/components/ui/carousel.tsx","../../client/src/components/ui/chart.tsx","../../client/src/components/ui/collapsible.tsx","../../client/src/components/ui/context-menu.tsx","../../client/src/components/ui/drawer.tsx","../../client/src/components/ui/hover-card.tsx","../../client/src/components/ui/input-otp.tsx","../../client/src/components/ui/menubar.tsx","../../client/src/components/ui/navigation-menu.tsx","../../client/src/components/ui/pagination.tsx","../../client/src/components/ui/progress.tsx","../../client/src/components/ui/radio-group.tsx","../../client/src/components/ui/resizable.tsx","../../client/src/components/ui/scroll-area.tsx","../../client/src/hooks/use-mobile.tsx","../../client/src/components/ui/sidebar.tsx","../../client/src/components/ui/slider.tsx","../../client/src/components/ui/toggle.tsx","../../client/src/components/ui/toggle-group.tsx","../../client/src/pages/Commissioner.tsx","../../server/db.ts","../../server/storage.ts","../../server/email.ts","../../server/auth.ts","../../server/mlb-api.ts","../../server/routes.ts","../../server/static.ts","../../vite.config.ts","../../server/vite.ts","../../server/index.ts","../../server/replitAuth.ts"],"fileIdsList":[[81,85,86,87,89,90,91,98,102,104,105,106,121,126,127,128,129,132,133,134,136,137,138,140,141,142,143],[81,82,84,88,92,94,99,101,109,113,114,116],[81,82,84,88,92,94,99,101,113,114,115,116],[81,82,84,88,90,92,94,101,107,111,113],[81,82,84,88,92,94,99,100,101,103,110,123,124],[82,94],[81,82,84,88,90,92,94,99,103,110,111,112,113,117,118,119],[88,90,91,92,93,94,95,96,97],[81,84,90,92,99,100,101],[81,84,88,92,94,99,101,103,107,110,111,112],[87,92],[82],[82,92],[82,101],[82,100],[82,86,92,97,99,107,115,164],[83,84],[82,167],[81,88],[83],[89],[144],[81,84,88,90,91,92,94,99,100,101,103,107,109,110,111,112,114,115,116,122,130,135],[81,82,84,88,90,92,94,99,100,101,103,107,109,110,111,112,114,116,123,130,131],[81,84,88,90,92,94,99,101,103,107,110,111],[88,91,94,103,107],[81,82,84,88,90,91,94,100,103,107,108,109,120],[81,84,90,92,99,100,101,103],[81,82,84,88,90,91,92,94,103,107,113,118,122,125],[88,90,91,94,99,103,107,111],[88,90,91,92,94,99,103,107,110,111],[81,84,92,99,100,103],[81,82,84,88,90,91,92,94,99,100,101,103,107,109,110,111],[81,84,88,90,92,94,99,100,101,103,107,110,111],[81,84,88,91,92,94,99,100,101,103,107],[81,84,88,91,92,94,99,100,101,103,107,109,110,111,112,139],[81,84,88,90,91,92,94,99,100,101,103,107,110,111],[88,90,91,103,107,135],[81,84,88,90,91,92,99,100,101,103,107,111],[81,84,88,90,91,92,94,99,100,101,103,111,112,116,122],[103],[171,172],[88],[171,172,175,176,178],[171],[88,170,171,173,174],[88,170],[177]],"fileInfos":[{"version":"69684132aeb9b5642cbcd9e22dff7818ff0ee1aa831728af0ecf97d3364d5546","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"45b7ab580deca34ae9729e97c13cfd999df04416a79116c3bfb483804f85ded4","signature":false,"impliedFormat":1},{"version":"3facaf05f0c5fc569c5649dd359892c98a85557e3e0c847964caeb67076f4d75","signature":false,"impliedFormat":1},{"version":"e44bb8bbac7f10ecc786703fe0a6a4b952189f908707980ba8f3c8975a760962","signature":false,"impliedFormat":1},{"version":"5e1c4c362065a6b95ff952c0eab010f04dcd2c3494e813b493ecfd4fcb9fc0d8","signature":false,"impliedFormat":1},{"version":"68d73b4a11549f9c0b7d352d10e91e5dca8faa3322bfb77b661839c42b1ddec7","signature":false,"impliedFormat":1},{"version":"5efce4fc3c29ea84e8928f97adec086e3dc876365e0982cc8479a07954a3efd4","signature":false,"impliedFormat":1},{"version":"feecb1be483ed332fad555aff858affd90a48ab19ba7272ee084704eb7167569","signature":false,"impliedFormat":1},{"version":"ee7bad0c15b58988daa84371e0b89d313b762ab83cb5b31b8a2d1162e8eb41c2","signature":false,"impliedFormat":1},{"version":"27bdc30a0e32783366a5abeda841bc22757c1797de8681bbe81fbc735eeb1c10","signature":false,"impliedFormat":1},{"version":"8fd575e12870e9944c7e1d62e1f5a73fcf23dd8d3a321f2a2c74c20d022283fe","signature":false,"impliedFormat":1},{"version":"8bf8b5e44e3c9c36f98e1007e8b7018c0f38d8adc07aecef42f5200114547c70","signature":false,"impliedFormat":1},{"version":"092c2bfe125ce69dbb1223c85d68d4d2397d7d8411867b5cc03cec902c233763","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"07f073f19d67f74d732b1adea08e1dc66b1b58d77cb5b43931dee3d798a2fd53","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"c57796738e7f83dbc4b8e65132f11a377649c00dd3eee333f672b8f0a6bea671","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"dc2df20b1bcdc8c2d34af4926e2c3ab15ffe1160a63e58b7e09833f616efff44","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"515d0b7b9bea2e31ea4ec968e9edd2c39d3eebf4a2d5cbd04e88639819ae3b71","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"0559b1f683ac7505ae451f9a96ce4c3c92bdc71411651ca6ddb0e88baaaad6a3","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"0dc1e7ceda9b8b9b455c3a2d67b0412feab00bd2f66656cd8850e8831b08b537","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"ce691fb9e5c64efb9547083e4a34091bcbe5bdb41027e310ebba8f7d96a98671","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"8d697a2a929a5fcb38b7a65594020fcef05ec1630804a33748829c5ff53640d0","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"4ff2a353abf8a80ee399af572debb8faab2d33ad38c4b4474cff7f26e7653b8d","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"936e80ad36a2ee83fc3caf008e7c4c5afe45b3cf3d5c24408f039c1d47bdc1df","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"d15bea3d62cbbdb9797079416b8ac375ae99162a7fba5de2c6c505446486ac0a","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"68d18b664c9d32a7336a70235958b8997ebc1c3b8505f4f1ae2b7e7753b87618","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"eb3d66c8327153d8fa7dd03f9c58d351107fe824c79e9b56b462935176cdf12a","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"38f0219c9e23c915ef9790ab1d680440d95419ad264816fa15009a8851e79119","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"69ab18c3b76cd9b1be3d188eaf8bba06112ebbe2f47f6c322b5105a6fbc45a2e","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"fef8cfad2e2dc5f5b3d97a6f4f2e92848eb1b88e897bb7318cef0e2820bceaab","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"2f11ff796926e0832f9ae148008138ad583bd181899ab7dd768a2666700b1893","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"4de680d5bb41c17f7f68e0419412ca23c98d5749dcaaea1896172f06435891fc","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"954296b30da6d508a104a3a0b5d96b76495c709785c1d11610908e63481ee667","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"ac9538681b19688c8eae65811b329d3744af679e0bdfa5d842d0e32524c73e1c","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"0a969edff4bd52585473d24995c5ef223f6652d6ef46193309b3921d65dd4376","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"9e9fbd7030c440b33d021da145d3232984c8bb7916f277e8ffd3dc2e3eae2bdb","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"811ec78f7fefcabbda4bfa93b3eb67d9ae166ef95f9bff989d964061cbf81a0c","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"717937616a17072082152a2ef351cb51f98802fb4b2fdabd32399843875974ca","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"d7e7d9b7b50e5f22c915b525acc5a49a7a6584cf8f62d0569e557c5cfc4b2ac2","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"71c37f4c9543f31dfced6c7840e068c5a5aacb7b89111a4364b1d5276b852557","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"576711e016cf4f1804676043e6a0a5414252560eb57de9faceee34d79798c850","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"89c1b1281ba7b8a96efc676b11b264de7a8374c5ea1e6617f11880a13fc56dc6","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"74f7fa2d027d5b33eb0471c8e82a6c87216223181ec31247c357a3e8e2fddc5b","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"d6d7ae4d1f1f3772e2a3cde568ed08991a8ae34a080ff1151af28b7f798e22ca","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"063600664504610fe3e99b717a1223f8b1900087fab0b4cad1496a114744f8df","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"934019d7e3c81950f9a8426d093458b65d5aff2c7c1511233c0fd5b941e608ab","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"52ada8e0b6e0482b728070b7639ee42e83a9b1c22d205992756fe020fd9f4a47","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"3bdefe1bfd4d6dee0e26f928f93ccc128f1b64d5d501ff4a8cf3c6371200e5e6","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"59fb2c069260b4ba00b5643b907ef5d5341b167e7d1dbf58dfd895658bda2867","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"639e512c0dfc3fad96a84caad71b8834d66329a1f28dc95e3946c9b58176c73a","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"368af93f74c9c932edd84c58883e736c9e3d53cec1fe24c0b0ff451f529ceab1","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"af3dd424cf267428f30ccfc376f47a2c0114546b55c44d8c0f1d57d841e28d74","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"995c005ab91a498455ea8dfb63aa9f83fa2ea793c3d8aa344be4a1678d06d399","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"959d36cddf5e7d572a65045b876f2956c973a586da58e5d26cde519184fd9b8a","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"965f36eae237dd74e6cca203a43e9ca801ce38824ead814728a2807b1910117d","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"3925a6c820dcb1a06506c90b1577db1fdbf7705d65b62b99dce4be75c637e26b","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"0a3d63ef2b853447ec4f749d3f368ce642264246e02911fcb1590d8c161b8005","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"b5ce7a470bc3628408429040c4e3a53a27755022a32fd05e2cb694e7015386c7","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"8444af78980e3b20b49324f4a16ba35024fef3ee069a0eb67616ea6ca821c47a","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"3287d9d085fbd618c3971944b65b4be57859f5415f495b33a6adc994edd2f004","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"b4b67b1a91182421f5df999988c690f14d813b9850b40acd06ed44691f6727ad","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"df83c2a6c73228b625b0beb6669c7ee2a09c914637e2d35170723ad49c0f5cd4","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"436aaf437562f276ec2ddbee2f2cdedac7664c1e4c1d2c36839ddd582eeb3d0a","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"8e3c06ea092138bf9fa5e874a1fdbc9d54805d074bee1de31b99a11e2fec239d","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"87dc0f382502f5bbce5129bdc0aea21e19a3abbc19259e0b43ae038a9fc4e326","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"b1cb28af0c891c8c96b2d6b7be76bd394fddcfdb4709a20ba05a7c1605eea0f9","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"2fef54945a13095fdb9b84f705f2b5994597640c46afeb2ce78352fab4cb3279","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"ac77cb3e8c6d3565793eb90a8373ee8033146315a3dbead3bde8db5eaf5e5ec6","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"56e4ed5aab5f5920980066a9409bfaf53e6d21d3f8d020c17e4de584d29600ad","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"4ece9f17b3866cc077099c73f4983bddbcb1dc7ddb943227f1ec070f529dedd1","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"0a6282c8827e4b9a95f4bf4f5c205673ada31b982f50572d27103df8ceb8013c","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"1c9319a09485199c1f7b0498f2988d6d2249793ef67edda49d1e584746be9032","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"e3a2a0cee0f03ffdde24d89660eba2685bfbdeae955a6c67e8c4c9fd28928eeb","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"811c71eee4aa0ac5f7adf713323a5c41b0cf6c4e17367a34fbce379e12bbf0a4","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"51ad4c928303041605b4d7ae32e0c1ee387d43a24cd6f1ebf4a2699e1076d4fa","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"60037901da1a425516449b9a20073aa03386cce92f7a1fd902d7602be3a7c2e9","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"d4b1d2c51d058fc21ec2629fff7a76249dec2e36e12960ea056e3ef89174080f","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"22adec94ef7047a6c9d1af3cb96be87a335908bf9ef386ae9fd50eeb37f44c47","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"4245fee526a7d1754529d19227ecbf3be066ff79ebb6a380d78e41648f2f224d","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"8e7f8264d0fb4c5339605a15daadb037bf238c10b654bb3eee14208f860a32ea","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"782dec38049b92d4e85c1585fbea5474a219c6984a35b004963b00beb1aab538","signature":false,"affectsGlobalScope":true,"impliedFormat":1},{"version":"fc099f0b9e53702111a516c7e515f4bce599df0ea8e84a51ac2e632952c412f0","signature":false},{"version":"8912f0527579dd4cd621421a6a860eb0b8aa251baed25724471e8825354a9e11","signature":false},{"version":"99f9f4a3e897f71d89b01c6772b2f5db51b888cecb2c8214fb2c2dbb2b3e6356","signature":false},{"version":"5aab0623ee24bddf9420c259a23a06996292e38ea70eccbac2715516f6d01a0b","signature":false},{"version":"1348f1a1f9820e2f1394b93cecc156a7e22f03636ab9270753985549aae2be74","signature":false},{"version":"2f26d20816448c630faccbda5ae9b4fe47c36f1fb14dbbd85b6652b7c24c1d51","signature":false},{"version":"c8d3214e48f809a03874d8eb5a79205114d8c557b575989f2d4b2c7c54d9fe9d","signature":false},{"version":"e721546afab532217459e721075937552b21a21707629945fa57de21df65b4ad","signature":false},{"version":"0ea6e5c7be900781342a1b0d556a65c9c6b805b3aca753596a8bd399299cf6aa","signature":false},{"version":"1668ae5adf56e1dd6c5652574f2f81031f34795bf4525456100aed278fc70c4f","signature":false},{"version":"bc87c2fcf5c9d09890647f7888686c16b56c63bd5abd4ce0d21fadc01a6c8803","signature":false},{"version":"d6a9b9d04cb882af71199a3cf4cb87f6cfaab44d17f871ff8a78ec2a1830511d","signature":false},{"version":"9718cb037142a463748e6e624791b68f225567a31badf1051611e2fca16eb596","signature":false},{"version":"f1f149c9db40e787a6c2ae8ee6b0fedceb4ccb68b3944f6fdca10d7fd540312e","signature":false},{"version":"f83b4d3f868442e571d9cf8737a9e36ba5de373f6d599c7a6ddd59c1b5c78dfa","signature":false},{"version":"aca10633792d03bb541e09ea106b5e1f3de429b69b3cade5ccfb7dca20289424","signature":false},{"version":"020fc1a380b8f4f4ed5fae45425888c82d459e3e7f6083a896e06ced73bf73d4","signature":false},{"version":"bbd87bafedfc4a80720581a5ead2652fadce2cde0cde4061b98e6bd053836baf","signature":false},{"version":"b5c4ff4e0a57cf16c4519165745550029d66a2e25b8b018654b60ac2c5764e79","signature":false},{"version":"e69cfc27d78c9ef31b248ab8ea4fa54327c1038843f70efb5cd85d54c0bf1e0e","signature":false},{"version":"60d5246653c714fc12a67743ee5951331ecd2548cdaef9a599922bcb14da26db","signature":false},{"version":"e0ef0189c26c84a8ecb3056e7fb083911fec31c6bc3e6019f23a214dd5590dfb","signature":false},{"version":"48dfcf29c71644ebe3dd5d70319ac1e663c9094c7c524be0cf492048b2989eb1","signature":false},{"version":"718a41bd05a163d1db32480aba013f5fe754894e656b6542a8e4b302275b172e","signature":false},{"version":"57c5c82ab4a7a2738aa96d60b0362e9d00e7f4fad6d73a40a91d9692b3cec521","signature":false},{"version":"7a90c56c50a79419fbda70d53d6737b517d3c212689681b9f42449ecb686e700","signature":false},{"version":"a72a9d8fc1c1999b5411a33391c5e70048863c5865629077280e943ca85689a8","signature":false},{"version":"7e040a9de6b9f522ac920f05b3b0c0528e51f3f61ba923229d21cd1e61d46239","signature":false},{"version":"bd29ce723e952bc7f8fab367320347ca82fbb933f4da9872c7120d6765662ebe","signature":false},{"version":"544172f40b3ae1d86d518dbc428e4bed58b3a733644564f4907bbf0b60ba3218","signature":false},{"version":"1da243956282c040db49d5718d2f0093a705fbbdfa3a25f51c1a31a069c45093","signature":false},{"version":"5ab57317c19d0edd8e2d6d9c98992bcefa1e023a4f90072e40364451dc18456f","signature":false},{"version":"20bad3a1fb0e632aba338fc703b6adb5703e3c188cad5f4577c5403972039a6f","signature":false},{"version":"0d812c11a1afa799fb2bfa8f1e11052eacb64252c4b52be969a5f89aae1f52fb","signature":false},{"version":"c956c4cca4b8442fa9314d6079b9f975e1ee39d5804aaf2966990f6258ac342a","signature":false},{"version":"0a8c74eef60dd205e2a344b6c5ddba800bc514814d6b8e5be36d3a6b61e3c2dc","signature":false},{"version":"ed6468611f876d4439e1b5dd8abc645cbe529164e1c6393357e0972b79fba4ea","signature":false},{"version":"0f059dfc548487f0b299862568ecb3758aa614d7039fab4c9d2a29c11623eaf8","signature":false},{"version":"8e5e94b8e1e65dfb6d94d787044676c51fb7157b9b7834c3bf3bd6c19efbf15b","signature":false},{"version":"6b362acb045eb3a0bfe06576df50ea5768beaafa5469c39fa1d1f67b32fa52eb","signature":false},{"version":"9836d98e0e4175c4cad1421eb4320fa6edb374c1041dc56374734a05306caaf8","signature":false},{"version":"d9958fd005db42bcca4f2c12ede63500e74f1a9bd82ddc3a6bf6fcb369706f07","signature":false},{"version":"d853c561833e545879a56e2c4de18a92653de1e55e9e7fae463540679924ac0c","signature":false},{"version":"924fef47d5e04a133ecc700e5881175cef1f71a338eee7c4db5cf5fc46b9c5e1","signature":false},{"version":"8c4160d6d7caf30ec5f40f68525d049b2d38ea5e0883abce881c5c30ef23c821","signature":false},{"version":"66dfd2a213f615cf49d4fb61da0b6ac8375738f7806db5da839b8d2051951f36","signature":false},{"version":"f0109397e7f7fcc2d1582468f31bb786787668cab18ad2027c0eed92e0d40851","signature":false},{"version":"55ba5a89e43f797d3f189a159e1165c2f5725cec916b53b198f3142a622211c3","signature":false},{"version":"d8a1ef59b862a020c9215a58b3ab9d93b6da0457cef5ea2002aeb05cff0e286d","signature":false},{"version":"60a0084cbdfcb96e54c9f6438e9066dfe7ed0a7e421b33985d5eb57975d110a4","signature":false},{"version":"a7873d2b249506009a6f018b10a58c7cb38cc583d0d9391e2d90ed288cf6d013","signature":false},{"version":"2dd62168e322f5dd3cffd4ee65b281899583b388d0e08b99d41028ce875d4f12","signature":false},{"version":"d3da1a65e20948d911064d90e8e01b82813578d47c4f6e73dfa4abf5f83f4350","signature":false},{"version":"946115648c8b3817a5e969f8e8d2b0449c48d04f09efa19f30d2fce676f8005f","signature":false},{"version":"4736d7f0faa0bb42c50861c98ae427e72b59eb1c2ffa0b6ecb69a126c590e166","signature":false},{"version":"002eade867663cf5efb5d4432d07064b549d9df8372bdcfb0b4e5234110bb59c","signature":false},{"version":"c5b8157fbf1a7eaf4232ff5f0e650f94eaa1c3bfe0b8361253383be581b60eda","signature":false},{"version":"e5423bef1ccf9d991d4e75818816ac61b9cd0635c4257edc1580d43c6971859f","signature":false},{"version":"aaf46918c590c2bf59e2afb7904dfd8e69317e12ee34ff93ed2746dd06cc994a","signature":false},{"version":"6f53547a5681f479f171f2b63111c08a234fd86b836cc721f44b59e5b9be048c","signature":false},{"version":"399728e0497a43523bb6629ca3cb1a93a74df646a32a70ee8d60895741f95251","signature":false},{"version":"a9c9a146cbf23fd9a67e0170ced52bddb5d81e7d7e1c0e9ad7982eb07eee5d2b","signature":false},{"version":"4642129c2c9d575cc208f0b2fed8e292a147c1d8f19ee3156df06692db466615","signature":false},{"version":"90ba3848a6da5e051b46606f25b447205e42e6e5fbd5932dbfda8c862d9a175c","signature":false},{"version":"29946f51942fba11605c7595fd82b50b0d7e50148e0194fd356dacbc958f18ec","signature":false},{"version":"6b84cb28b5c8e2129d854cffb8c5ba0161758d577db6db30a380cf593a8c0705","signature":false},{"version":"ed78a053a9db783f48d5dfab7398b630f87c17ed2e237b6f30a3eb153675960c","signature":false},{"version":"08b0aa0b05efc573c7d63363c03e83d4b101bfeb54140764e96ddea30659cfcc","signature":false},{"version":"c3d3dcb0d82fc5e91d8830bac7fead905686fe876f1f42c3ed872bb0a6b6584e","signature":false},{"version":"5a4ff73c804e86c873382da80c453f1399006326ef042fb984c24162ec86666e","signature":false},{"version":"e30219cedb35c55c2f9069f6470d60514c54c43fe0a3b641615275a2acd25f12","signature":false},{"version":"f4cdd104de29928bfcd40b865c7d08eed9157a537fbb8b5e6d0921f02b63cc04","signature":false},{"version":"b3abf3bb92fc028dd9a4c5dc6a10093b7f1346be8841fabb214fa08e5f40b181","signature":false},{"version":"774316527ddc577fc54012a0c898ebcf7cf8f11152126e550828b53004a5b70c","signature":false},{"version":"dcb793b8b1202b1634d791a993acadca0cfc3043a93b98c91a627fbff794f384","signature":false},{"version":"b06b6294edee39d817586b3cf4766de1720b06e184624d45d2bfd0f38d2a5e72","signature":false},{"version":"da0c7ace239ead75f7fbc46ffbae8ddf177477445354500d7304a276065ea7b3","signature":false},{"version":"74f3b1b937e42582093a1671cf7f5c7250cd884922d51f201632317af9c24209","signature":false},{"version":"6d66283fc04f3901772f15f3108bda732efc75ce878e0d8ecf8f9fc3b0c63c26","signature":false},{"version":"8c036da4baed076de68d27719929dc98151a81b51456bfa6a2488d835303b1d7","signature":false},{"version":"74f87531da1fde8d3c07dbd7b380ee6508a70d5c0af1c22e2d2c33d66cc79f10","signature":false},{"version":"70d1e35a5fb0897af7063cdd841d8ed636e1c332ef7ea6469f0f175a5a93dddf","signature":false},{"version":"d7d02600effca55d0dcadce8c09c97ebddda3a19c5fa1d52dc9f6f727b26c6b1","signature":false},{"version":"ad0936f84f1df79d3697bfbff9c18f8ad58431c1cbaf2359c6a853b0fcc9f28b","signature":false},{"version":"b023ff6245be1930e152a18c6aaa2b6dd1a11df7b05fcf41bbe483968bfb1c39","signature":false},{"version":"61e959d046f72e295d73a822b9afc7cc87ec6d1007905f2572e6117d7b2067b6","signature":false},{"version":"c9a401b2e134f28d870f3f44330b9d91d66bd2ac7ced3ad67039a2bb3d52e8f0","signature":false},{"version":"dba95ead40d163af6959198ded9853a2cc9282b2cb534980f99937a65edf4e2d","signature":false},{"version":"9cf770eadeacba81bf3bb4575ee2fd332b9e6a7bba0db0075177de270bd51d29","signature":false},{"version":"ee4b295afc88a82a69e15983bcdb16c0692123c97717643ed6404194773e638b","signature":false},{"version":"2e71823ea01d280c27de2a12ce60c1d3ebd2ff851e8063771924890b479a2b70","signature":false},{"version":"ccb4367da00927aa6291433d8ae506e1bd2cee5d7e6e476ff5b5bc35bf1cf3ac","signature":false},{"version":"56cfe2ea14b4a7417fe09a35a1322cc2097643169396d8446b308016909cc931","signature":false},{"version":"e358b3e809b200996b50555c8220d214c7cfded55846dd10b29856c69c54028d","signature":false},{"version":"79ddbe991841714f2f4e48df86ba5259c8638856d426d183c284a39e9c7dab35","signature":false},{"version":"d157d1b0188131461928fef822f7f21035f62b8597a42d7c5c7507c2c74f6ecf","signature":false},{"version":"f648b48bb45dab59d0a5e208180273da469b0a66a474dc7762e04d628291d41c","signature":false},{"version":"d1a1ee1c19fc98d37bc5d5eaaeee346263fc373dd937644992999e0e7dcaa658","signature":false},{"version":"f7935025aff66118fdedb24b95ce0411b0f81f90898bf783ac5d400df3c5ae11","signature":false},{"version":"698bcdcfa9fb3193656e383035f391b5e95af9091834c6d622ecc63c8967247e","signature":false}],"root":[[81,176],[178,180]],"options":{"allowImportingTsExtensions":true,"esModuleInterop":true,"jsx":1,"module":99,"skipLibCheck":true,"strict":true,"tsBuildInfoFile":"./tsbuildinfo"},"referencedMap":[[144,1],[118,2],[117,3],[119,4],[125,5],[113,6],[120,7],[98,8],[102,9],[135,10],[93,11],[146,12],[112,13],[147,12],[95,12],[94,12],[149,12],[92,12],[131,13],[103,12],[150,13],[151,12],[130,12],[124,14],[153,12],[101,12],[154,12],[96,12],[108,12],[114,15],[155,12],[156,12],[99,12],[100,12],[157,12],[158,12],[159,13],[123,12],[160,12],[161,12],[162,12],[163,12],[110,12],[115,12],[97,12],[165,16],[107,12],[166,12],[109,12],[111,12],[122,12],[139,12],[83,12],[85,17],[168,18],[167,12],[86,12],[89,19],[84,20],[90,19],[91,21],[145,22],[169,23],[132,24],[142,25],[143,26],[121,27],[105,28],[126,29],[128,30],[129,31],[106,32],[127,33],[141,34],[138,35],[140,36],[133,37],[136,38],[137,39],[134,40],[104,41],[173,42],[170,43],[179,44],[180,45],[175,46],[171,47],[178,48]],"changeFileSet":[144,118,117,119,125,113,120,98,102,135,87,93,146,112,147,148,95,94,149,92,131,103,150,151,130,152,124,153,101,154,96,108,114,155,156,99,100,157,158,159,123,160,161,162,163,110,115,97,165,107,166,109,111,122,139,83,85,168,167,86,89,164,84,90,91,116,81,82,145,169,132,142,143,121,105,126,128,129,106,127,141,138,140,133,136,137,134,104,173,170,172,179,174,180,175,176,171,178,88,177,79,80,13,14,16,15,2,17,18,19,20,21,22,23,24,3,25,26,4,27,31,28,29,30,32,33,34,5,35,36,37,38,6,42,39,40,41,43,7,44,49,50,45,46,47,48,8,54,51,52,53,55,9,56,57,58,60,59,61,62,10,63,64,65,11,66,67,68,69,70,1,71,72,12,76,74,78,73,77,75],"version":"5.8.3"}
+\ No newline at end of file
+diff -ruN /mnt/data/cbl-orig/cbl-main/server/routes.ts /mnt/data/cbl-main/server/routes.ts
+--- /mnt/data/cbl-orig/cbl-main/server/routes.ts	2026-02-13 00:45:21.000000000 +0000
++++ /mnt/data/cbl-main/server/routes.ts	2026-02-13 22:40:28.250714467 +0000
+@@ -4801,6 +4801,21 @@
+         return res.status(400).json({ message: "Draft order must be set before starting" });
+       }
+ 
++      const rounds = await storage.getDraftRounds(id);
++      if (rounds.length === 0) {
++        return res.status(400).json({ message: "Draft rounds must be configured before starting" });
++      }
++      // Ensure every round has an explicit per-round order (no snaking).
++      for (const r of rounds) {
++        const roundOrder = await storage.getDraftOrder(id, r.roundNumber);
++        if (roundOrder.length === 0) {
++          return res.status(400).json({ message: `Draft order must be set for round ${r.roundNumber} before starting` });
++        }
++      }
++
++      // Generate pick slots for all rounds up front (supports missed picks).
++      await storage.createDraftPickSlotsForAllRounds(id);
++
+       const updated = await storage.updateDraft(id, {
+         status: "active",
+         currentRound: 1,
+@@ -5001,7 +5016,14 @@
+       const updateData: any = {};
+       if (name !== undefined) updateData.name = name;
+       if (isTeamDraft !== undefined) updateData.isTeamDraft = isTeamDraft;
+-      if (startTime !== undefined) updateData.startTime = new Date(startTime || Date.now());
++      if (startTime !== undefined) {
++        // Commissioner inputs are interpreted as Central time; store as UTC.
++        try {
++          updateData.startTime = parseCSTTime(String(startTime));
++        } catch {
++          updateData.startTime = new Date(startTime || Date.now());
++        }
++      }
+       if (pickDurationMinutes !== undefined) updateData.pickDurationMinutes = parseInt(pickDurationMinutes) || 60;
+ 
+       const updated = await storage.updateDraftRound(roundId, updateData);
+@@ -5196,56 +5218,38 @@
+       const draft = await storage.getDraft(id);
+       if (!draft) return res.status(404).json({ message: "Draft not found" });
+ 
+-      const rounds = await storage.getDraftRounds(id);
+-      const currentRoundConfig = rounds.find(r => r.roundNumber === draft.currentRound);
+-
+-      if (!currentRoundConfig?.startTime) {
+-        return res.json({ hasTiming: false, currentRound: draft.currentRound, currentPickIndex: draft.currentPickIndex });
+-      }
++      const now = new Date();
++      const slots = await storage.getDraftPicks(id);
+ 
+-      const roundStart = new Date(currentRoundConfig.startTime).getTime();
+-      const pickDuration = (currentRoundConfig.pickDurationMinutes || 60) * 60 * 1000;
+-      const now = Date.now();
+-
+-      const roundOrder = await storage.getDraftOrder(id, draft.currentRound);
+-      const sortedRoundOrder = [...roundOrder].sort((a, b) => a.orderIndex - b.orderIndex);
+-
+-      const pickTimings = sortedRoundOrder.map((entry, idx) => {
+-        const pickStart = roundStart + (idx * pickDuration);
+-        const pickDeadline = roundStart + ((idx + 1) * pickDuration);
+-        const isExpired = now >= pickDeadline;
+-        const isActive = now >= pickStart && now < pickDeadline;
+-        return {
+-          orderIndex: idx,
+-          userId: entry.userId,
+-          pickStart: new Date(pickStart).toISOString(),
+-          pickDeadline: new Date(pickDeadline).toISOString(),
+-          isExpired,
+-          isActive,
+-        };
+-      });
++      // "Current" slot = oldest unmade slot whose scheduledAt has started.
++      const currentSlot = slots
++        .filter(s => !s.madeAt && new Date(s.scheduledAt).getTime() <= now.getTime())
++        .sort((a, b) => a.overallPickNumber - b.overallPickNumber)[0] || null;
++
++      const eligiblePickerIds = Array.from(new Set(
++        slots
++          .filter(s => !s.madeAt && new Date(s.scheduledAt).getTime() <= now.getTime())
++          .map(s => s.userId)
++      ));
+ 
+-      const eligiblePickerIds: string[] = [];
+-      for (let i = draft.currentPickIndex; i < sortedRoundOrder.length; i++) {
+-        if (i === draft.currentPickIndex) {
+-          eligiblePickerIds.push(sortedRoundOrder[i].userId);
+-        } else {
+-          const pickStart = roundStart + (i * pickDuration);
+-          if (now >= pickStart) {
+-            eligiblePickerIds.push(sortedRoundOrder[i].userId);
+-          } else {
+-            break;
+-          }
+-        }
++      if (!currentSlot) {
++        return res.json({ hasTiming: false, eligiblePickerIds, now: now.toISOString() });
+       }
+ 
+       res.json({
+         hasTiming: true,
+-        currentRound: draft.currentRound,
+-        currentPickIndex: draft.currentPickIndex,
+-        roundStartTime: currentRoundConfig.startTime,
+-        pickDurationMinutes: currentRoundConfig.pickDurationMinutes,
+-        pickTimings,
++        now: now.toISOString(),
++        currentRound: currentSlot.round,
++        currentPickIndex: currentSlot.roundPickIndex,
++        currentSlot: {
++          slotId: currentSlot.id,
++          userId: currentSlot.userId,
++          round: currentSlot.round,
++          roundPickIndex: currentSlot.roundPickIndex,
++          overallPickNumber: currentSlot.overallPickNumber,
++          scheduledAt: currentSlot.scheduledAt,
++          deadlineAt: currentSlot.deadlineAt,
++        },
+         eligiblePickerIds,
+       });
+     } catch (error) {
+@@ -5266,75 +5270,49 @@
+       if (!draft) return res.status(404).json({ message: "Draft not found" });
+       if (draft.status !== "active") return res.status(400).json({ message: "Draft is not active" });
+ 
+-      const currentRound = draft.currentRound;
+-      const currentPickIndex = draft.currentPickIndex;
++      const isCommissioner = await hasLeagueCommissionerAccess(commissionerUserId, draft.leagueId);
++      const now = new Date();
+ 
+-      const roundOrder = await storage.getDraftOrder(id, currentRound);
+-      if (roundOrder.length === 0) {
+-        return res.status(400).json({ message: "Draft order is not set for current round" });
++      // Normal users can only pick for their own oldest open slot whose scheduled time has started.
++      // Commissioners can optionally supply slotId to pick a specific unmade slot.
++      const requestedSlotId = req.body?.slotId ? parseInt(req.body.slotId) : null;
++      let slot = undefined as any;
++      if (requestedSlotId && isCommissioner) {
++        const s = await storage.getDraftPickById(requestedSlotId);
++        if (!s || s.draftId !== id) return res.status(404).json({ message: "Draft slot not found" });
++        if (s.madeAt) return res.status(400).json({ message: "Draft slot is already filled" });
++        slot = s;
++      } else {
++        slot = await storage.getOldestOpenSlotForUser(id, userId, now);
+       }
+ 
+-      const sortedRoundOrder = [...roundOrder].sort((a, b) => a.orderIndex - b.orderIndex);
+-      const currentPicker = sortedRoundOrder[currentPickIndex];
+-      if (!currentPicker) {
+-        return res.status(500).json({ message: "Could not determine current picker" });
++      if (!slot) {
++        return res.status(403).json({ message: "You do not have an eligible open pick slot yet" });
+       }
+ 
+       const rounds = await storage.getDraftRounds(id);
+-      const currentRoundConfig = rounds.find(r => r.roundNumber === currentRound);
+-
+-      const isCommissioner = await hasLeagueCommissionerAccess(commissionerUserId, draft.leagueId);
+-      let pickingUserId = currentPicker.userId;
+-      let isAllowedToPick = isCommissioner;
+-
+-      if (!isAllowedToPick) {
+-        const userPickIndex = sortedRoundOrder.findIndex(o => o.userId === userId);
+-        if (userPickIndex >= 0) {
+-          if (userPickIndex === currentPickIndex) {
+-            isAllowedToPick = true;
+-          } else if (userPickIndex > currentPickIndex && currentRoundConfig?.startTime) {
+-            const roundStart = new Date(currentRoundConfig.startTime).getTime();
+-            const pickDuration = (currentRoundConfig.pickDurationMinutes || 60) * 60 * 1000;
+-            const now = Date.now();
+-            const userPickStart = roundStart + (userPickIndex * pickDuration);
+-            if (now >= userPickStart) {
+-              isAllowedToPick = true;
+-              pickingUserId = userId;
+-            }
+-          }
+-        }
+-      }
+-
+-      if (!isAllowedToPick) {
+-        return res.status(403).json({ message: "It is not your turn to pick" });
+-      }
+-      const isTeamDraftRound = currentRoundConfig?.isTeamDraft === true;
++      const roundConfig = rounds.find(r => r.roundNumber === slot.round);
++      const isTeamDraftRound = roundConfig?.isTeamDraft === true;
++      const pickingUserId = slot.userId;
+ 
+       if (isTeamDraftRound) {
+         const { parentOrgName, rosterType } = req.body;
+-        if (!parentOrgName) {
+-          return res.status(400).json({ message: "parentOrgName is required for team draft rounds" });
++        if (!parentOrgName) return res.status(400).json({ message: "parentOrgName is required for team draft rounds" });
++        const effectiveRosterType = (rosterType || "milb") as "mlb" | "milb";
++
++        const alreadyClaimed = await storage.isOrgAlreadyClaimed(id, parentOrgName);
++        if (alreadyClaimed) {
++          return res.status(400).json({ message: `Organization already claimed: ${parentOrgName}` });
+         }
+-        const effectiveRosterType = rosterType || "milb";
+ 
+         const orgPlayers = await storage.getDraftPlayersByParentOrg(id, parentOrgName);
+         if (orgPlayers.length === 0) {
+           return res.status(400).json({ message: `No available players found for organization: ${parentOrgName}` });
+         }
+ 
+-        let pickCount = await storage.getDraftPickCount(id);
+-        const createdPicks = [];
+-
++        const draftedIds: number[] = [];
+         for (const dp of orgPlayers) {
+-          pickCount++;
+-          const pick = await storage.createDraftPick({
+-            draftId: id,
+-            round: currentRound,
+-            pickNumber: pickCount,
+-            userId: pickingUserId,
+-            mlbPlayerId: dp.mlbPlayerId,
+-            rosterType: effectiveRosterType,
+-          });
++          draftedIds.push(dp.mlbPlayerId);
+           await storage.updateDraftPlayerStatus(id, dp.mlbPlayerId, "drafted");
+           await storage.assignPlayerToRoster({
+             leagueId: draft.leagueId,
+@@ -5343,25 +5321,26 @@
+             rosterType: effectiveRosterType,
+             season: draft.season,
+           });
+-          createdPicks.push(pick);
+         }
+ 
+-        let nextPickIndex = currentPickIndex + 1;
+-        let nextRound = currentRound;
+-
+-        if (nextPickIndex >= sortedRoundOrder.length) {
+-          nextPickIndex = 0;
+-          nextRound = currentRound + 1;
+-        }
++        const updatedSlot = await storage.fillDraftSlotWithOrg({
++          slotId: slot.id,
++          parentOrgName,
++          rosterType: effectiveRosterType,
++          draftedMlbPlayerIds: draftedIds,
++          madeByUserId: commissionerUserId,
++          madeAt: now,
++        });
+ 
+-        if (nextRound > draft.rounds) {
+-          await storage.updateDraft(id, { status: "completed", currentPickIndex, currentRound });
++        // Complete draft if all slots are filled
++        const allSlots = await storage.getDraftPicks(id);
++        if (allSlots.every(s => !!s.madeAt)) {
++          await storage.updateDraft(id, { status: "completed" });
+         } else {
+-          await storage.updateDraft(id, { currentPickIndex: nextPickIndex, currentRound: nextRound });
+           setTimeout(() => processAutoDraft(id, storage), 500);
+         }
+ 
+-        res.status(201).json({ teamDraft: true, orgName: parentOrgName, playersDrafted: createdPicks.length, picks: createdPicks });
++        res.status(201).json({ teamDraft: true, slot: updatedSlot, orgName: parentOrgName, playersDrafted: draftedIds.length, draftedMlbPlayerIds: draftedIds });
+       } else {
+         const { mlbPlayerId, rosterType } = req.body;
+         if (!mlbPlayerId || !rosterType) {
+@@ -5377,16 +5356,12 @@
+           return res.status(400).json({ message: "Player is not available in the draft pool" });
+         }
+ 
+-        const pickCount = await storage.getDraftPickCount(id);
+-        const pickNumber = pickCount + 1;
+-
+-        const pick = await storage.createDraftPick({
+-          draftId: id,
+-          round: currentRound,
+-          pickNumber,
+-          userId: pickingUserId,
++        const updatedSlot = await storage.fillDraftSlotWithPlayer({
++          slotId: slot.id,
+           mlbPlayerId,
+           rosterType,
++          madeByUserId: commissionerUserId,
++          madeAt: now,
+         });
+         await storage.updateDraftPlayerStatus(id, mlbPlayerId, "drafted");
+         await storage.assignPlayerToRoster({
+@@ -5397,22 +5372,14 @@
+           season: draft.season,
+         });
+ 
+-        let nextPickIndex = currentPickIndex + 1;
+-        let nextRound = currentRound;
+-
+-        if (nextPickIndex >= sortedRoundOrder.length) {
+-          nextPickIndex = 0;
+-          nextRound = currentRound + 1;
+-        }
+-
+-        if (nextRound > draft.rounds) {
+-          await storage.updateDraft(id, { status: "completed", currentPickIndex, currentRound });
++        const allSlots = await storage.getDraftPicks(id);
++        if (allSlots.every(s => !!s.madeAt)) {
++          await storage.updateDraft(id, { status: "completed" });
+         } else {
+-          await storage.updateDraft(id, { currentPickIndex: nextPickIndex, currentRound: nextRound });
+           setTimeout(() => processAutoDraft(id, storage), 500);
+         }
+ 
+-        res.status(201).json(pick);
++        res.status(201).json(updatedSlot);
+       }
+     } catch (error) {
+       console.error("Error making draft pick:", error);
+@@ -5434,35 +5401,94 @@
+       const isCommissioner = await hasLeagueCommissionerAccess(commissionerUserId, draft.leagueId);
+       if (!isCommissioner) return res.status(403).json({ message: "Commissioner access required" });
+ 
+-      const { userId: targetUserId, mlbPlayerId, rosterType } = req.body;
+-      if (!targetUserId || !mlbPlayerId || !rosterType) {
+-        return res.status(400).json({ message: "userId, mlbPlayerId, and rosterType are required" });
++      const now = new Date();
++      const { userId: targetUserId, mlbPlayerId, rosterType, parentOrgName, slotId, force } = req.body;
++      if (!targetUserId) {
++        return res.status(400).json({ message: "userId is required" });
++      }
++
++      // Find slot: either explicit slotId, or oldest unmade slot for the target team.
++      let slot: any = null;
++      if (slotId) {
++        const s = await storage.getDraftPickById(parseInt(slotId));
++        if (!s || s.draftId !== id) return res.status(404).json({ message: "Draft slot not found" });
++        if (s.userId !== targetUserId) return res.status(400).json({ message: "slotId does not belong to specified userId" });
++        if (s.madeAt) return res.status(400).json({ message: "Draft slot is already filled" });
++        slot = s;
++      } else {
++        if (force) {
++          const slots = await storage.getDraftPicks(id);
++          slot = slots
++            .filter(s => s.userId === targetUserId && !s.madeAt)
++            .sort((a, b) => a.overallPickNumber - b.overallPickNumber)[0] || null;
++        } else {
++          slot = await storage.getOldestOpenSlotForUser(id, targetUserId, now);
++        }
++      }
++
++      if (!slot) {
++        return res.status(400).json({ message: "No eligible open slot found for that user" });
++      }
++
++      const rounds = await storage.getDraftRounds(id);
++      const roundConfig = rounds.find(r => r.roundNumber === slot.round);
++      const isTeamDraftRound = roundConfig?.isTeamDraft === true;
++
++      if (isTeamDraftRound) {
++        if (!parentOrgName) return res.status(400).json({ message: "parentOrgName is required for team draft rounds" });
++        const effectiveRosterType = (rosterType || "milb") as "mlb" | "milb";
++        if (await storage.isOrgAlreadyClaimed(id, parentOrgName)) {
++          return res.status(400).json({ message: `Organization already claimed: ${parentOrgName}` });
++        }
++        const orgPlayers = await storage.getDraftPlayersByParentOrg(id, parentOrgName);
++        if (orgPlayers.length === 0) {
++          return res.status(400).json({ message: `No available players found for organization: ${parentOrgName}` });
++        }
++        const draftedIds: number[] = [];
++        for (const dp of orgPlayers) {
++          draftedIds.push(dp.mlbPlayerId);
++          await storage.updateDraftPlayerStatus(id, dp.mlbPlayerId, "drafted");
++          await storage.assignPlayerToRoster({
++            leagueId: draft.leagueId,
++            userId: targetUserId,
++            mlbPlayerId: dp.mlbPlayerId,
++            rosterType: effectiveRosterType,
++            season: draft.season,
++          });
++        }
++        const updatedSlot = await storage.fillDraftSlotWithOrg({
++          slotId: slot.id,
++          parentOrgName,
++          rosterType: effectiveRosterType,
++          draftedMlbPlayerIds: draftedIds,
++          madeByUserId: commissionerUserId,
++          madeAt: now,
++        });
++
++        const allSlots = await storage.getDraftPicks(id);
++        if (allSlots.every(s => !!s.madeAt)) await storage.updateDraft(id, { status: "completed" });
++        else setTimeout(() => processAutoDraft(id, storage), 500);
++        return res.status(201).json(updatedSlot);
++      }
++
++      if (!mlbPlayerId || !rosterType) {
++        return res.status(400).json({ message: "mlbPlayerId and rosterType are required" });
+       }
+       if (rosterType !== "mlb" && rosterType !== "milb") {
+         return res.status(400).json({ message: "rosterType must be 'mlb' or 'milb'" });
+       }
+-
+       const availPlayers = await storage.getDraftPlayers(id, { status: "available" });
+       const playerInPool = availPlayers.find(dp => dp.mlbPlayerId === mlbPlayerId);
+       if (!playerInPool) {
+         return res.status(400).json({ message: "Player is not available in the draft pool" });
+       }
+ 
+-      const currentRound = draft.currentRound;
+-      const currentPickIndex = draft.currentPickIndex;
+-      const roundOrder = await storage.getDraftOrder(id, currentRound);
+-      const sortedRoundOrder = [...roundOrder].sort((a, b) => a.orderIndex - b.orderIndex);
+-
+-      const pickCount = await storage.getDraftPickCount(id);
+-      const pickNumber = pickCount + 1;
+-
+-      const pick = await storage.createDraftPick({
+-        draftId: id,
+-        round: currentRound,
+-        pickNumber,
+-        userId: targetUserId,
++      const updatedSlot = await storage.fillDraftSlotWithPlayer({
++        slotId: slot.id,
+         mlbPlayerId,
+         rosterType,
++        madeByUserId: commissionerUserId,
++        madeAt: now,
+       });
+       await storage.updateDraftPlayerStatus(id, mlbPlayerId, "drafted");
+       await storage.assignPlayerToRoster({
+@@ -5473,20 +5499,11 @@
+         season: draft.season,
+       });
+ 
+-      let nextPickIndex = currentPickIndex + 1;
+-      let nextRound = currentRound;
+-      if (nextPickIndex >= sortedRoundOrder.length) {
+-        nextPickIndex = 0;
+-        nextRound = currentRound + 1;
+-      }
+-      if (nextRound > draft.rounds) {
+-        await storage.updateDraft(id, { status: "completed", currentPickIndex, currentRound });
+-      } else {
+-        await storage.updateDraft(id, { currentPickIndex: nextPickIndex, currentRound: nextRound });
+-        setTimeout(() => processAutoDraft(id, storage), 500);
+-      }
++      const allSlots = await storage.getDraftPicks(id);
++      if (allSlots.every(s => !!s.madeAt)) await storage.updateDraft(id, { status: "completed" });
++      else setTimeout(() => processAutoDraft(id, storage), 500);
+ 
+-      res.status(201).json(pick);
++      res.status(201).json(updatedSlot);
+     } catch (error) {
+       console.error("Error making commissioner pick:", error);
+       res.status(500).json({ message: "Failed to make commissioner pick" });
+@@ -5511,32 +5528,28 @@
+       if (!pick) return res.status(404).json({ message: "Pick not found" });
+       if (pick.draftId !== draftId) return res.status(400).json({ message: "Pick does not belong to this draft" });
+ 
+-      await storage.updateDraftPlayerStatus(draftId, pick.mlbPlayerId, "available");
+-      await storage.removeRosterAssignmentByPlayer(draft.leagueId, pick.userId, pick.mlbPlayerId, draft.season);
+-      await storage.deleteDraftPick(pickId);
+-
+-      const lastPick = await storage.getLastDraftPick(draftId);
+-      if (!lastPick) {
+-        await storage.updateDraft(draftId, { currentRound: 1, currentPickIndex: 0, status: "active" });
+-      } else {
+-        const roundOrder = await storage.getDraftOrder(draftId, lastPick.round);
+-        const sortedOrder = [...roundOrder].sort((a, b) => a.orderIndex - b.orderIndex);
+-        const lastPickerIndex = sortedOrder.findIndex(o => o.userId === lastPick.userId);
+-
+-        let nextPickIndex = lastPickerIndex + 1;
+-        let nextRound = lastPick.round;
+-        if (nextPickIndex >= sortedOrder.length) {
+-          nextPickIndex = 0;
+-          nextRound = lastPick.round + 1;
+-        }
+-        if (nextRound > draft.rounds) {
+-          await storage.updateDraft(draftId, { status: "completed", currentPickIndex: lastPickerIndex, currentRound: lastPick.round });
+-        } else {
+-          await storage.updateDraft(draftId, { currentPickIndex: nextPickIndex, currentRound: nextRound });
++      if (!pick.madeAt) {
++        return res.status(400).json({ message: "Slot is not filled" });
++      }
++
++      // Undo normal pick
++      if (pick.mlbPlayerId) {
++        await storage.updateDraftPlayerStatus(draftId, pick.mlbPlayerId, "available");
++        await storage.removeRosterAssignmentByPlayer(draft.leagueId, pick.userId, pick.mlbPlayerId, draft.season);
++      }
++
++      // Undo team draft (org pick)
++      if (pick.teamDraftOrgName && Array.isArray((pick as any).teamDraftPlayerIds)) {
++        const ids: number[] = (pick as any).teamDraftPlayerIds;
++        for (const mlbPlayerId of ids) {
++          await storage.updateDraftPlayerStatus(draftId, mlbPlayerId, "available");
++          await storage.removeRosterAssignmentByPlayer(draft.leagueId, pick.userId, mlbPlayerId, draft.season);
+         }
+       }
+ 
+-      res.json({ message: "Pick nullified successfully" });
++      await storage.clearDraftSlot(pickId);
++      await storage.updateDraft(draftId, { status: "active" });
++      res.json({ message: "Pick undone successfully" });
+     } catch (error) {
+       console.error("Error nullifying draft pick:", error);
+       res.status(500).json({ message: "Failed to nullify pick" });
+@@ -5662,39 +5675,35 @@
+     const draft = await storage.getDraft(draftId);
+     if (!draft || draft.status !== "active") return false;
+ 
+-    const currentRound = draft.currentRound;
+-    if (currentRound > draft.rounds) return false;
+-
+-    const roundOrder = await storage.getDraftOrder(draftId, currentRound);
+-    if (roundOrder.length === 0) return false;
+-
+-    const sortedRoundOrder = [...roundOrder].sort((a: any, b: any) => a.orderIndex - b.orderIndex);
+-    const currentPicker = sortedRoundOrder[draft.currentPickIndex];
+-    if (!currentPicker) return false;
++    const now = new Date();
++    const slots = await storage.getDraftPicks(draftId);
+ 
++    // Oldest unfilled slot that has started. If the slot's round is a team draft round, skip.
+     const rounds = await storage.getDraftRounds(draftId);
+-    const currentRoundConfig = rounds.find((r: any) => r.roundNumber === currentRound);
++    const slot = slots
++      .filter((s: any) => !s.madeAt && new Date(s.scheduledAt).getTime() <= now.getTime())
++      .sort((a: any, b: any) => a.overallPickNumber - b.overallPickNumber)
++      .find((s: any) => {
++        const rc = rounds.find((r: any) => r.roundNumber === s.round);
++        return !rc?.isTeamDraft;
++      });
+ 
+-    if (currentRoundConfig?.isTeamDraft) return false;
++    if (!slot) return false;
+ 
+-    const topPick = await storage.getTopAvailableAutoDraftPick(draftId, currentPicker.userId);
++    const topPick = await storage.getTopAvailableAutoDraftPick(draftId, slot.userId);
+     if (!topPick) return false;
+ 
+-    const pickCount = await storage.getDraftPickCount(draftId);
+-    const pickNumber = pickCount + 1;
+-
+-    await storage.createDraftPick({
+-      draftId,
+-      round: currentRound,
+-      pickNumber,
+-      userId: currentPicker.userId,
++    await storage.fillDraftSlotWithPlayer({
++      slotId: slot.id,
+       mlbPlayerId: topPick.mlbPlayerId,
+       rosterType: topPick.rosterType,
++      madeByUserId: slot.userId,
++      madeAt: now,
+     });
+     await storage.updateDraftPlayerStatus(draftId, topPick.mlbPlayerId, "drafted");
+     await storage.assignPlayerToRoster({
+       leagueId: draft.leagueId,
+-      userId: currentPicker.userId,
++      userId: slot.userId,
+       mlbPlayerId: topPick.mlbPlayerId,
+       rosterType: topPick.rosterType,
+       season: draft.season,
+@@ -5702,22 +5711,14 @@
+ 
+     await storage.clearAutoDraftItem(draftId, topPick.mlbPlayerId);
+ 
+-    let nextPickIndex = draft.currentPickIndex + 1;
+-    let nextRound = currentRound;
+-
+-    if (nextPickIndex >= sortedRoundOrder.length) {
+-      nextPickIndex = 0;
+-      nextRound = currentRound + 1;
+-    }
+-
+-    if (nextRound > draft.rounds) {
+-      await storage.updateDraft(draftId, { status: "completed", currentPickIndex: draft.currentPickIndex, currentRound });
++    const updatedSlots = await storage.getDraftPicks(draftId);
++    if (updatedSlots.every((s: any) => !!s.madeAt)) {
++      await storage.updateDraft(draftId, { status: "completed" });
+     } else {
+-      await storage.updateDraft(draftId, { currentPickIndex: nextPickIndex, currentRound: nextRound });
+       setTimeout(() => processAutoDraft(draftId, storage), 500);
+     }
+ 
+-    console.log(`[AutoDraft] Auto-drafted player ${topPick.mlbPlayerId} for user ${currentPicker.userId} in draft ${draftId}`);
++    console.log(`[AutoDraft] Auto-drafted player ${topPick.mlbPlayerId} for user ${slot.userId} in draft ${draftId}`);
+     return true;
+   } catch (error) {
+     console.error("[AutoDraft] Error processing auto-draft:", error);
+diff -ruN /mnt/data/cbl-orig/cbl-main/server/storage.ts /mnt/data/cbl-main/server/storage.ts
+--- /mnt/data/cbl-orig/cbl-main/server/storage.ts	2026-02-13 00:45:21.000000000 +0000
++++ /mnt/data/cbl-main/server/storage.ts	2026-02-13 22:37:07.127524607 +0000
+@@ -352,12 +352,14 @@
+   clearDraftOrder(draftId: number): Promise<void>;
+   
+   // Draft picks
+-  getDraftPicks(draftId: number): Promise<DraftPickWithDetails[]>;
++  getDraftPicks(draftId: number): Promise<DraftPickWithDetails[]>; // includes unfilled slots
+   getDraftPickById(pickId: number): Promise<DraftPick | undefined>;
+-  createDraftPick(pick: InsertDraftPick): Promise<DraftPick>;
+-  deleteDraftPick(pickId: number): Promise<void>;
+-  getDraftPickCount(draftId: number): Promise<number>;
+-  getLastDraftPick(draftId: number): Promise<DraftPick | undefined>;
++  createDraftPickSlotsForAllRounds(draftId: number): Promise<number>; // returns slots created
++  getOldestOpenSlotForUser(draftId: number, userId: string, now: Date): Promise<DraftPick | undefined>;
++  fillDraftSlotWithPlayer(args: { slotId: number; mlbPlayerId: number; rosterType: "mlb" | "milb"; madeByUserId: string; madeAt: Date }): Promise<DraftPick>;
++  fillDraftSlotWithOrg(args: { slotId: number; parentOrgName: string; rosterType: "mlb" | "milb"; draftedMlbPlayerIds: number[]; madeByUserId: string; madeAt: Date }): Promise<DraftPick>;
++  clearDraftSlot(slotId: number): Promise<void>;
++  isOrgAlreadyClaimed(draftId: number, parentOrgName: string): Promise<boolean>;
+   getDraftPlayersByParentOrg(draftId: number, parentOrgName: string): Promise<DraftPlayerWithDetails[]>;
+   removeRosterAssignmentByPlayer(leagueId: number, userId: string, mlbPlayerId: number, season: number): Promise<void>;
+ 
+@@ -3408,20 +3410,21 @@
+ 
+   // Draft picks
+   async getDraftPicks(draftId: number): Promise<DraftPickWithDetails[]> {
+-    const rows = await db.select({
+-      pick: draftPicks,
+-      player: mlbPlayers,
+-      user: users,
+-    })
++    const rows = await db
++      .select({
++        pick: draftPicks,
++        player: mlbPlayers,
++        user: users,
++      })
+       .from(draftPicks)
+-      .innerJoin(mlbPlayers, eq(draftPicks.mlbPlayerId, mlbPlayers.id))
++      .leftJoin(mlbPlayers, eq(draftPicks.mlbPlayerId, mlbPlayers.id))
+       .innerJoin(users, eq(draftPicks.userId, users.id))
+       .where(eq(draftPicks.draftId, draftId))
+-      .orderBy(draftPicks.pickNumber);
+-    
+-    return rows.map(r => ({
++      .orderBy(draftPicks.overallPickNumber);
++
++    return rows.map((r) => ({
+       ...r.pick,
+-      player: r.player,
++      player: r.player ?? null,
+       user: {
+         id: r.user.id,
+         firstName: r.user.firstName,
+@@ -3431,15 +3434,58 @@
+     }));
+   }
+ 
+-  async createDraftPick(pick: InsertDraftPick): Promise<DraftPick> {
+-    const [result] = await db.insert(draftPicks).values(pick).returning();
+-    return result;
+-  }
++  async createDraftPickSlotsForAllRounds(draftId: number): Promise<number> {
++    // Clear any existing slots
++    await db.delete(draftPicks).where(eq(draftPicks.draftId, draftId));
++
++    const rounds = await this.getDraftRounds(draftId);
++    if (rounds.length === 0) return 0;
++
++    let overall = 0;
++    const values: InsertDraftPick[] = [] as any;
++
++    for (const round of rounds) {
++      if (!round.startTime) {
++        throw new Error(`Round ${round.roundNumber} is missing startTime`);
++      }
++
++      // Commissioner explicitly defines draft order for each round.
++      const order = await this.getDraftOrder(draftId, round.roundNumber);
++      if (order.length === 0) {
++        throw new Error(`Draft order missing for round ${round.roundNumber}`);
++      }
++      const sortedOrder = [...order].sort((a, b) => a.orderIndex - b.orderIndex);
++
++      const roundStartMs = new Date(round.startTime).getTime();
++      const pickDurationMs = (round.pickDurationMinutes || 60) * 60 * 1000;
++
++      sortedOrder.forEach((entry, idx) => {
++        overall += 1;
++        const scheduledAt = new Date(roundStartMs + idx * pickDurationMs);
++        const deadlineAt = new Date(roundStartMs + (idx + 1) * pickDurationMs);
++        values.push({
++          draftId,
++          round: round.roundNumber,
++          roundPickIndex: idx,
++          overallPickNumber: overall,
++          userId: entry.userId,
++          mlbPlayerId: null as any,
++          rosterType: null as any,
++          teamDraftOrgName: null as any,
++          scheduledAt,
++          deadlineAt,
++        } as any);
++      });
++    }
+ 
+-  async getDraftPickCount(draftId: number): Promise<number> {
+-    const [result] = await db.select({ count: sql<number>`COUNT(*)::int` })
+-      .from(draftPicks).where(eq(draftPicks.draftId, draftId));
+-    return result?.count || 0;
++    const BATCH_SIZE = 500;
++    let total = 0;
++    for (let i = 0; i < values.length; i += BATCH_SIZE) {
++      const batch = values.slice(i, i + BATCH_SIZE);
++      await db.insert(draftPicks).values(batch);
++      total += batch.length;
++    }
++    return total;
+   }
+ 
+   async getDraftPickById(pickId: number): Promise<DraftPick | undefined> {
+@@ -3447,16 +3493,70 @@
+     return result;
+   }
+ 
+-  async deleteDraftPick(pickId: number): Promise<void> {
+-    await db.delete(draftPicks).where(eq(draftPicks.id, pickId));
++  async getOldestOpenSlotForUser(draftId: number, userId: string, now: Date): Promise<DraftPick | undefined> {
++    const [slot] = await db
++      .select()
++      .from(draftPicks)
++      .where(and(
++        eq(draftPicks.draftId, draftId),
++        eq(draftPicks.userId, userId),
++        isNull(draftPicks.madeAt),
++        sql`${draftPicks.scheduledAt} <= ${now}`,
++      ))
++      .orderBy(draftPicks.overallPickNumber)
++      .limit(1);
++    return slot;
+   }
+ 
+-  async getLastDraftPick(draftId: number): Promise<DraftPick | undefined> {
+-    const [result] = await db.select().from(draftPicks)
+-      .where(eq(draftPicks.draftId, draftId))
+-      .orderBy(sql`${draftPicks.pickNumber} DESC`)
+-      .limit(1);
+-    return result;
++  async fillDraftSlotWithPlayer(args: { slotId: number; mlbPlayerId: number; rosterType: "mlb" | "milb"; madeByUserId: string; madeAt: Date }): Promise<DraftPick> {
++    const [updated] = await db
++      .update(draftPicks)
++      .set({
++        mlbPlayerId: args.mlbPlayerId,
++        rosterType: args.rosterType,
++        teamDraftOrgName: null,
++        teamDraftPlayerIds: [],
++        madeAt: args.madeAt,
++        madeByUserId: args.madeByUserId,
++      })
++      .where(eq(draftPicks.id, args.slotId))
++      .returning();
++    return updated;
++  }
++
++  async fillDraftSlotWithOrg(args: { slotId: number; parentOrgName: string; rosterType: "mlb" | "milb"; draftedMlbPlayerIds: number[]; madeByUserId: string; madeAt: Date }): Promise<DraftPick> {
++    const [updated] = await db
++      .update(draftPicks)
++      .set({
++        mlbPlayerId: null,
++        rosterType: args.rosterType,
++        teamDraftOrgName: args.parentOrgName,
++        teamDraftPlayerIds: args.draftedMlbPlayerIds,
++        madeAt: args.madeAt,
++        madeByUserId: args.madeByUserId,
++      })
++      .where(eq(draftPicks.id, args.slotId))
++      .returning();
++    return updated;
++  }
++
++  async clearDraftSlot(slotId: number): Promise<void> {
++    await db.update(draftPicks)
++      .set({ mlbPlayerId: null, rosterType: null, teamDraftOrgName: null, teamDraftPlayerIds: [], madeAt: null, madeByUserId: null })
++      .where(eq(draftPicks.id, slotId));
++  }
++
++  async isOrgAlreadyClaimed(draftId: number, parentOrgName: string): Promise<boolean> {
++    const [row] = await db
++      .select({ count: sql<number>`COUNT(*)::int` })
++      .from(draftPicks)
++      .where(and(
++        eq(draftPicks.draftId, draftId),
++        eq(draftPicks.teamDraftOrgName, parentOrgName),
++        // must be actually claimed
++        sql`${draftPicks.madeAt} IS NOT NULL`,
++      ));
++    return (row?.count || 0) > 0;
+   }
+ 
+   async removeRosterAssignmentByPlayer(leagueId: number, userId: string, mlbPlayerId: number, season: number): Promise<void> {
+diff -ruN /mnt/data/cbl-orig/cbl-main/shared/schema.ts /mnt/data/cbl-main/shared/schema.ts
+--- /mnt/data/cbl-orig/cbl-main/shared/schema.ts	2026-02-13 00:45:21.000000000 +0000
++++ /mnt/data/cbl-main/shared/schema.ts	2026-02-13 22:36:12.758585510 +0000
+@@ -29,7 +29,8 @@
+   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+   name: varchar("name", { length: 255 }).notNull(),
+   slug: varchar("slug", { length: 100 }).unique().notNull(), // URL-friendly identifier
+-  timezone: varchar("timezone", { length: 50 }).default("America/New_York").notNull(),
++  // League-wide default timezone (display + commissioner inputs). Users may override per-user.
++  timezone: varchar("timezone", { length: 50 }).default("America/Chicago").notNull(),
+   // League-wide caps for roster management
+   budgetCap: real("budget_cap"),
+   ipCap: real("ip_cap"),
+@@ -109,6 +110,8 @@
+   firstName: varchar("first_name"),
+   lastName: varchar("last_name"),
+   profileImageUrl: varchar("profile_image_url"),
++  // Optional per-user timezone for UI rendering. If null, client will use browser timezone.
++  timezone: varchar("timezone", { length: 50 }),
+   isCommissioner: boolean("is_commissioner").default(false).notNull(),
+   isSuperAdmin: boolean("is_super_admin").default(false).notNull(),
+   teamName: varchar("team_name"),
+@@ -480,7 +483,8 @@
+   name: varchar("name", { length: 255 }).notNull(),
+   season: integer("season").notNull(),
+   rounds: integer("rounds").notNull().default(1),
+-  snake: boolean("snake").notNull().default(true),
++  // Legacy flag; commissioner controls order per round via draft_order.
++  snake: boolean("snake").notNull().default(false),
+   status: varchar("status", { length: 20 }).notNull().default("setup"), // 'setup', 'active', 'completed'
+   pickDurationMinutes: integer("pick_duration_minutes").notNull().default(60),
+   teamDraftRound: integer("team_draft_round"),
+@@ -524,7 +528,8 @@
+   roundNumber: integer("round_number").notNull(),
+   name: varchar("name", { length: 255 }).notNull(),
+   isTeamDraft: boolean("is_team_draft").notNull().default(false),
+-  startTime: timestamp("start_time").notNull(),
++  // Stored in UTC; commissioner inputs are interpreted as America/Chicago.
++  startTime: timestamp("start_time", { withTimezone: true }).notNull(),
+   pickDurationMinutes: integer("pick_duration_minutes").notNull().default(60),
+ }, (table) => [
+   index("idx_draft_rounds_draft").on(table.draftId),
+@@ -550,23 +555,41 @@
+   id: true,
+ });
+ 
+-// Draft picks - records of each pick made
++// Draft picks - pick *slots* for each round. A slot may be unfilled (mlbPlayerId null).
+ export const draftPicks = pgTable("draft_picks", {
+   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+   draftId: integer("draft_id").references(() => drafts.id, { onDelete: "cascade" }).notNull(),
+   round: integer("round").notNull(),
+-  pickNumber: integer("pick_number").notNull(),
+-  userId: varchar("user_id").references(() => users.id).notNull(),
+-  mlbPlayerId: integer("mlb_player_id").references(() => mlbPlayers.id).notNull(),
+-  rosterType: varchar("roster_type", { length: 10 }).notNull(), // 'mlb' or 'milb'
++  // 0-based index of the slot within the round
++  roundPickIndex: integer("round_pick_index").notNull(),
++  // Global slot number across the full draft (1..N)
++  overallPickNumber: integer("overall_pick_number").notNull(),
++  userId: varchar("user_id").references(() => users.id).notNull(),
++  // Filled when a normal pick is made
++  mlbPlayerId: integer("mlb_player_id").references(() => mlbPlayers.id),
++  // Filled when a pick is made (normal or team draft)
++  rosterType: varchar("roster_type", { length: 10 }), // 'mlb' or 'milb'
++  // Team draft round selection (MLB franchise org name)
++  teamDraftOrgName: varchar("team_draft_org_name", { length: 255 }),
++  // For team draft rounds, the list of MLB player IDs drafted via the org selection.
++  teamDraftPlayerIds: jsonb("team_draft_player_ids").$type<number[]>().default(sql`'[]'::jsonb`).notNull(),
++  // Slot schedule and audit fields (stored in UTC)
++  scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
++  deadlineAt: timestamp("deadline_at", { withTimezone: true }).notNull(),
++  madeAt: timestamp("made_at", { withTimezone: true }),
++  madeByUserId: varchar("made_by_user_id").references(() => users.id),
+   createdAt: timestamp("created_at").defaultNow(),
+ }, (table) => [
+   index("idx_draft_picks_draft").on(table.draftId),
++  index("idx_draft_picks_overall").on(table.draftId, table.overallPickNumber),
++  index("idx_draft_picks_round").on(table.draftId, table.round, table.roundPickIndex),
+ ]);
+ 
+ export const insertDraftPickSchema = createInsertSchema(draftPicks).omit({
+   id: true,
+   createdAt: true,
++  madeAt: true,
++  madeByUserId: true,
+ });
+ 
+ // Auto-draft lists - ranked player preferences for automatic drafting
+@@ -711,7 +734,7 @@
+ };
+ 
+ export type DraftPickWithDetails = DraftPick & {
+-  player: MlbPlayer;
++  player: MlbPlayer | null;
+   user: Pick<User, 'id' | 'firstName' | 'lastName' | 'teamName'>;
+ };
+ 

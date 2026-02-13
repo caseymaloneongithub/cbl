@@ -1,0 +1,150 @@
+--- mnt/data/cbl-orig/cbl-main/client/src/pages/DraftBoard.tsx	2026-02-13 00:45:21.000000000 +0000
++++ mnt/data/cbl-main/client/src/pages/DraftBoard.tsx	2026-02-13 22:43:22.735634597 +0000
+@@ -25,16 +25,16 @@
+   hasTiming: boolean;
+   currentRound: number;
+   currentPickIndex: number;
+-  roundStartTime?: string;
+-  pickDurationMinutes?: number;
+-  pickTimings?: {
+-    orderIndex: number;
++  now?: string;
++  currentSlot?: {
++    slotId: number;
+     userId: string;
+-    pickStart: string;
+-    pickDeadline: string;
+-    isExpired: boolean;
+-    isActive: boolean;
+-  }[];
++    round: number;
++    roundPickIndex: number;
++    overallPickNumber: number;
++    scheduledAt: string;
++    deadlineAt: string;
++  };
+   eligiblePickerIds?: string[];
+ }
+ 
+@@ -122,39 +122,37 @@
+     refetchInterval: DRAFT_POLL_INTERVAL,
+   });
+ 
++  const activeRoundNumber = timingInfo?.currentSlot?.round ?? draft?.currentRound ?? 1;
++
+   const currentRoundConfig = useMemo(() => {
+-    if (!draft || !draftRounds) return null;
+-    return draftRounds.find(r => r.roundNumber === draft.currentRound) || null;
+-  }, [draft, draftRounds]);
++    if (!draftRounds) return null;
++    return draftRounds.find(r => r.roundNumber === activeRoundNumber) || null;
++  }, [draftRounds, activeRoundNumber]);
+ 
+   const isTeamDraftRound = currentRoundConfig?.isTeamDraft === true;
+ 
+   const currentRoundOrder = useMemo(() => {
+-    if (!draftOrderData || !draft) return [];
++    if (!draftOrderData) return [];
+     return draftOrderData
+-      .filter(o => o.roundNumber === draft.currentRound)
++      .filter(o => o.roundNumber === activeRoundNumber)
+       .sort((a, b) => a.orderIndex - b.orderIndex);
+-  }, [draftOrderData, draft]);
++  }, [draftOrderData, activeRoundNumber]);
+ 
+   const currentTeam = useMemo(() => {
+     if (!draft || !currentRoundOrder.length || draft.status !== "active") return null;
+-    return currentRoundOrder[draft.currentPickIndex] || null;
+-  }, [draft, currentRoundOrder]);
++    const idx = timingInfo?.currentSlot?.roundPickIndex ?? 0;
++    return currentRoundOrder[idx] || null;
++  }, [draft, currentRoundOrder, timingInfo]);
+ 
+   const isMyTurn = useMemo(() => {
+     if (!currentTeam || !user) return false;
+     return currentTeam.userId === user.id;
+   }, [currentTeam, user]);
+ 
+-  const myPickTiming = useMemo(() => {
+-    if (!timingInfo?.hasTiming || !timingInfo.pickTimings || !user) return null;
+-    return timingInfo.pickTimings.find(t => t.userId === user.id) || null;
+-  }, [timingInfo, user]);
+-
+   const currentPickTiming = useMemo(() => {
+-    if (!timingInfo?.hasTiming || !timingInfo.pickTimings || !draft) return null;
+-    return timingInfo.pickTimings[draft.currentPickIndex] || null;
+-  }, [timingInfo, draft]);
++    if (!timingInfo?.hasTiming || !timingInfo.currentSlot) return null;
++    return { pickDeadline: timingInfo.currentSlot.deadlineAt };
++  }, [timingInfo]);
+ 
+   const isEligibleByTiming = useMemo(() => {
+     if (!timingInfo?.hasTiming || !user) return false;
+@@ -393,14 +391,22 @@
+                   </TableRow>
+                 </TableHeader>
+                 <TableBody>
+-                  {picks?.map((pick) => (
++                  {picks?.filter(p => !!p.madeAt).map((pick) => (
+                     <TableRow key={pick.id} data-testid={`row-pick-${pick.id}`}>
+-                      <TableCell className="font-mono">{pick.pickNumber}</TableCell>
++                      <TableCell className="font-mono">{pick.overallPickNumber}</TableCell>
+                       <TableCell className="font-mono">{pick.round}</TableCell>
+                       <TableCell className="font-medium">{pick.user.teamName || `${pick.user.firstName} ${pick.user.lastName}`}</TableCell>
+-                      <TableCell className="font-medium">{pick.player.fullName}</TableCell>
+-                      <TableCell>{pick.player.primaryPosition}</TableCell>
+-                      <TableCell className="text-muted-foreground">{pick.player.currentTeamName || pick.player.parentOrgName}</TableCell>
++                      <TableCell className="font-medium">
++                        {pick.teamDraftOrgName ? (
++                          <span>
++                            Team Draft: {pick.teamDraftOrgName} ({(pick.teamDraftPlayerIds || []).length})
++                          </span>
++                        ) : (
++                          pick.player?.fullName || "—"
++                        )}
++                      </TableCell>
++                      <TableCell>{pick.player?.primaryPosition || "—"}</TableCell>
++                      <TableCell className="text-muted-foreground">{pick.player ? (pick.player.currentTeamName || pick.player.parentOrgName) : "—"}</TableCell>
+                       <TableCell>
+                         <Badge variant={pick.rosterType === "mlb" ? "default" : "outline"}>
+                           {pick.rosterType === "mlb" ? "MLB" : "MiLB"}
+@@ -417,9 +423,9 @@
+     );
+   }
+ 
+-  const roundName = currentRoundConfig?.name || `Round ${draft.currentRound}`;
++  const roundName = currentRoundConfig?.name || `Round ${activeRoundNumber}`;
+   const totalPicksInRound = currentRoundOrder.length;
+-  const picksMade = picks?.length || 0;
++  const picksMade = (picks?.filter(p => !!p.madeAt).length) || 0;
+ 
+   return (
+     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+@@ -672,17 +678,23 @@
+                       </TableRow>
+                     </TableHeader>
+                     <TableBody>
+-                      {[...picks].reverse().map((pick) => (
++                      {[...picks].filter(p => !!p.madeAt).reverse().map((pick) => (
+                         <TableRow key={pick.id} data-testid={`row-pick-${pick.id}`}>
+                           <TableCell className="font-mono text-xs">
+-                            {pick.round}.{pick.pickNumber}
++                            {pick.round}.{(pick.roundPickIndex ?? 0) + 1}
+                           </TableCell>
+                           <TableCell className="text-sm font-medium">
+                             {pick.user.teamName || `${pick.user.firstName}`}
+                           </TableCell>
+                           <TableCell>
+-                            <div className="text-sm font-medium">{pick.player.fullName}</div>
+-                            <div className="text-xs text-muted-foreground">{pick.player.primaryPosition} - {pick.player.currentTeamName || pick.player.parentOrgName}</div>
++                            <div className="text-sm font-medium">
++                              {pick.teamDraftOrgName ? `Team Draft: ${pick.teamDraftOrgName}` : (pick.player?.fullName || "—")}
++                            </div>
++                            <div className="text-xs text-muted-foreground">
++                              {pick.teamDraftOrgName
++                                ? `${(pick.teamDraftPlayerIds || []).length} players`
++                                : (pick.player ? `${pick.player.primaryPosition} - ${pick.player.currentTeamName || pick.player.parentOrgName}` : "—")}
++                            </div>
+                           </TableCell>
+                           <TableCell>
+                             <Badge variant={pick.rosterType === "mlb" ? "default" : "outline"} className="text-xs">
