@@ -4801,6 +4801,22 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Draft order must be set before starting" });
       }
 
+      const rounds = await storage.getDraftRounds(id);
+      if (rounds.length === 0) {
+        return res.status(400).json({ message: "Draft rounds must be configured before starting" });
+      }
+      for (const round of rounds) {
+        if (!round.startTime) {
+          return res.status(400).json({ message: `Round ${round.roundNumber} must have a start time` });
+        }
+        const roundOrder = await storage.getDraftOrder(id, round.roundNumber);
+        if (roundOrder.length === 0) {
+          return res.status(400).json({ message: `Draft order must be set for round ${round.roundNumber} before starting` });
+        }
+      }
+
+      await storage.createDraftPickSlotsForAllRounds(id);
+
       const updated = await storage.updateDraft(id, {
         status: "active",
         currentRound: 1,
@@ -5001,7 +5017,9 @@ export async function registerRoutes(
       const updateData: any = {};
       if (name !== undefined) updateData.name = name;
       if (isTeamDraft !== undefined) updateData.isTeamDraft = isTeamDraft;
-      if (startTime !== undefined) updateData.startTime = new Date(startTime || Date.now());
+      if (startTime !== undefined) {
+        updateData.startTime = startTime ? parseCSTTime(String(startTime)) : new Date();
+      }
       if (pickDurationMinutes !== undefined) updateData.pickDurationMinutes = parseInt(pickDurationMinutes) || 60;
 
       const updated = await storage.updateDraftRound(roundId, updateData);
@@ -5196,57 +5214,22 @@ export async function registerRoutes(
       const draft = await storage.getDraft(id);
       if (!draft) return res.status(404).json({ message: "Draft not found" });
 
-      const rounds = await storage.getDraftRounds(id);
-      const currentRoundConfig = rounds.find(r => r.roundNumber === draft.currentRound);
+      const now = new Date();
+      const slots = await storage.getDraftPicks(id);
 
-      if (!currentRoundConfig?.startTime) {
-        return res.json({ hasTiming: false, currentRound: draft.currentRound, currentPickIndex: draft.currentPickIndex });
-      }
+      const openSlots = slots
+        .filter((slot) => !slot.madeAt && new Date(slot.scheduledAt).getTime() <= now.getTime())
+        .sort((a, b) => a.overallPickNumber - b.overallPickNumber);
 
-      const roundStart = new Date(currentRoundConfig.startTime).getTime();
-      const pickDuration = (currentRoundConfig.pickDurationMinutes || 60) * 60 * 1000;
-      const now = Date.now();
-
-      const roundOrder = await storage.getDraftOrder(id, draft.currentRound);
-      const sortedRoundOrder = [...roundOrder].sort((a, b) => a.orderIndex - b.orderIndex);
-
-      const pickTimings = sortedRoundOrder.map((entry, idx) => {
-        const pickStart = roundStart + (idx * pickDuration);
-        const pickDeadline = roundStart + ((idx + 1) * pickDuration);
-        const isExpired = now >= pickDeadline;
-        const isActive = now >= pickStart && now < pickDeadline;
-        return {
-          orderIndex: idx,
-          userId: entry.userId,
-          pickStart: new Date(pickStart).toISOString(),
-          pickDeadline: new Date(pickDeadline).toISOString(),
-          isExpired,
-          isActive,
-        };
-      });
-
-      const eligiblePickerIds: string[] = [];
-      for (let i = draft.currentPickIndex; i < sortedRoundOrder.length; i++) {
-        if (i === draft.currentPickIndex) {
-          eligiblePickerIds.push(sortedRoundOrder[i].userId);
-        } else {
-          const pickStart = roundStart + (i * pickDuration);
-          if (now >= pickStart) {
-            eligiblePickerIds.push(sortedRoundOrder[i].userId);
-          } else {
-            break;
-          }
-        }
-      }
+      const currentSlot = openSlots.length > 0 ? openSlots[0] : null;
+      const eligiblePickerIds = Array.from(new Set(openSlots.map((slot) => slot.userId)));
 
       res.json({
-        hasTiming: true,
-        currentRound: draft.currentRound,
-        currentPickIndex: draft.currentPickIndex,
-        roundStartTime: currentRoundConfig.startTime,
-        pickDurationMinutes: currentRoundConfig.pickDurationMinutes,
-        pickTimings,
+        hasTiming: slots.length > 0,
+        now: now.toISOString(),
+        currentSlot,
         eligiblePickerIds,
+        openSlotCount: openSlots.length,
       });
     } catch (error) {
       console.error("Error fetching draft timing:", error);
@@ -5265,103 +5248,38 @@ export async function registerRoutes(
       const draft = await storage.getDraft(id);
       if (!draft) return res.status(404).json({ message: "Draft not found" });
       if (draft.status !== "active") return res.status(400).json({ message: "Draft is not active" });
-
-      const currentRound = draft.currentRound;
-      const currentPickIndex = draft.currentPickIndex;
-
-      const roundOrder = await storage.getDraftOrder(id, currentRound);
-      if (roundOrder.length === 0) {
-        return res.status(400).json({ message: "Draft order is not set for current round" });
-      }
-
-      const sortedRoundOrder = [...roundOrder].sort((a, b) => a.orderIndex - b.orderIndex);
-      const currentPicker = sortedRoundOrder[currentPickIndex];
-      if (!currentPicker) {
-        return res.status(500).json({ message: "Could not determine current picker" });
+      const isCommissioner = await hasLeagueCommissionerAccess(commissionerUserId, draft.leagueId);
+      const targetUserId = isCommissioner && req.body?.userId ? String(req.body.userId) : userId;
+      const now = new Date();
+      const slot = await storage.getOldestEligibleOpenSlotForUser(id, targetUserId, now);
+      if (!slot) {
+        return res.status(403).json({ message: "No eligible open pick slot for this user" });
       }
 
       const rounds = await storage.getDraftRounds(id);
-      const currentRoundConfig = rounds.find(r => r.roundNumber === currentRound);
-
-      const isCommissioner = await hasLeagueCommissionerAccess(commissionerUserId, draft.leagueId);
-      let pickingUserId = currentPicker.userId;
-      let isAllowedToPick = isCommissioner;
-
-      if (!isAllowedToPick) {
-        const userPickIndex = sortedRoundOrder.findIndex(o => o.userId === userId);
-        if (userPickIndex >= 0) {
-          if (userPickIndex === currentPickIndex) {
-            isAllowedToPick = true;
-          } else if (userPickIndex > currentPickIndex && currentRoundConfig?.startTime) {
-            const roundStart = new Date(currentRoundConfig.startTime).getTime();
-            const pickDuration = (currentRoundConfig.pickDurationMinutes || 60) * 60 * 1000;
-            const now = Date.now();
-            const userPickStart = roundStart + (userPickIndex * pickDuration);
-            if (now >= userPickStart) {
-              isAllowedToPick = true;
-              pickingUserId = userId;
-            }
-          }
-        }
-      }
-
-      if (!isAllowedToPick) {
-        return res.status(403).json({ message: "It is not your turn to pick" });
-      }
+      const currentRoundConfig = rounds.find((r) => r.roundNumber === slot.round);
       const isTeamDraftRound = currentRoundConfig?.isTeamDraft === true;
+      let pickResponse: any;
 
       if (isTeamDraftRound) {
-        const { parentOrgName, rosterType } = req.body;
-        if (!parentOrgName) {
-          return res.status(400).json({ message: "parentOrgName is required for team draft rounds" });
+        const selectedOrgName = req.body?.selectedOrgName || req.body?.parentOrgName;
+        const selectedOrgId = req.body?.selectedOrgId ? parseInt(req.body.selectedOrgId) : null;
+        const rosterType = (req.body?.rosterType || "milb") as "mlb" | "milb";
+        if (!selectedOrgName) {
+          return res.status(400).json({ message: "selectedOrgName is required for team draft rounds" });
         }
-        const effectiveRosterType = rosterType || "milb";
-
-        const orgPlayers = await storage.getDraftPlayersByParentOrg(id, parentOrgName);
-        if (orgPlayers.length === 0) {
-          return res.status(400).json({ message: `No available players found for organization: ${parentOrgName}` });
-        }
-
-        let pickCount = await storage.getDraftPickCount(id);
-        const createdPicks = [];
-
-        for (const dp of orgPlayers) {
-          pickCount++;
-          const pick = await storage.createDraftPick({
-            draftId: id,
-            round: currentRound,
-            pickNumber: pickCount,
-            userId: pickingUserId,
-            mlbPlayerId: dp.mlbPlayerId,
-            rosterType: effectiveRosterType,
-          });
-          await storage.updateDraftPlayerStatus(id, dp.mlbPlayerId, "drafted");
-          await storage.assignPlayerToRoster({
-            leagueId: draft.leagueId,
-            userId: pickingUserId,
-            mlbPlayerId: dp.mlbPlayerId,
-            rosterType: effectiveRosterType,
-            season: draft.season,
-          });
-          createdPicks.push(pick);
+        if (rosterType !== "mlb" && rosterType !== "milb") {
+          return res.status(400).json({ message: "rosterType must be 'mlb' or 'milb'" });
         }
 
-        let nextPickIndex = currentPickIndex + 1;
-        let nextRound = currentRound;
-
-        if (nextPickIndex >= sortedRoundOrder.length) {
-          nextPickIndex = 0;
-          nextRound = currentRound + 1;
-        }
-
-        if (nextRound > draft.rounds) {
-          await storage.updateDraft(id, { status: "completed", currentPickIndex, currentRound });
-        } else {
-          await storage.updateDraft(id, { currentPickIndex: nextPickIndex, currentRound: nextRound });
-          setTimeout(() => processAutoDraft(id, storage), 500);
-        }
-
-        res.status(201).json({ teamDraft: true, orgName: parentOrgName, playersDrafted: createdPicks.length, picks: createdPicks });
+        const result = await storage.fillSlotWithOrg(slot.id, targetUserId, selectedOrgName, selectedOrgId, rosterType, now);
+        pickResponse = {
+          teamDraft: true,
+          slot: result.slot,
+          orgName: selectedOrgName,
+          playersDrafted: result.draftedPlayerIds.length,
+          draftedMlbPlayerIds: result.draftedPlayerIds,
+        };
       } else {
         const { mlbPlayerId, rosterType } = req.body;
         if (!mlbPlayerId || !rosterType) {
@@ -5371,51 +5289,35 @@ export async function registerRoutes(
           return res.status(400).json({ message: "rosterType must be 'mlb' or 'milb'" });
         }
 
-        const availPlayers = await storage.getDraftPlayers(id, { status: "available" });
-        const playerInPool = availPlayers.find(dp => dp.mlbPlayerId === mlbPlayerId);
-        if (!playerInPool) {
-          return res.status(400).json({ message: "Player is not available in the draft pool" });
-        }
-
-        const pickCount = await storage.getDraftPickCount(id);
-        const pickNumber = pickCount + 1;
-
-        const pick = await storage.createDraftPick({
-          draftId: id,
-          round: currentRound,
-          pickNumber,
-          userId: pickingUserId,
-          mlbPlayerId,
+        pickResponse = await storage.fillSlotWithPlayer(
+          slot.id,
+          targetUserId,
+          parseInt(mlbPlayerId),
           rosterType,
-        });
-        await storage.updateDraftPlayerStatus(id, mlbPlayerId, "drafted");
-        await storage.assignPlayerToRoster({
-          leagueId: draft.leagueId,
-          userId: pickingUserId,
-          mlbPlayerId,
-          rosterType,
-          season: draft.season,
-        });
-
-        let nextPickIndex = currentPickIndex + 1;
-        let nextRound = currentRound;
-
-        if (nextPickIndex >= sortedRoundOrder.length) {
-          nextPickIndex = 0;
-          nextRound = currentRound + 1;
-        }
-
-        if (nextRound > draft.rounds) {
-          await storage.updateDraft(id, { status: "completed", currentPickIndex, currentRound });
-        } else {
-          await storage.updateDraft(id, { currentPickIndex: nextPickIndex, currentRound: nextRound });
-          setTimeout(() => processAutoDraft(id, storage), 500);
-        }
-
-        res.status(201).json(pick);
+          now,
+        );
       }
+
+      const allSlots = await storage.getDraftPicks(id);
+      if (allSlots.length > 0 && allSlots.every((s) => !!s.madeAt)) {
+        await storage.updateDraft(id, { status: "completed" });
+      } else {
+        setTimeout(() => processAutoDraft(id, storage), 500);
+      }
+
+      res.status(201).json(pickResponse);
     } catch (error) {
       console.error("Error making draft pick:", error);
+      const message = error instanceof Error ? error.message : "Failed to make draft pick";
+      if (
+        message.includes("not found") ||
+        message.includes("already") ||
+        message.includes("available") ||
+        message.includes("open slot") ||
+        message.includes("not open yet")
+      ) {
+        return res.status(400).json({ message });
+      }
       res.status(500).json({ message: "Failed to make draft pick" });
     }
   });
@@ -5434,61 +5336,72 @@ export async function registerRoutes(
       const isCommissioner = await hasLeagueCommissionerAccess(commissionerUserId, draft.leagueId);
       if (!isCommissioner) return res.status(403).json({ message: "Commissioner access required" });
 
-      const { userId: targetUserId, mlbPlayerId, rosterType } = req.body;
-      if (!targetUserId || !mlbPlayerId || !rosterType) {
-        return res.status(400).json({ message: "userId, mlbPlayerId, and rosterType are required" });
+      const targetUserId = String(req.body?.userId || "");
+      if (!targetUserId) {
+        return res.status(400).json({ message: "userId is required" });
+      }
+
+      const now = new Date();
+      const slot = await storage.getOldestEligibleOpenSlotForUser(id, targetUserId, now);
+      if (!slot) return res.status(400).json({ message: "No eligible open slot for target user" });
+
+      const rounds = await storage.getDraftRounds(id);
+      const slotRound = rounds.find((r) => r.roundNumber === slot.round);
+      const isTeamDraftRound = slotRound?.isTeamDraft === true;
+
+      if (isTeamDraftRound) {
+        const selectedOrgName = req.body?.selectedOrgName || req.body?.parentOrgName;
+        const selectedOrgId = req.body?.selectedOrgId ? parseInt(req.body.selectedOrgId) : null;
+        const rosterType = (req.body?.rosterType || "milb") as "mlb" | "milb";
+        if (!selectedOrgName) {
+          return res.status(400).json({ message: "selectedOrgName is required for team-draft round" });
+        }
+        if (rosterType !== "mlb" && rosterType !== "milb") {
+          return res.status(400).json({ message: "rosterType must be 'mlb' or 'milb'" });
+        }
+        const result = await storage.fillSlotWithOrg(slot.id, targetUserId, selectedOrgName, selectedOrgId, rosterType, now);
+        const allSlots = await storage.getDraftPicks(id);
+        if (allSlots.length > 0 && allSlots.every((s) => !!s.madeAt)) {
+          await storage.updateDraft(id, { status: "completed" });
+        }
+        return res.status(201).json({
+          teamDraft: true,
+          slot: result.slot,
+          orgName: selectedOrgName,
+          playersDrafted: result.draftedPlayerIds.length,
+          draftedMlbPlayerIds: result.draftedPlayerIds,
+        });
+      }
+
+      const mlbPlayerId = parseInt(req.body?.mlbPlayerId);
+      const rosterType = req.body?.rosterType as "mlb" | "milb";
+      if (!mlbPlayerId || !rosterType) {
+        return res.status(400).json({ message: "mlbPlayerId and rosterType are required" });
       }
       if (rosterType !== "mlb" && rosterType !== "milb") {
         return res.status(400).json({ message: "rosterType must be 'mlb' or 'milb'" });
       }
 
-      const availPlayers = await storage.getDraftPlayers(id, { status: "available" });
-      const playerInPool = availPlayers.find(dp => dp.mlbPlayerId === mlbPlayerId);
-      if (!playerInPool) {
-        return res.status(400).json({ message: "Player is not available in the draft pool" });
-      }
-
-      const currentRound = draft.currentRound;
-      const currentPickIndex = draft.currentPickIndex;
-      const roundOrder = await storage.getDraftOrder(id, currentRound);
-      const sortedRoundOrder = [...roundOrder].sort((a, b) => a.orderIndex - b.orderIndex);
-
-      const pickCount = await storage.getDraftPickCount(id);
-      const pickNumber = pickCount + 1;
-
-      const pick = await storage.createDraftPick({
-        draftId: id,
-        round: currentRound,
-        pickNumber,
-        userId: targetUserId,
-        mlbPlayerId,
-        rosterType,
-      });
-      await storage.updateDraftPlayerStatus(id, mlbPlayerId, "drafted");
-      await storage.assignPlayerToRoster({
-        leagueId: draft.leagueId,
-        userId: targetUserId,
-        mlbPlayerId,
-        rosterType,
-        season: draft.season,
-      });
-
-      let nextPickIndex = currentPickIndex + 1;
-      let nextRound = currentRound;
-      if (nextPickIndex >= sortedRoundOrder.length) {
-        nextPickIndex = 0;
-        nextRound = currentRound + 1;
-      }
-      if (nextRound > draft.rounds) {
-        await storage.updateDraft(id, { status: "completed", currentPickIndex, currentRound });
+      const updatedSlot = await storage.fillSlotWithPlayer(slot.id, targetUserId, mlbPlayerId, rosterType, now);
+      const allSlots = await storage.getDraftPicks(id);
+      if (allSlots.length > 0 && allSlots.every((s) => !!s.madeAt)) {
+        await storage.updateDraft(id, { status: "completed" });
       } else {
-        await storage.updateDraft(id, { currentPickIndex: nextPickIndex, currentRound: nextRound });
         setTimeout(() => processAutoDraft(id, storage), 500);
       }
-
-      res.status(201).json(pick);
+      res.status(201).json(updatedSlot);
     } catch (error) {
       console.error("Error making commissioner pick:", error);
+      const message = error instanceof Error ? error.message : "Failed to make commissioner pick";
+      if (
+        message.includes("not found") ||
+        message.includes("already") ||
+        message.includes("available") ||
+        message.includes("open slot") ||
+        message.includes("not open yet")
+      ) {
+        return res.status(400).json({ message });
+      }
       res.status(500).json({ message: "Failed to make commissioner pick" });
     }
   });
@@ -5510,31 +5423,22 @@ export async function registerRoutes(
       const pick = await storage.getDraftPickById(pickId);
       if (!pick) return res.status(404).json({ message: "Pick not found" });
       if (pick.draftId !== draftId) return res.status(400).json({ message: "Pick does not belong to this draft" });
+      if (!pick.madeAt) return res.status(400).json({ message: "Slot is not filled" });
 
-      await storage.updateDraftPlayerStatus(draftId, pick.mlbPlayerId, "available");
-      await storage.removeRosterAssignmentByPlayer(draft.leagueId, pick.userId, pick.mlbPlayerId, draft.season);
-      await storage.deleteDraftPick(pickId);
+      if (pick.mlbPlayerId) {
+        await storage.updateDraftPlayerStatus(draftId, pick.mlbPlayerId, "available");
+        await storage.removeRosterAssignmentByPlayer(draft.leagueId, pick.userId, pick.mlbPlayerId, draft.season);
+      }
 
-      const lastPick = await storage.getLastDraftPick(draftId);
-      if (!lastPick) {
-        await storage.updateDraft(draftId, { currentRound: 1, currentPickIndex: 0, status: "active" });
-      } else {
-        const roundOrder = await storage.getDraftOrder(draftId, lastPick.round);
-        const sortedOrder = [...roundOrder].sort((a, b) => a.orderIndex - b.orderIndex);
-        const lastPickerIndex = sortedOrder.findIndex(o => o.userId === lastPick.userId);
-
-        let nextPickIndex = lastPickerIndex + 1;
-        let nextRound = lastPick.round;
-        if (nextPickIndex >= sortedOrder.length) {
-          nextPickIndex = 0;
-          nextRound = lastPick.round + 1;
-        }
-        if (nextRound > draft.rounds) {
-          await storage.updateDraft(draftId, { status: "completed", currentPickIndex: lastPickerIndex, currentRound: lastPick.round });
-        } else {
-          await storage.updateDraft(draftId, { currentPickIndex: nextPickIndex, currentRound: nextRound });
+      if (Array.isArray(pick.selectedOrgPlayerIds) && pick.selectedOrgPlayerIds.length > 0) {
+        for (const mlbPlayerId of pick.selectedOrgPlayerIds) {
+          await storage.updateDraftPlayerStatus(draftId, mlbPlayerId, "available");
+          await storage.removeRosterAssignmentByPlayer(draft.leagueId, pick.userId, mlbPlayerId, draft.season);
         }
       }
+
+      await storage.clearDraftSlot(pickId);
+      await storage.updateDraft(draftId, { status: "active" });
 
       res.json({ message: "Pick nullified successfully" });
     } catch (error) {
@@ -5662,62 +5566,34 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
     const draft = await storage.getDraft(draftId);
     if (!draft || draft.status !== "active") return false;
 
-    const currentRound = draft.currentRound;
-    if (currentRound > draft.rounds) return false;
-
-    const roundOrder = await storage.getDraftOrder(draftId, currentRound);
-    if (roundOrder.length === 0) return false;
-
-    const sortedRoundOrder = [...roundOrder].sort((a: any, b: any) => a.orderIndex - b.orderIndex);
-    const currentPicker = sortedRoundOrder[draft.currentPickIndex];
-    if (!currentPicker) return false;
-
+    const now = new Date();
+    const slots = await storage.getDraftPicks(draftId);
     const rounds = await storage.getDraftRounds(draftId);
-    const currentRoundConfig = rounds.find((r: any) => r.roundNumber === currentRound);
+    const slot = slots
+      .filter((s: any) => !s.madeAt && new Date(s.scheduledAt).getTime() <= now.getTime())
+      .sort((a: any, b: any) => a.overallPickNumber - b.overallPickNumber)
+      .find((s: any) => {
+        const roundConfig = rounds.find((r: any) => r.roundNumber === s.round);
+        return !roundConfig?.isTeamDraft;
+      });
 
-    if (currentRoundConfig?.isTeamDraft) return false;
+    if (!slot) return false;
 
-    const topPick = await storage.getTopAvailableAutoDraftPick(draftId, currentPicker.userId);
+    const topPick = await storage.getTopAvailableAutoDraftPick(draftId, slot.userId);
     if (!topPick) return false;
 
-    const pickCount = await storage.getDraftPickCount(draftId);
-    const pickNumber = pickCount + 1;
-
-    await storage.createDraftPick({
-      draftId,
-      round: currentRound,
-      pickNumber,
-      userId: currentPicker.userId,
-      mlbPlayerId: topPick.mlbPlayerId,
-      rosterType: topPick.rosterType,
-    });
-    await storage.updateDraftPlayerStatus(draftId, topPick.mlbPlayerId, "drafted");
-    await storage.assignPlayerToRoster({
-      leagueId: draft.leagueId,
-      userId: currentPicker.userId,
-      mlbPlayerId: topPick.mlbPlayerId,
-      rosterType: topPick.rosterType,
-      season: draft.season,
-    });
+    await storage.fillSlotWithPlayer(slot.id, slot.userId, topPick.mlbPlayerId, topPick.rosterType, now);
 
     await storage.clearAutoDraftItem(draftId, topPick.mlbPlayerId);
 
-    let nextPickIndex = draft.currentPickIndex + 1;
-    let nextRound = currentRound;
-
-    if (nextPickIndex >= sortedRoundOrder.length) {
-      nextPickIndex = 0;
-      nextRound = currentRound + 1;
-    }
-
-    if (nextRound > draft.rounds) {
-      await storage.updateDraft(draftId, { status: "completed", currentPickIndex: draft.currentPickIndex, currentRound });
+    const updatedSlots = await storage.getDraftPicks(draftId);
+    if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt)) {
+      await storage.updateDraft(draftId, { status: "completed" });
     } else {
-      await storage.updateDraft(draftId, { currentPickIndex: nextPickIndex, currentRound: nextRound });
       setTimeout(() => processAutoDraft(draftId, storage), 500);
     }
 
-    console.log(`[AutoDraft] Auto-drafted player ${topPick.mlbPlayerId} for user ${currentPicker.userId} in draft ${draftId}`);
+    console.log(`[AutoDraft] Auto-drafted player ${topPick.mlbPlayerId} for user ${slot.userId} in draft ${draftId}`);
     return true;
   } catch (error) {
     console.error("[AutoDraft] Error processing auto-draft:", error);

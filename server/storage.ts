@@ -354,10 +354,11 @@ export interface IStorage {
   // Draft picks
   getDraftPicks(draftId: number): Promise<DraftPickWithDetails[]>;
   getDraftPickById(pickId: number): Promise<DraftPick | undefined>;
-  createDraftPick(pick: InsertDraftPick): Promise<DraftPick>;
-  deleteDraftPick(pickId: number): Promise<void>;
-  getDraftPickCount(draftId: number): Promise<number>;
-  getLastDraftPick(draftId: number): Promise<DraftPick | undefined>;
+  createDraftPickSlotsForAllRounds(draftId: number): Promise<number>;
+  getOldestEligibleOpenSlotForUser(draftId: number, userId: string, now: Date): Promise<DraftPick | undefined>;
+  fillSlotWithPlayer(slotId: number, userId: string, playerId: number, rosterType: "mlb" | "milb", now: Date): Promise<DraftPick>;
+  fillSlotWithOrg(slotId: number, userId: string, selectedOrgName: string, selectedOrgId: number | null, rosterType: "mlb" | "milb", now: Date): Promise<{ slot: DraftPick; draftedPlayerIds: number[] }>;
+  clearDraftSlot(slotId: number): Promise<void>;
   getDraftPlayersByParentOrg(draftId: number, parentOrgName: string): Promise<DraftPlayerWithDetails[]>;
   removeRosterAssignmentByPlayer(leagueId: number, userId: string, mlbPlayerId: number, season: number): Promise<void>;
 
@@ -3414,14 +3415,14 @@ export class DatabaseStorage implements IStorage {
       user: users,
     })
       .from(draftPicks)
-      .innerJoin(mlbPlayers, eq(draftPicks.mlbPlayerId, mlbPlayers.id))
+      .leftJoin(mlbPlayers, eq(draftPicks.mlbPlayerId, mlbPlayers.id))
       .innerJoin(users, eq(draftPicks.userId, users.id))
       .where(eq(draftPicks.draftId, draftId))
-      .orderBy(draftPicks.pickNumber);
+      .orderBy(draftPicks.overallPickNumber);
     
     return rows.map(r => ({
       ...r.pick,
-      player: r.player,
+      player: r.player ?? null,
       user: {
         id: r.user.id,
         firstName: r.user.firstName,
@@ -3431,15 +3432,52 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
-  async createDraftPick(pick: InsertDraftPick): Promise<DraftPick> {
-    const [result] = await db.insert(draftPicks).values(pick).returning();
-    return result;
-  }
+  async createDraftPickSlotsForAllRounds(draftId: number): Promise<number> {
+    await db.delete(draftPicks).where(eq(draftPicks.draftId, draftId));
 
-  async getDraftPickCount(draftId: number): Promise<number> {
-    const [result] = await db.select({ count: sql<number>`COUNT(*)::int` })
-      .from(draftPicks).where(eq(draftPicks.draftId, draftId));
-    return result?.count || 0;
+    const rounds = await this.getDraftRounds(draftId);
+    if (rounds.length === 0) return 0;
+
+    const values: InsertDraftPick[] = [];
+    let overallPickNumber = 0;
+
+    for (const round of rounds) {
+      const order = await this.getDraftOrder(draftId, round.roundNumber);
+      if (order.length === 0) {
+        throw new Error(`Draft order missing for round ${round.roundNumber}`);
+      }
+      if (!round.startTime) {
+        throw new Error(`Round ${round.roundNumber} missing start time`);
+      }
+
+      const sorted = [...order].sort((a, b) => a.orderIndex - b.orderIndex);
+      const roundStartMs = new Date(round.startTime).getTime();
+      const pickDurationMs = (round.pickDurationMinutes || 60) * 60 * 1000;
+
+      for (const [idx, entry] of sorted.entries()) {
+        overallPickNumber += 1;
+        const scheduledAt = new Date(roundStartMs + idx * pickDurationMs);
+        const deadlineAt = new Date(roundStartMs + (idx + 1) * pickDurationMs);
+        values.push({
+          draftId,
+          round: round.roundNumber,
+          roundPickIndex: idx,
+          overallPickNumber,
+          userId: entry.userId,
+          scheduledAt,
+          deadlineAt,
+        } as InsertDraftPick);
+      }
+    }
+
+    const BATCH_SIZE = 500;
+    let inserted = 0;
+    for (let i = 0; i < values.length; i += BATCH_SIZE) {
+      const batch = values.slice(i, i + BATCH_SIZE);
+      await db.insert(draftPicks).values(batch);
+      inserted += batch.length;
+    }
+    return inserted;
   }
 
   async getDraftPickById(pickId: number): Promise<DraftPick | undefined> {
@@ -3447,16 +3485,164 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async deleteDraftPick(pickId: number): Promise<void> {
-    await db.delete(draftPicks).where(eq(draftPicks.id, pickId));
+  async getOldestEligibleOpenSlotForUser(draftId: number, userId: string, now: Date): Promise<DraftPick | undefined> {
+    const [slot] = await db.select().from(draftPicks).where(and(
+      eq(draftPicks.draftId, draftId),
+      eq(draftPicks.userId, userId),
+      isNull(draftPicks.madeAt),
+      sql`${draftPicks.scheduledAt} <= ${now}`,
+    )).orderBy(draftPicks.overallPickNumber).limit(1);
+    return slot;
   }
 
-  async getLastDraftPick(draftId: number): Promise<DraftPick | undefined> {
-    const [result] = await db.select().from(draftPicks)
-      .where(eq(draftPicks.draftId, draftId))
-      .orderBy(sql`${draftPicks.pickNumber} DESC`)
-      .limit(1);
-    return result;
+  async fillSlotWithPlayer(slotId: number, userId: string, playerId: number, rosterType: "mlb" | "milb", now: Date): Promise<DraftPick> {
+    return db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM draft_picks WHERE id = ${slotId} FOR UPDATE`);
+
+      const [slot] = await tx.select().from(draftPicks).where(eq(draftPicks.id, slotId));
+      if (!slot) throw new Error("Draft slot not found");
+      if (slot.userId !== userId) throw new Error("Slot does not belong to user");
+      if (slot.madeAt) throw new Error("Draft slot already filled");
+      if (new Date(slot.scheduledAt).getTime() > now.getTime()) throw new Error("Draft slot is not open yet");
+
+      await tx.execute(sql`SELECT id FROM draft_players WHERE draft_id = ${slot.draftId} AND mlb_player_id = ${playerId} FOR UPDATE`);
+      const [poolRow] = await tx.select().from(draftPlayers).where(and(
+        eq(draftPlayers.draftId, slot.draftId),
+        eq(draftPlayers.mlbPlayerId, playerId),
+      ));
+      if (!poolRow || poolRow.status !== "available") {
+        throw new Error("Player is not available in draft pool");
+      }
+
+      const [alreadyTaken] = await tx
+        .select({ id: draftPicks.id })
+        .from(draftPicks)
+        .where(and(
+          eq(draftPicks.draftId, slot.draftId),
+          eq(draftPicks.mlbPlayerId, playerId),
+          sql`${draftPicks.madeAt} IS NOT NULL`,
+        ))
+        .limit(1);
+      if (alreadyTaken) {
+        throw new Error("Player already drafted in this draft");
+      }
+
+      const [draft] = await tx.select().from(drafts).where(eq(drafts.id, slot.draftId));
+      if (!draft) throw new Error("Draft not found");
+
+      await tx.update(draftPlayers).set({ status: "drafted" }).where(and(
+        eq(draftPlayers.draftId, slot.draftId),
+        eq(draftPlayers.mlbPlayerId, playerId),
+      ));
+
+      await tx.insert(leagueRosterAssignments).values({
+        leagueId: draft.leagueId,
+        userId,
+        mlbPlayerId: playerId,
+        rosterType,
+        season: draft.season,
+      });
+
+      const [updatedSlot] = await tx.update(draftPicks).set({
+        mlbPlayerId: playerId,
+        rosterType,
+        selectedOrgId: null,
+        selectedOrgName: null,
+        selectedOrgPlayerIds: [],
+        madeAt: now,
+        madeByUserId: userId,
+      }).where(eq(draftPicks.id, slotId)).returning();
+
+      return updatedSlot;
+    });
+  }
+
+  async fillSlotWithOrg(slotId: number, userId: string, selectedOrgName: string, selectedOrgId: number | null, rosterType: "mlb" | "milb", now: Date): Promise<{ slot: DraftPick; draftedPlayerIds: number[] }> {
+    return db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM draft_picks WHERE id = ${slotId} FOR UPDATE`);
+      const [slot] = await tx.select().from(draftPicks).where(eq(draftPicks.id, slotId));
+      if (!slot) throw new Error("Draft slot not found");
+      if (slot.userId !== userId) throw new Error("Slot does not belong to user");
+      if (slot.madeAt) throw new Error("Draft slot already filled");
+      if (new Date(slot.scheduledAt).getTime() > now.getTime()) throw new Error("Draft slot is not open yet");
+
+      const [alreadyClaimed] = await tx
+        .select({ id: draftPicks.id })
+        .from(draftPicks)
+        .where(and(
+          eq(draftPicks.draftId, slot.draftId),
+          eq(draftPicks.selectedOrgName, selectedOrgName),
+          sql`${draftPicks.madeAt} IS NOT NULL`,
+        ))
+        .limit(1);
+      if (alreadyClaimed) {
+        throw new Error("Organization already claimed in this draft");
+      }
+
+      await tx.execute(sql`
+        SELECT dp.id
+        FROM draft_players dp
+        JOIN mlb_players mp ON mp.id = dp.mlb_player_id
+        WHERE dp.draft_id = ${slot.draftId}
+          AND dp.status = 'available'
+          AND mp.parent_org_name = ${selectedOrgName}
+        FOR UPDATE
+      `);
+
+      const orgRows = await tx.select({
+        mlbPlayerId: draftPlayers.mlbPlayerId,
+      }).from(draftPlayers).innerJoin(mlbPlayers, eq(draftPlayers.mlbPlayerId, mlbPlayers.id)).where(and(
+        eq(draftPlayers.draftId, slot.draftId),
+        eq(draftPlayers.status, "available"),
+        eq(mlbPlayers.parentOrgName, selectedOrgName),
+      ));
+      const draftedPlayerIds = orgRows.map((r) => r.mlbPlayerId);
+      if (draftedPlayerIds.length === 0) {
+        throw new Error(`No available players found for organization: ${selectedOrgName}`);
+      }
+
+      const [draft] = await tx.select().from(drafts).where(eq(drafts.id, slot.draftId));
+      if (!draft) throw new Error("Draft not found");
+
+      await tx.update(draftPlayers).set({ status: "drafted" }).where(and(
+        eq(draftPlayers.draftId, slot.draftId),
+        inArray(draftPlayers.mlbPlayerId, draftedPlayerIds),
+      ));
+
+      await tx.insert(leagueRosterAssignments).values(
+        draftedPlayerIds.map((mlbPlayerId) => ({
+          leagueId: draft.leagueId,
+          userId,
+          mlbPlayerId,
+          rosterType,
+          season: draft.season,
+        })),
+      );
+
+      const [updatedSlot] = await tx.update(draftPicks).set({
+        mlbPlayerId: null,
+        rosterType,
+        selectedOrgName,
+        selectedOrgId,
+        selectedOrgPlayerIds: draftedPlayerIds,
+        madeAt: now,
+        madeByUserId: userId,
+      }).where(eq(draftPicks.id, slotId)).returning();
+
+      return { slot: updatedSlot, draftedPlayerIds };
+    });
+  }
+
+  async clearDraftSlot(slotId: number): Promise<void> {
+    await db.update(draftPicks).set({
+      mlbPlayerId: null,
+      rosterType: null,
+      selectedOrgName: null,
+      selectedOrgId: null,
+      selectedOrgPlayerIds: [],
+      madeAt: null,
+      madeByUserId: null,
+    }).where(eq(draftPicks.id, slotId));
   }
 
   async removeRosterAssignmentByPlayer(leagueId: number, userId: string, mlbPlayerId: number, season: number): Promise<void> {
