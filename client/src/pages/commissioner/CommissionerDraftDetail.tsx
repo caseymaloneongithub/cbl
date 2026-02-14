@@ -25,6 +25,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatInTimeZone } from "date-fns-tz";
 import type { DraftWithDetails, DraftPlayerWithDetails, DraftPickWithDetails, DraftRound, DraftOrder, User, LeagueMember } from "@shared/schema";
 import {
   ArrowLeft, Plus, Loader2, Trash2, Play, Settings, Upload, Users, ListOrdered,
@@ -47,6 +48,7 @@ export default function CommissionerDraftDetail() {
   const [commPickDialogOpen, setCommPickDialogOpen] = useState(false);
   const [commPickUserId, setCommPickUserId] = useState("");
   const [commPickPlayerId, setCommPickPlayerId] = useState<number | null>(null);
+  const [commPickOrgName, setCommPickOrgName] = useState("");
   const [commPickRosterType, setCommPickRosterType] = useState<"mlb" | "milb">("milb");
   const [playerSearchText, setPlayerSearchText] = useState("");
 
@@ -221,7 +223,7 @@ export default function CommissionerDraftDetail() {
   });
 
   const commissionerPick = useMutation({
-    mutationFn: async (data: { userId: string; mlbPlayerId: number; rosterType: string }) => {
+    mutationFn: async (data: { userId: string; mlbPlayerId?: number; selectedOrgName?: string; selectedOrgId?: number | null; rosterType: string }) => {
       const res = await apiRequest("POST", `/api/drafts/${draftId}/commissioner-pick`, data);
       return res.json();
     },
@@ -230,6 +232,7 @@ export default function CommissionerDraftDetail() {
       setCommPickDialogOpen(false);
       setCommPickUserId("");
       setCommPickPlayerId(null);
+      setCommPickOrgName("");
       setPlayerSearchText("");
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "picks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "players"] });
@@ -313,6 +316,56 @@ export default function CommissionerDraftDetail() {
         (dp.player.primaryPosition || "").toLowerCase().includes(playerSearchText.toLowerCase())
       )
     : availablePlayers;
+  const nowMs = Date.now();
+  const formatCentralInput = (value?: string | Date | null) =>
+    value ? formatInTimeZone(new Date(value), "America/Chicago", "yyyy-MM-dd'T'HH:mm") : "";
+
+  const commissionerTargetSlot = useMemo(() => {
+    if (!commPickUserId || !draftPicks) return null;
+    const eligible = draftPicks
+      .filter((slot) =>
+        slot.userId === commPickUserId &&
+        !slot.madeAt &&
+        new Date(slot.scheduledAt).getTime() <= nowMs)
+      .sort((a, b) => a.overallPickNumber - b.overallPickNumber);
+    return eligible[0] || null;
+  }, [commPickUserId, draftPicks, nowMs]);
+
+  const commissionerSlotRound = useMemo(() => {
+    if (!commissionerTargetSlot || !draftRounds) return null;
+    return draftRounds.find((r) => r.roundNumber === commissionerTargetSlot.round) || null;
+  }, [commissionerTargetSlot, draftRounds]);
+
+  const commissionerIsTeamDraftSlot = commissionerSlotRound?.isTeamDraft === true;
+
+  const remainingOrgOptions = useMemo(() => {
+    const counts = new Map<string, { count: number; orgId: number | null }>();
+    const claimed = new Set(
+      (draftPicks || [])
+        .filter((slot) => !!slot.madeAt && !!slot.selectedOrgName)
+        .map((slot) => slot.selectedOrgName as string),
+    );
+    for (const dp of availablePlayers) {
+      const orgName = dp.player.parentOrgName;
+      if (!orgName || claimed.has(orgName)) continue;
+      const entry = counts.get(orgName);
+      if (entry) {
+        entry.count += 1;
+      } else {
+        counts.set(orgName, { count: 1, orgId: dp.player.parentOrgId ?? null });
+      }
+    }
+    return Array.from(counts.entries())
+      .map(([name, meta]) => ({ name, count: meta.count, orgId: meta.orgId }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [availablePlayers, draftPicks]);
+
+  const nextOpenSlot = useMemo(() => {
+    if (!draftPicks) return null;
+    return draftPicks
+      .filter((slot) => !slot.madeAt)
+      .sort((a, b) => a.overallPickNumber - b.overallPickNumber)[0] || null;
+  }, [draftPicks]);
 
   const handleInitSettings = () => {
     if (draft) {
@@ -510,9 +563,7 @@ export default function CommissionerDraftDetail() {
                     <TableBody>
                       {draftRounds.map(round => {
                         const roundEntries = orderByRound(round.roundNumber);
-                        const startTimeLocal = round.startTime
-                          ? new Date(round.startTime).toISOString().slice(0, 16)
-                          : "";
+                        const startTimeCentral = formatCentralInput(round.startTime);
                         return (
                           <TableRow key={round.id} data-testid={`row-round-${round.id}`}>
                             <TableCell className="font-mono">{round.roundNumber}</TableCell>
@@ -534,12 +585,12 @@ export default function CommissionerDraftDetail() {
                             <TableCell>
                               <Input
                                 type="datetime-local"
-                                value={startTimeLocal}
+                                value={startTimeCentral}
                                 onChange={e => {
                                   const val = e.target.value;
                                   updateRound.mutate({
                                     roundId: round.id,
-                                    data: { startTime: val ? new Date(val).toISOString() : new Date().toISOString() },
+                                    data: { startTime: val || "" },
                                   });
                                 }}
                                 className="h-8 text-sm"
@@ -581,7 +632,7 @@ export default function CommissionerDraftDetail() {
                 <div className="mt-3 space-y-1">
                   <p className="text-sm text-muted-foreground">
                     <Clock className="inline h-3.5 w-3.5 mr-1" />
-                    Set a start time per round. Each pick gets the configured duration (default 60 min). If a pick's time expires, they can still pick, but subsequent picks become eligible too.
+                    Enter each round start in Central Time (America/Chicago). Picks open on the configured cadence; missed picks stay open while later slots still open on schedule.
                   </p>
                   {draftRounds.some(r => r.isTeamDraft) && (
                     <p className="text-sm text-muted-foreground">
@@ -712,7 +763,9 @@ export default function CommissionerDraftDetail() {
             <CardContent>
               {draft.status === "active" && (
                 <p className="text-sm text-muted-foreground mb-4">
-                  Round {draft.currentRound} of {draft.rounds} &middot; Pick {draft.currentPickIndex + 1}
+                  {nextOpenSlot
+                    ? `Next open slot: Round ${nextOpenSlot.round}, Pick ${nextOpenSlot.roundPickIndex + 1} (Overall ${nextOpenSlot.overallPickNumber})`
+                    : "All slots are currently filled"}
                 </p>
               )}
               {draftPicks && draftPicks.length > 0 ? (
@@ -720,10 +773,11 @@ export default function CommissionerDraftDetail() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Pick</TableHead>
+                        <TableHead>Overall</TableHead>
                         <TableHead>Round</TableHead>
                         <TableHead>Team</TableHead>
-                        <TableHead>Player</TableHead>
+                        <TableHead>Selection</TableHead>
+                        <TableHead>Scheduled</TableHead>
                         <TableHead>Roster</TableHead>
                         {draft.status === "active" && <TableHead className="w-16">Actions</TableHead>}
                       </TableRow>
@@ -731,16 +785,21 @@ export default function CommissionerDraftDetail() {
                     <TableBody>
                       {draftPicks.map(pick => (
                         <TableRow key={pick.id} data-testid={`row-pick-${pick.id}`}>
-                          <TableCell className="font-mono">{pick.pickNumber}</TableCell>
+                          <TableCell className="font-mono">{pick.overallPickNumber}</TableCell>
                           <TableCell className="font-mono">{pick.round}</TableCell>
                           <TableCell className="font-medium">{pick.user.teamName || `${pick.user.firstName} ${pick.user.lastName}`}</TableCell>
-                          <TableCell>{pick.player.fullName}</TableCell>
+                          <TableCell>{pick.player?.fullName || pick.selectedOrgName || <span className="text-muted-foreground">Unfilled</span>}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{new Date(pick.scheduledAt).toLocaleString()}</TableCell>
                           <TableCell>
-                            <Badge variant={pick.rosterType === "mlb" ? "default" : "outline"}>
-                              {pick.rosterType === "mlb" ? "MLB" : "MiLB"}
-                            </Badge>
+                            {pick.rosterType ? (
+                              <Badge variant={pick.rosterType === "mlb" ? "default" : "outline"}>
+                                {pick.rosterType === "mlb" ? "MLB" : "MiLB"}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline">-</Badge>
+                            )}
                           </TableCell>
-                          {draft.status === "active" && (
+                          {draft.status === "active" && pick.madeAt && (
                             <TableCell>
                               <AlertDialog>
                                 <AlertDialogTrigger asChild>
@@ -752,7 +811,7 @@ export default function CommissionerDraftDetail() {
                                   <AlertDialogHeader>
                                     <AlertDialogTitle>Nullify Pick</AlertDialogTitle>
                                     <AlertDialogDescription>
-                                      Undo this pick? {pick.player.fullName} will be returned to the available pool and removed from {pick.user.teamName || "the team"}'s roster.
+                                      Undo this pick? The selection will be returned to the available pool and removed from {pick.user.teamName || "the team"}'s roster.
                                     </AlertDialogDescription>
                                   </AlertDialogHeader>
                                   <AlertDialogFooter>
@@ -765,6 +824,7 @@ export default function CommissionerDraftDetail() {
                               </AlertDialog>
                             </TableCell>
                           )}
+                          {draft.status === "active" && !pick.madeAt && <TableCell />}
                         </TableRow>
                       ))}
                     </TableBody>
@@ -787,7 +847,11 @@ export default function CommissionerDraftDetail() {
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label>Team</Label>
-              <Select value={commPickUserId} onValueChange={setCommPickUserId}>
+              <Select value={commPickUserId} onValueChange={(value) => {
+                setCommPickUserId(value);
+                setCommPickPlayerId(null);
+                setCommPickOrgName("");
+              }}>
                 <SelectTrigger data-testid="select-comm-pick-team">
                   <SelectValue placeholder="Select team..." />
                 </SelectTrigger>
@@ -800,6 +864,16 @@ export default function CommissionerDraftDetail() {
                 </SelectContent>
               </Select>
             </div>
+            {commissionerTargetSlot && (
+              <div className="text-sm text-muted-foreground">
+                Slot: Round {commissionerTargetSlot.round}, Pick {commissionerTargetSlot.roundPickIndex + 1} (Overall {commissionerTargetSlot.overallPickNumber})
+              </div>
+            )}
+            {!commissionerTargetSlot && commPickUserId && (
+              <div className="text-sm text-muted-foreground">
+                This team has no eligible open slot right now.
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Roster Type</Label>
               <Select value={commPickRosterType} onValueChange={v => setCommPickRosterType(v as "mlb" | "milb")}>
@@ -812,52 +886,88 @@ export default function CommissionerDraftDetail() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label>Player</Label>
-              <Input
-                placeholder="Search available players..."
-                value={playerSearchText}
-                onChange={e => setPlayerSearchText(e.target.value)}
-                data-testid="input-comm-pick-search"
-              />
-              <div className="border rounded-md max-h-48 overflow-y-auto">
-                {filteredPlayers.length > 0 ? (
-                  <Table>
-                    <TableBody>
-                      {filteredPlayers.slice(0, 50).map(dp => (
-                        <TableRow
-                          key={dp.id}
-                          className={`cursor-pointer ${commPickPlayerId === dp.mlbPlayerId ? "bg-primary/10" : ""}`}
-                          onClick={() => setCommPickPlayerId(dp.mlbPlayerId)}
-                          data-testid={`row-comm-pick-player-${dp.mlbPlayerId}`}
-                        >
-                          <TableCell className="font-medium py-2">{dp.player.fullName}</TableCell>
-                          <TableCell className="py-2 text-muted-foreground">{dp.player.primaryPosition || "-"}</TableCell>
-                          <TableCell className="py-2 text-muted-foreground">{dp.player.currentTeamName || "-"}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                ) : (
-                  <p className="text-sm text-muted-foreground p-3">No available players found.</p>
+            {commissionerIsTeamDraftSlot ? (
+              <div className="space-y-2">
+                <Label>Organization</Label>
+                <Select value={commPickOrgName} onValueChange={setCommPickOrgName}>
+                  <SelectTrigger data-testid="select-comm-pick-org">
+                    <SelectValue placeholder="Select organization..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {remainingOrgOptions.map((org) => (
+                      <SelectItem key={org.name} value={org.name}>
+                        {org.name} ({org.count})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {remainingOrgOptions.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No organizations with available players remain.</p>
                 )}
               </div>
-              {commPickPlayerId && (
-                <p className="text-sm">
-                  Selected: <span className="font-medium">{availablePlayers.find(p => p.mlbPlayerId === commPickPlayerId)?.player.fullName}</span>
-                </p>
-              )}
-            </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>Player</Label>
+                <Input
+                  placeholder="Search available players..."
+                  value={playerSearchText}
+                  onChange={e => setPlayerSearchText(e.target.value)}
+                  data-testid="input-comm-pick-search"
+                />
+                <div className="border rounded-md max-h-48 overflow-y-auto">
+                  {filteredPlayers.length > 0 ? (
+                    <Table>
+                      <TableBody>
+                        {filteredPlayers.slice(0, 50).map(dp => (
+                          <TableRow
+                            key={dp.id}
+                            className={`cursor-pointer ${commPickPlayerId === dp.mlbPlayerId ? "bg-primary/10" : ""}`}
+                            onClick={() => setCommPickPlayerId(dp.mlbPlayerId)}
+                            data-testid={`row-comm-pick-player-${dp.mlbPlayerId}`}
+                          >
+                            <TableCell className="font-medium py-2">{dp.player.fullName}</TableCell>
+                            <TableCell className="py-2 text-muted-foreground">{dp.player.primaryPosition || "-"}</TableCell>
+                            <TableCell className="py-2 text-muted-foreground">{dp.player.currentTeamName || "-"}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <p className="text-sm text-muted-foreground p-3">No available players found.</p>
+                  )}
+                </div>
+                {commPickPlayerId && (
+                  <p className="text-sm">
+                    Selected: <span className="font-medium">{availablePlayers.find(p => p.mlbPlayerId === commPickPlayerId)?.player.fullName}</span>
+                  </p>
+                )}
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCommPickDialogOpen(false)}>Cancel</Button>
             <Button
               onClick={() => {
-                if (commPickUserId && commPickPlayerId) {
+                if (!commPickUserId) return;
+                if (commissionerIsTeamDraftSlot) {
+                  if (!commPickOrgName) return;
+                  const orgMeta = remainingOrgOptions.find((o) => o.name === commPickOrgName);
+                  commissionerPick.mutate({
+                    userId: commPickUserId,
+                    selectedOrgName: commPickOrgName,
+                    selectedOrgId: orgMeta?.orgId ?? null,
+                    rosterType: commPickRosterType,
+                  });
+                } else if (commPickPlayerId) {
                   commissionerPick.mutate({ userId: commPickUserId, mlbPlayerId: commPickPlayerId, rosterType: commPickRosterType });
                 }
               }}
-              disabled={!commPickUserId || !commPickPlayerId || commissionerPick.isPending}
+              disabled={
+                !commPickUserId ||
+                !commissionerTargetSlot ||
+                commissionerPick.isPending ||
+                (commissionerIsTeamDraftSlot ? !commPickOrgName : !commPickPlayerId)
+              }
               data-testid="button-confirm-comm-pick"
             >
               {commissionerPick.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Making Pick...</> : "Make Pick"}

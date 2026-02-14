@@ -23,19 +23,10 @@ import type { Draft, DraftRound, DraftPlayerWithDetails, DraftPickWithDetails, D
 
 interface TimingInfo {
   hasTiming: boolean;
-  currentRound: number;
-  currentPickIndex: number;
-  roundStartTime?: string;
-  pickDurationMinutes?: number;
-  pickTimings?: {
-    orderIndex: number;
-    userId: string;
-    pickStart: string;
-    pickDeadline: string;
-    isExpired: boolean;
-    isActive: boolean;
-  }[];
+  now: string;
+  currentSlot?: DraftPickWithDetails | null;
   eligiblePickerIds?: string[];
+  openSlotCount?: number;
 }
 
 const DRAFT_POLL_INTERVAL = 3000;
@@ -122,39 +113,30 @@ export default function DraftBoard() {
     refetchInterval: DRAFT_POLL_INTERVAL,
   });
 
+  const nowMs = useMemo(() => {
+    return timingInfo?.now ? new Date(timingInfo.now).getTime() : Date.now();
+  }, [timingInfo]);
+
+  const currentSlot = useMemo(() => {
+    return timingInfo?.currentSlot || null;
+  }, [timingInfo]);
+
   const currentRoundConfig = useMemo(() => {
-    if (!draft || !draftRounds) return null;
-    return draftRounds.find(r => r.roundNumber === draft.currentRound) || null;
-  }, [draft, draftRounds]);
+    if (!currentSlot || !draftRounds) return null;
+    return draftRounds.find(r => r.roundNumber === currentSlot.round) || null;
+  }, [currentSlot, draftRounds]);
 
   const isTeamDraftRound = currentRoundConfig?.isTeamDraft === true;
 
-  const currentRoundOrder = useMemo(() => {
-    if (!draftOrderData || !draft) return [];
-    return draftOrderData
-      .filter(o => o.roundNumber === draft.currentRound)
-      .sort((a, b) => a.orderIndex - b.orderIndex);
-  }, [draftOrderData, draft]);
-
   const currentTeam = useMemo(() => {
-    if (!draft || !currentRoundOrder.length || draft.status !== "active") return null;
-    return currentRoundOrder[draft.currentPickIndex] || null;
-  }, [draft, currentRoundOrder]);
+    if (!currentSlot || !picks) return null;
+    return picks.find((p) => p.id === currentSlot.id) || null;
+  }, [currentSlot, picks]);
 
   const isMyTurn = useMemo(() => {
     if (!currentTeam || !user) return false;
     return currentTeam.userId === user.id;
   }, [currentTeam, user]);
-
-  const myPickTiming = useMemo(() => {
-    if (!timingInfo?.hasTiming || !timingInfo.pickTimings || !user) return null;
-    return timingInfo.pickTimings.find(t => t.userId === user.id) || null;
-  }, [timingInfo, user]);
-
-  const currentPickTiming = useMemo(() => {
-    if (!timingInfo?.hasTiming || !timingInfo.pickTimings || !draft) return null;
-    return timingInfo.pickTimings[draft.currentPickIndex] || null;
-  }, [timingInfo, draft]);
 
   const isEligibleByTiming = useMemo(() => {
     if (!timingInfo?.hasTiming || !user) return false;
@@ -170,11 +152,11 @@ export default function DraftBoard() {
   }, [draft, isMyTurn, user, isEligibleByTiming]);
 
   useEffect(() => {
-    if (!currentPickTiming) {
+    if (!currentSlot) {
       setCountdown("");
       return;
     }
-    const deadline = new Date(currentPickTiming.pickDeadline).getTime();
+    const deadline = new Date(currentSlot.deadlineAt).getTime();
     const updateCountdown = () => {
       const now = Date.now();
       const diff = deadline - now;
@@ -196,20 +178,35 @@ export default function DraftBoard() {
     updateCountdown();
     const interval = setInterval(updateCountdown, 1000);
     return () => clearInterval(interval);
-  }, [currentPickTiming]);
+  }, [currentSlot]);
+
+  const filledPicks = useMemo(() => {
+    return (picks || []).filter((slot) => !!slot.madeAt);
+  }, [picks]);
+
+  const myOpenSlots = useMemo(() => {
+    if (!user || !picks) return [];
+    return picks
+      .filter((slot) =>
+        slot.userId === user.id &&
+        !slot.madeAt &&
+        new Date(slot.scheduledAt).getTime() <= nowMs)
+      .sort((a, b) => a.overallPickNumber - b.overallPickNumber);
+  }, [user, picks, nowMs]);
 
   const availableOrgs = useMemo(() => {
     if (!availablePlayers) return [];
+    const claimed = new Set((picks || []).map((s) => s.selectedOrgName).filter(Boolean));
     const orgs: string[] = [];
     const seen: Record<string, boolean> = {};
     availablePlayers.forEach(dp => {
-      if (dp.player.parentOrgName && !seen[dp.player.parentOrgName]) {
+      if (dp.player.parentOrgName && !claimed.has(dp.player.parentOrgName) && !seen[dp.player.parentOrgName]) {
         seen[dp.player.parentOrgName] = true;
         orgs.push(dp.player.parentOrgName);
       }
     });
     return orgs.sort();
-  }, [availablePlayers]);
+  }, [availablePlayers, picks]);
 
   const makePick = useMutation({
     mutationFn: async ({ mlbPlayerId, rosterType }: { mlbPlayerId: number; rosterType: string }) => {
@@ -393,14 +390,14 @@ export default function DraftBoard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {picks?.map((pick) => (
+                  {filledPicks.map((pick) => (
                     <TableRow key={pick.id} data-testid={`row-pick-${pick.id}`}>
-                      <TableCell className="font-mono">{pick.pickNumber}</TableCell>
+                      <TableCell className="font-mono">{pick.overallPickNumber}</TableCell>
                       <TableCell className="font-mono">{pick.round}</TableCell>
                       <TableCell className="font-medium">{pick.user.teamName || `${pick.user.firstName} ${pick.user.lastName}`}</TableCell>
-                      <TableCell className="font-medium">{pick.player.fullName}</TableCell>
-                      <TableCell>{pick.player.primaryPosition}</TableCell>
-                      <TableCell className="text-muted-foreground">{pick.player.currentTeamName || pick.player.parentOrgName}</TableCell>
+                      <TableCell className="font-medium">{pick.player?.fullName || pick.selectedOrgName || "-"}</TableCell>
+                      <TableCell>{pick.player?.primaryPosition || (pick.selectedOrgName ? "Org Claim" : "-")}</TableCell>
+                      <TableCell className="text-muted-foreground">{pick.player?.currentTeamName || pick.player?.parentOrgName || pick.selectedOrgName || "-"}</TableCell>
                       <TableCell>
                         <Badge variant={pick.rosterType === "mlb" ? "default" : "outline"}>
                           {pick.rosterType === "mlb" ? "MLB" : "MiLB"}
@@ -417,9 +414,8 @@ export default function DraftBoard() {
     );
   }
 
-  const roundName = currentRoundConfig?.name || `Round ${draft.currentRound}`;
-  const totalPicksInRound = currentRoundOrder.length;
-  const picksMade = picks?.length || 0;
+  const roundName = currentRoundConfig?.name || (currentSlot ? `Round ${currentSlot.round}` : "Draft");
+  const picksMade = filledPicks.length;
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -430,10 +426,10 @@ export default function DraftBoard() {
             {draft.status === "active" ? "Live" : draft.status}
           </Badge>
           <span className="text-muted-foreground text-sm" data-testid="text-round-info">
-            {roundName} (Round {draft.currentRound} of {draft.rounds})
+            {currentSlot ? `${roundName} (Round ${currentSlot.round} of ${draft.rounds})` : "Waiting for first slot to open"}
           </span>
           <span className="text-muted-foreground text-sm">
-            Pick {draft.currentPickIndex + 1} of {totalPicksInRound}
+            {currentSlot ? `Overall Pick ${currentSlot.overallPickNumber}` : "No active slot"}
           </span>
           {isTeamDraftRound && (
             <Badge variant="secondary" data-testid="badge-team-draft-round">
@@ -497,12 +493,12 @@ export default function DraftBoard() {
         </Card>
       )}
 
-      {draft.status === "active" && !currentTeam && currentRoundOrder.length === 0 && (
+      {draft.status === "active" && !currentTeam && (!picks || picks.length === 0) && (
         <Card className="mb-6">
           <CardContent className="py-8 text-center">
             <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-lg font-medium mb-2">Draft Order Not Set</h3>
-            <p className="text-muted-foreground">The draft order has not been configured for this round. The commissioner needs to upload the draft order.</p>
+            <h3 className="text-lg font-medium mb-2">Draft Slots Not Generated</h3>
+            <p className="text-muted-foreground">The commissioner must start the draft after configuring rounds and order.</p>
           </CardContent>
         </Card>
       )}
@@ -658,7 +654,7 @@ export default function DraftBoard() {
               <CardTitle className="text-lg">Pick History</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              {!picks?.length ? (
+              {!filledPicks.length ? (
                 <div className="p-6 text-center text-muted-foreground text-sm">No picks made yet.</div>
               ) : (
                 <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
@@ -672,17 +668,23 @@ export default function DraftBoard() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {[...picks].reverse().map((pick) => (
+                      {[...filledPicks].reverse().map((pick) => (
                         <TableRow key={pick.id} data-testid={`row-pick-${pick.id}`}>
                           <TableCell className="font-mono text-xs">
-                            {pick.round}.{pick.pickNumber}
+                            {pick.round}.{pick.roundPickIndex + 1}
                           </TableCell>
                           <TableCell className="text-sm font-medium">
                             {pick.user.teamName || `${pick.user.firstName}`}
                           </TableCell>
                           <TableCell>
-                            <div className="text-sm font-medium">{pick.player.fullName}</div>
-                            <div className="text-xs text-muted-foreground">{pick.player.primaryPosition} - {pick.player.currentTeamName || pick.player.parentOrgName}</div>
+                            <div className="text-sm font-medium">{pick.player?.fullName || pick.selectedOrgName || "-"}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {pick.player
+                                ? `${pick.player.primaryPosition} - ${pick.player.currentTeamName || pick.player.parentOrgName}`
+                                : pick.selectedOrgName
+                                  ? `Organization claim (${pick.selectedOrgPlayerIds?.length || 0} players)`
+                                  : "-"}
+                            </div>
                           </TableCell>
                           <TableCell>
                             <Badge variant={pick.rosterType === "mlb" ? "default" : "outline"} className="text-xs">
@@ -698,46 +700,53 @@ export default function DraftBoard() {
             </CardContent>
           </Card>
 
-          {currentRoundOrder.length > 0 && (
+          {draft.status !== "completed" && (
             <Card className="mt-4">
               <CardHeader className="pb-3">
-                <CardTitle className="text-lg">
-                  {roundName} Order
-                </CardTitle>
+                <CardTitle className="text-lg">Your Open Picks</CardTitle>
               </CardHeader>
-              <CardContent className="p-0">
+              <CardContent className="space-y-2">
+                <div className="text-2xl font-semibold">{myOpenSlots.length}</div>
+                <p className="text-sm text-muted-foreground">Eligible open slots (scheduled and unfilled).</p>
+                {myOpenSlots.slice(0, 3).map((slot) => (
+                  <div key={slot.id} className="text-sm text-muted-foreground">
+                    Pick {slot.overallPickNumber} due {new Date(slot.deadlineAt).toLocaleString()}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {!!picks?.length && (
+            <Card className="mt-4">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Slot Board</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0 max-h-[360px] overflow-y-auto">
                 <Table>
+                  <TableHeader className="sticky top-0 z-10 bg-background">
+                    <TableRow className="bg-muted/50">
+                      <TableHead>#</TableHead>
+                      <TableHead>Team</TableHead>
+                      <TableHead>Scheduled</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
                   <TableBody>
-                    {currentRoundOrder.map((entry, idx) => {
-                      const pickTiming = timingInfo?.hasTiming && timingInfo.pickTimings
-                        ? timingInfo.pickTimings[idx]
-                        : null;
-                      const isPicked = idx < (draft?.currentPickIndex ?? 0);
-                      return (
-                        <TableRow
-                          key={entry.id}
-                          className={currentTeam?.userId === entry.userId ? "bg-primary/10" : ""}
-                          data-testid={`row-order-${entry.id}`}
-                        >
-                          <TableCell className="font-mono text-sm">{idx + 1}</TableCell>
-                          <TableCell className="font-medium text-sm">
-                            {entry.user.teamName || `${entry.user.firstName} ${entry.user.lastName}`}
-                            {currentTeam?.userId === entry.userId && (
-                              <Badge variant="default" className="ml-2 text-xs">Current</Badge>
-                            )}
-                          </TableCell>
-                          {pickTiming && !isPicked && (
-                            <TableCell className="text-xs text-muted-foreground text-right">
-                              {new Date(pickTiming.pickDeadline) > new Date()
-                                ? `Due ${new Date(pickTiming.pickDeadline).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
-                                : pickTiming.isExpired
-                                  ? "Expired"
-                                  : ""}
-                            </TableCell>
-                          )}
-                        </TableRow>
-                      );
-                    })}
+                    {picks.map((slot) => (
+                      <TableRow key={slot.id} className={currentSlot?.id === slot.id ? "bg-primary/10" : ""}>
+                        <TableCell className="font-mono text-xs">{slot.overallPickNumber}</TableCell>
+                        <TableCell className="text-sm">{slot.user.teamName || slot.user.firstName || slot.user.lastName || slot.user.id}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{new Date(slot.scheduledAt).toLocaleString()}</TableCell>
+                        <TableCell>
+                          {slot.madeAt
+                            ? <Badge variant="secondary" className="text-xs">Filled</Badge>
+                            : (new Date(slot.scheduledAt).getTime() <= nowMs
+                              ? <Badge variant="default" className="text-xs">Open</Badge>
+                              : <Badge variant="outline" className="text-xs">Upcoming</Badge>)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
               </CardContent>
