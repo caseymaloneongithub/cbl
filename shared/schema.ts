@@ -8,6 +8,7 @@ import {
   timestamp,
   real,
   index,
+  uniqueIndex,
   jsonb,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
@@ -109,6 +110,7 @@ export const users = pgTable("users", {
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
+  timezone: varchar("timezone", { length: 50 }),
   isCommissioner: boolean("is_commissioner").default(false).notNull(),
   isSuperAdmin: boolean("is_super_admin").default(false).notNull(),
   teamName: varchar("team_name"),
@@ -480,7 +482,7 @@ export const drafts = pgTable("drafts", {
   name: varchar("name", { length: 255 }).notNull(),
   season: integer("season").notNull(),
   rounds: integer("rounds").notNull().default(1),
-  snake: boolean("snake").notNull().default(true),
+  snake: boolean("snake").notNull().default(false),
   status: varchar("status", { length: 20 }).notNull().default("setup"), // 'setup', 'active', 'completed'
   pickDurationMinutes: integer("pick_duration_minutes").notNull().default(60),
   teamDraftRound: integer("team_draft_round"),
@@ -524,7 +526,7 @@ export const draftRounds = pgTable("draft_rounds", {
   roundNumber: integer("round_number").notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   isTeamDraft: boolean("is_team_draft").notNull().default(false),
-  startTime: timestamp("start_time").notNull(),
+  startTime: timestamp("start_time", { withTimezone: true }).notNull(),
   pickDurationMinutes: integer("pick_duration_minutes").notNull().default(60),
 }, (table) => [
   index("idx_draft_rounds_draft").on(table.draftId),
@@ -550,23 +552,37 @@ export const insertDraftOrderSchema = createInsertSchema(draftOrder).omit({
   id: true,
 });
 
-// Draft picks - records of each pick made
+// Draft picks - pre-generated pick slots, filled when a pick is made
 export const draftPicks = pgTable("draft_picks", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   draftId: integer("draft_id").references(() => drafts.id, { onDelete: "cascade" }).notNull(),
   round: integer("round").notNull(),
-  pickNumber: integer("pick_number").notNull(),
+  roundPickIndex: integer("round_pick_index").notNull(),
+  overallPickNumber: integer("overall_pick_number").notNull(),
   userId: varchar("user_id").references(() => users.id).notNull(),
-  mlbPlayerId: integer("mlb_player_id").references(() => mlbPlayers.id).notNull(),
-  rosterType: varchar("roster_type", { length: 10 }).notNull(), // 'mlb' or 'milb'
+  mlbPlayerId: integer("mlb_player_id").references(() => mlbPlayers.id),
+  rosterType: varchar("roster_type", { length: 10 }), // 'mlb' or 'milb'
+  selectedOrgName: varchar("selected_org_name", { length: 255 }),
+  selectedOrgId: integer("selected_org_id"),
+  selectedOrgPlayerIds: jsonb("selected_org_player_ids").$type<number[]>().default(sql`'[]'::jsonb`).notNull(),
+  scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
+  deadlineAt: timestamp("deadline_at", { withTimezone: true }).notNull(),
+  madeAt: timestamp("made_at", { withTimezone: true }),
+  madeByUserId: varchar("made_by_user_id").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
   index("idx_draft_picks_draft").on(table.draftId),
+  uniqueIndex("uq_draft_pick_slot_identity").on(table.draftId, table.round, table.roundPickIndex),
+  uniqueIndex("uq_draft_pick_slot_overall").on(table.draftId, table.overallPickNumber),
+  uniqueIndex("uq_draft_pick_player_once").on(table.draftId, table.mlbPlayerId),
+  uniqueIndex("uq_draft_selected_org_once").on(table.draftId, table.selectedOrgName),
 ]);
 
 export const insertDraftPickSchema = createInsertSchema(draftPicks).omit({
   id: true,
   createdAt: true,
+  madeAt: true,
+  madeByUserId: true,
 });
 
 // Auto-draft lists - ranked player preferences for automatic drafting
@@ -711,7 +727,7 @@ export type DraftPlayerWithDetails = DraftPlayer & {
 };
 
 export type DraftPickWithDetails = DraftPick & {
-  player: MlbPlayer;
+  player: MlbPlayer | null;
   user: Pick<User, 'id' | 'firstName' | 'lastName' | 'teamName'>;
 };
 
