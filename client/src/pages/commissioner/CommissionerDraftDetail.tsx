@@ -390,12 +390,24 @@ export default function CommissionerDraftDetail() {
 
   const csvTemplateText = useMemo(() => {
     const roundCount = Math.max(draftRounds?.length || 3, 1);
-    const headers = Array.from({ length: roundCount }, (_, i) => `Round ${i + 1}`);
+    const headers = draftRounds?.length
+      ? draftRounds.map(r => r.name || `Round ${r.roundNumber}`)
+      : Array.from({ length: roundCount }, (_, i) => `Round ${i + 1}`);
+    const startTimes = headers.map((_, i) => {
+      if (draftRounds?.[i]?.startTime) {
+        const d = new Date(draftRounds[i].startTime);
+        if (!isNaN(d.getTime())) {
+          const cst = d.toLocaleString("en-US", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit", hour: "numeric", minute: "2-digit", hour12: true });
+          return cst;
+        }
+      }
+      return "";
+    });
     const abbreviations = activeMembers
       .map((m) => (m.teamAbbreviation || "").toUpperCase().trim())
       .filter(Boolean);
     if (abbreviations.length === 0) {
-      return `${headers.join(",")}\n`;
+      return [headers.join(","), startTimes.join(",")].join("\n");
     }
     const snakeOrder = [...abbreviations];
     const reversed = [...abbreviations].reverse();
@@ -404,7 +416,7 @@ export default function CommissionerDraftDetail() {
         .map((__, roundIdx) => (roundIdx % 2 === 0 ? snakeOrder[rowIdx] : reversed[rowIdx]))
         .join(","),
     );
-    return [headers.join(","), ...rows].join("\n");
+    return [headers.join(","), startTimes.join(","), ...rows].join("\n");
   }, [activeMembers, draftRounds]);
 
   const playerIdTemplateText = useMemo(() => {
