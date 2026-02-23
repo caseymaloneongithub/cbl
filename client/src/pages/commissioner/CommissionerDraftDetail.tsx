@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLeague } from "@/hooks/useLeague";
 import { useToast } from "@/hooks/use-toast";
@@ -32,6 +32,83 @@ import {
   ArrowLeft, Loader2, Trash2, Play, Settings, Upload, Users, ListOrdered,
   FileSpreadsheet, Clock, X, UserPlus, Download,
 } from "lucide-react";
+
+function RoundConfigRow({ round, roundEntries, onUpdate, formatCentralInput }: {
+  round: DraftRound;
+  roundEntries: (DraftOrder & { user: User })[];
+  onUpdate: (data: Record<string, any>) => void;
+  formatCentralInput: (time: any) => string;
+}) {
+  const [localName, setLocalName] = useState(round.name);
+  const [localStart, setLocalStart] = useState(formatCentralInput(round.startTime));
+  const [localDuration, setLocalDuration] = useState(String(round.pickDurationMinutes ?? 30));
+
+  useEffect(() => { setLocalName(round.name); }, [round.name]);
+  useEffect(() => { setLocalStart(formatCentralInput(round.startTime)); }, [round.startTime]);
+  useEffect(() => { setLocalDuration(String(round.pickDurationMinutes ?? 30)); }, [round.pickDurationMinutes]);
+
+  const saveField = useCallback((field: string, value: string) => {
+    if (field === "name" && value !== round.name) onUpdate({ name: value });
+    if (field === "startTime" && value !== formatCentralInput(round.startTime)) onUpdate({ startTime: value || "" });
+    if (field === "pickDurationMinutes" && value !== String(round.pickDurationMinutes ?? 30)) onUpdate({ pickDurationMinutes: value });
+  }, [round, onUpdate, formatCentralInput]);
+
+  return (
+    <TableRow data-testid={`row-round-${round.id}`}>
+      <TableCell className="font-mono">{round.roundNumber}</TableCell>
+      <TableCell>
+        <Input
+          value={localName}
+          onChange={e => setLocalName(e.target.value)}
+          onBlur={() => saveField("name", localName)}
+          className="h-8 text-sm"
+          data-testid={`input-round-name-${round.id}`}
+        />
+      </TableCell>
+      <TableCell className="text-center">
+        <Switch
+          checked={round.isTeamDraft}
+          onCheckedChange={checked => onUpdate({ isTeamDraft: checked })}
+          data-testid={`switch-team-draft-${round.id}`}
+        />
+      </TableCell>
+      <TableCell>
+        <Input
+          type="datetime-local"
+          value={localStart}
+          onChange={e => setLocalStart(e.target.value)}
+          onBlur={() => saveField("startTime", localStart)}
+          className="h-8 text-sm"
+          data-testid={`input-round-start-${round.id}`}
+        />
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-1">
+          <Input
+            type="number"
+            min={1}
+            max={1440}
+            value={localDuration}
+            onChange={e => setLocalDuration(e.target.value)}
+            onBlur={() => saveField("pickDurationMinutes", localDuration)}
+            className="h-8 text-sm w-16"
+            data-testid={`input-pick-duration-${round.id}`}
+          />
+          <span className="text-xs text-muted-foreground">min</span>
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="flex flex-wrap gap-1">
+          {roundEntries.map((entry, idx) => (
+            <Badge key={`${entry.userId}-${idx}`} variant="outline" className="text-xs">
+              {entry.user?.teamAbbreviation || entry.user?.teamName || entry.user?.email}
+            </Badge>
+          ))}
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
 
 export default function CommissionerDraftDetail() {
   const { draftId: draftIdParam } = useParams<{ draftId: string }>();
@@ -913,77 +990,21 @@ export default function CommissionerDraftDetail() {
                         <TableHead className="w-12">#</TableHead>
                         <TableHead className="min-w-[140px]">Round Name</TableHead>
                         <TableHead className="w-28 text-center">Team Draft</TableHead>
-                        <TableHead className="min-w-[200px]">Start Date/Time</TableHead>
+                        <TableHead className="min-w-[200px]">Start Date/Time (CT)</TableHead>
                         <TableHead className="min-w-[100px]">Pick Duration</TableHead>
                         <TableHead className="min-w-[200px]">Order Preview</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {draftRounds.map(round => {
-                        const roundEntries = orderByRound(round.roundNumber);
-                        const startTimeCentral = formatCentralInput(round.startTime);
-                        return (
-                          <TableRow key={round.id} data-testid={`row-round-${round.id}`}>
-                            <TableCell className="font-mono">{round.roundNumber}</TableCell>
-                            <TableCell>
-                              <Input
-                                value={round.name}
-                                onChange={e => updateRound.mutate({ roundId: round.id, data: { name: e.target.value } })}
-                                className="h-8 text-sm"
-                                data-testid={`input-round-name-${round.id}`}
-                              />
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <Switch
-                                checked={round.isTeamDraft}
-                                onCheckedChange={checked => updateRound.mutate({ roundId: round.id, data: { isTeamDraft: checked } })}
-                                data-testid={`switch-team-draft-${round.id}`}
-                              />
-                            </TableCell>
-                            <TableCell>
-                              <Input
-                                type="datetime-local"
-                                value={startTimeCentral}
-                                onChange={e => {
-                                  const val = e.target.value;
-                                  updateRound.mutate({
-                                    roundId: round.id,
-                                    data: { startTime: val || "" },
-                                  });
-                                }}
-                                className="h-8 text-sm"
-                                data-testid={`input-round-start-${round.id}`}
-                              />
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-1">
-                                <Input
-                                  type="number"
-                                  min={1}
-                                  max={1440}
-                                  value={round.pickDurationMinutes}
-                                  onChange={e => updateRound.mutate({
-                                    roundId: round.id,
-                                    data: { pickDurationMinutes: e.target.value },
-                                  })}
-                                  className="h-8 text-sm w-16"
-                                  data-testid={`input-pick-duration-${round.id}`}
-                                />
-                                <span className="text-xs text-muted-foreground">min</span>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex flex-wrap gap-1">
-                                {roundEntries.map((entry, idx) => (
-                                  <Badge key={`${entry.userId}-${idx}`} variant="outline" className="text-xs">
-                                    {entry.user?.teamAbbreviation || entry.user?.teamName || entry.user?.email}
-                                  </Badge>
-                                ))}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
+                      {draftRounds.map(round => (
+                        <RoundConfigRow
+                          key={round.id}
+                          round={round}
+                          roundEntries={orderByRound(round.roundNumber)}
+                          onUpdate={(data) => updateRound.mutate({ roundId: round.id, data })}
+                          formatCentralInput={formatCentralInput}
+                        />
+                      ))}
                     </TableBody>
                   </Table>
                 </div>
