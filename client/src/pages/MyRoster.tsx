@@ -116,7 +116,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
       const pa = a.player.hittingPlateAppearances ?? 0;
       const isTwoWay = ip >= 20 && pa >= 100;
       if (isTwoWay) return true;
-      return a.player.hadPitchingStats;
+      return a.player.hadPitchingStats && !a.player.hadHittingStats;
     }),
     [filtered],
   );
