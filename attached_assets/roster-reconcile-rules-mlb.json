@@ -1,0 +1,23 @@
+{
+  "leagueId": 1,
+  "rosterType": "mlb",
+  "updatedAt": "2026-02-23T17:33:56.288Z",
+  "nameTeamRules": {
+    "jack little|LAK|mlb": 669193,
+    "jose marte|LAK|mlb": 665896,
+    "luis miguel castillo|MAI|mlb": 622491,
+    "mason james miller|MAI|mlb": 695243,
+    "jacob lawrence webb|NOR|mlb": 657097,
+    "luis amado garcia|PON|mlb": 472610,
+    "tyler alexander|SAN|mlb": 641302,
+    "nick allen|SAR|mlb": 669397,
+    "christian mcgowan|SPR|mlb": 694909,
+    "jesus armando sanchez|SHS|mlb": 665825,
+    "fernando cruz|STL|mlb": 815890,
+    "max muncy|STL|mlb": 691777
+  },
+  "duplicateTeamRules": {
+    "dup:593423": "06e2f8bd-7a02-4cba-9476-3b3c79823c1a",
+    "dup:665926": "5c5d13dc-f239-4181-87d9-43ded526d40c"
+  }
+}
