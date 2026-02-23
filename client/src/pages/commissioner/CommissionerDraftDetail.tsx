@@ -501,10 +501,6 @@ export default function CommissionerDraftDetail() {
       toast({ title: "Invalid CSV Rows", description: `Rows with wrong column count: ${csvPreview.rowLengthIssues.join(", ")}`, variant: "destructive" });
       return;
     }
-    if (csvPreview?.blankCells && csvPreview.blankCells.length > 0) {
-      toast({ title: "Blank Cells Found", description: "Each pick slot needs a team abbreviation.", variant: "destructive" });
-      return;
-    }
     uploadCsvOrder.mutate(csvText);
   };
 
@@ -878,8 +874,8 @@ export default function CommissionerDraftDetail() {
                     </p>
                   )}
                   {csvPreview.blankCells && csvPreview.blankCells.length > 0 && (
-                    <p className="text-sm text-destructive" data-testid="csv-blank-cell-error">
-                      Blank pick slots found: {csvPreview.blankCells.length}
+                    <p className="text-sm text-muted-foreground" data-testid="csv-blank-cell-info">
+                      {csvPreview.blankCells.length} blank slot{csvPreview.blankCells.length > 1 ? "s" : ""} (rounds with fewer picks)
                     </p>
                   )}
                   {csvPreview.unknownAbbrs && csvPreview.unknownAbbrs.length > 0 && (
@@ -890,7 +886,7 @@ export default function CommissionerDraftDetail() {
                       ))}
                     </div>
                   )}
-                  {csvPreview.unknownAbbrs && csvPreview.unknownAbbrs.length === 0 && (!csvPreview.rowLengthIssues || csvPreview.rowLengthIssues.length === 0) && (!csvPreview.blankCells || csvPreview.blankCells.length === 0) && (
+                  {csvPreview.unknownAbbrs && csvPreview.unknownAbbrs.length === 0 && (!csvPreview.rowLengthIssues || csvPreview.rowLengthIssues.length === 0) && (
                     <p className="text-sm text-green-600 dark:text-green-400" data-testid="csv-valid">All team abbreviations valid</p>
                   )}
                 </div>
@@ -898,7 +894,7 @@ export default function CommissionerDraftDetail() {
               {csvPreview?.error && (
                 <p className="text-sm text-destructive" data-testid="csv-error">{csvPreview.error}</p>
               )}
-              <Button onClick={handleUploadCsv} disabled={uploadCsvOrder.isPending || !csvText.trim() || !!(csvPreview?.error) || !!(csvPreview?.unknownAbbrs?.length) || !!(csvPreview?.rowLengthIssues?.length) || !!(csvPreview?.blankCells?.length)} data-testid="button-upload-csv-order">
+              <Button onClick={handleUploadCsv} disabled={uploadCsvOrder.isPending || !csvText.trim() || !!(csvPreview?.error) || !!(csvPreview?.unknownAbbrs?.length) || !!(csvPreview?.rowLengthIssues?.length)} data-testid="button-upload-csv-order">
                 {uploadCsvOrder.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Uploading...</> : <><FileSpreadsheet className="mr-2 h-4 w-4" />Upload Draft Order</>}
               </Button>
             </CardContent>
