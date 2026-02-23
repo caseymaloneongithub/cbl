@@ -142,7 +142,6 @@ export async function setupAuth(app: Express) {
         lastName: user.lastName,
         profileImageUrl: user.profileImageUrl,
         teamName: user.teamName,
-        budget: user.budget,
         isCommissioner: user.isCommissioner,
         isSuperAdmin: user.isSuperAdmin,
         mustResetPassword: user.mustResetPassword,

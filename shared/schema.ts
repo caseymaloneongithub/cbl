@@ -37,6 +37,14 @@ export const leagues = pgTable("leagues", {
   paCap: integer("pa_cap"),
   mlRosterLimit: integer("ml_roster_limit").default(40),
   milbRosterLimit: integer("milb_roster_limit").default(125),
+  rosterOnboardingSeason: integer("roster_onboarding_season").default(2025).notNull(),
+  rosterOnboardingStatus: varchar("roster_onboarding_status", { length: 20 }).default("pending").notNull(),
+  rosterOnboardingLastProcessed: integer("roster_onboarding_last_processed").default(0).notNull(),
+  rosterOnboardingLastImported: integer("roster_onboarding_last_imported").default(0).notNull(),
+  rosterOnboardingLastUnresolved: integer("roster_onboarding_last_unresolved").default(0).notNull(),
+  rosterOnboardingLastErrors: integer("roster_onboarding_last_errors").default(0).notNull(),
+  rosterOnboardingCompletedAt: timestamp("roster_onboarding_completed_at"),
+  rosterOnboardingUpdatedAt: timestamp("roster_onboarding_updated_at").defaultNow(),
   createdById: varchar("created_by_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -390,88 +398,133 @@ export const emailOptOutsRelations = relations(emailOptOuts, ({ one }) => ({
   }),
 }));
 
+// Team ownership invites - commissioner can invite an email to take over a league team
+export const teamOwnershipInvites = pgTable("team_ownership_invites", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  leagueId: integer("league_id").references(() => leagues.id).notNull(),
+  teamUserId: varchar("team_user_id").references(() => users.id).notNull(), // current owner user id for this team slot
+  invitedEmail: varchar("invited_email", { length: 320 }).notNull(),
+  token: varchar("token", { length: 128 }).notNull(),
+  invitedByUserId: varchar("invited_by_user_id").references(() => users.id).notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("pending"), // pending, accepted, cancelled, expired
+  expiresAt: timestamp("expires_at").notNull(),
+  acceptedByUserId: varchar("accepted_by_user_id").references(() => users.id),
+  acceptedAt: timestamp("accepted_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  uniqueIndex("uq_team_ownership_invites_token").on(table.token),
+  index("idx_team_ownership_invites_league").on(table.leagueId),
+  index("idx_team_ownership_invites_email").on(table.invitedEmail),
+]);
+
+export const teamOwnershipInvitesRelations = relations(teamOwnershipInvites, ({ one }) => ({
+  league: one(leagues, {
+    fields: [teamOwnershipInvites.leagueId],
+    references: [leagues.id],
+  }),
+  teamUser: one(users, {
+    fields: [teamOwnershipInvites.teamUserId],
+    references: [users.id],
+  }),
+  invitedBy: one(users, {
+    fields: [teamOwnershipInvites.invitedByUserId],
+    references: [users.id],
+  }),
+  acceptedBy: one(users, {
+    fields: [teamOwnershipInvites.acceptedByUserId],
+    references: [users.id],
+  }),
+}));
+
 // Insert schemas
-export const insertLeagueSchema = createInsertSchema(leagues).omit({
+export const insertLeagueSchema = (createInsertSchema(leagues) as any).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 });
 
-export const insertLeagueMemberSchema = createInsertSchema(leagueMembers).omit({
+export const insertLeagueMemberSchema = (createInsertSchema(leagueMembers) as any).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 });
 
-export const insertRosterPlayerSchema = createInsertSchema(rosterPlayers).omit({
+export const insertRosterPlayerSchema = (createInsertSchema(rosterPlayers) as any).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 });
 
-export const insertUserSchema = createInsertSchema(users).omit({
+export const insertUserSchema = (createInsertSchema(users) as any).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 });
 
-export const insertAuctionSchema = createInsertSchema(auctions).omit({
+export const insertAuctionSchema = (createInsertSchema(auctions) as any).omit({
   id: true,
   isDeleted: true,
   createdAt: true,
   updatedAt: true,
 });
 
-export const insertAuctionTeamSchema = createInsertSchema(auctionTeams).omit({
+export const insertAuctionTeamSchema = (createInsertSchema(auctionTeams) as any).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 });
 
-export const insertLeagueSettingsSchema = createInsertSchema(leagueSettings).omit({
+export const insertLeagueSettingsSchema = (createInsertSchema(leagueSettings) as any).omit({
   id: true,
   updatedAt: true,
 });
 
-export const insertFreeAgentSchema = createInsertSchema(freeAgents).omit({
+export const insertFreeAgentSchema = (createInsertSchema(freeAgents) as any).omit({
   id: true,
   winnerId: true,
   winningBidId: true,
   createdAt: true,
 });
 
-export const insertBidSchema = createInsertSchema(bids).omit({
+export const insertBidSchema = (createInsertSchema(bids) as any).omit({
   id: true,
   createdAt: true,
 });
 
-export const insertAutoBidSchema = createInsertSchema(autoBids).omit({
+export const insertAutoBidSchema = (createInsertSchema(autoBids) as any).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 });
 
-export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTokens).omit({
+export const insertPasswordResetTokenSchema = (createInsertSchema(passwordResetTokens) as any).omit({
   id: true,
   createdAt: true,
   usedAt: true,
 });
 
-export const insertBidBundleSchema = createInsertSchema(bidBundles).omit({
+export const insertBidBundleSchema = (createInsertSchema(bidBundles) as any).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 });
 
-export const insertBidBundleItemSchema = createInsertSchema(bidBundleItems).omit({
+export const insertBidBundleItemSchema = (createInsertSchema(bidBundleItems) as any).omit({
   id: true,
   bidId: true,
   activatedAt: true,
   createdAt: true,
 });
 
-export const insertEmailOptOutSchema = createInsertSchema(emailOptOuts).omit({
+export const insertEmailOptOutSchema = (createInsertSchema(emailOptOuts) as any).omit({
   id: true,
+  createdAt: true,
+});
+
+export const insertTeamOwnershipInviteSchema = (createInsertSchema(teamOwnershipInvites) as any).omit({
+  id: true,
+  acceptedAt: true,
+  acceptedByUserId: true,
   createdAt: true,
 });
 
@@ -484,7 +537,7 @@ export const drafts = pgTable("drafts", {
   rounds: integer("rounds").notNull().default(1),
   snake: boolean("snake").notNull().default(false),
   status: varchar("status", { length: 20 }).notNull().default("setup"), // 'setup', 'active', 'completed'
-  pickDurationMinutes: integer("pick_duration_minutes").notNull().default(60),
+  pickDurationMinutes: integer("pick_duration_minutes").notNull().default(30),
   teamDraftRound: integer("team_draft_round"),
   currentRound: integer("current_round").notNull().default(1),
   currentPickIndex: integer("current_pick_index").notNull().default(0),
@@ -494,7 +547,7 @@ export const drafts = pgTable("drafts", {
   index("idx_drafts_league").on(table.leagueId),
 ]);
 
-export const insertDraftSchema = createInsertSchema(drafts).omit({
+export const insertDraftSchema = (createInsertSchema(drafts) as any).omit({
   id: true,
   createdAt: true,
   currentRound: true,
@@ -507,13 +560,15 @@ export const draftPlayers = pgTable("draft_players", {
   draftId: integer("draft_id").references(() => drafts.id, { onDelete: "cascade" }).notNull(),
   mlbPlayerId: integer("mlb_player_id").references(() => mlbPlayers.id).notNull(),
   status: varchar("status", { length: 20 }).notNull().default("available"), // 'available', 'drafted'
+  minorLeagueStatus: varchar("minor_league_status", { length: 8 }),
+  minorLeagueYears: integer("minor_league_years"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
   index("idx_draft_players_draft").on(table.draftId),
   index("idx_draft_players_mlb").on(table.mlbPlayerId),
 ]);
 
-export const insertDraftPlayerSchema = createInsertSchema(draftPlayers).omit({
+export const insertDraftPlayerSchema = (createInsertSchema(draftPlayers) as any).omit({
   id: true,
   createdAt: true,
   status: true,
@@ -527,12 +582,12 @@ export const draftRounds = pgTable("draft_rounds", {
   name: varchar("name", { length: 255 }).notNull(),
   isTeamDraft: boolean("is_team_draft").notNull().default(false),
   startTime: timestamp("start_time", { withTimezone: true }).notNull(),
-  pickDurationMinutes: integer("pick_duration_minutes").notNull().default(60),
+  pickDurationMinutes: integer("pick_duration_minutes").notNull().default(30),
 }, (table) => [
   index("idx_draft_rounds_draft").on(table.draftId),
 ]);
 
-export const insertDraftRoundSchema = createInsertSchema(draftRounds).omit({
+export const insertDraftRoundSchema = (createInsertSchema(draftRounds) as any).omit({
   id: true,
 });
 
@@ -548,7 +603,7 @@ export const draftOrder = pgTable("draft_order", {
   index("idx_draft_order_round").on(table.draftId, table.roundNumber),
 ]);
 
-export const insertDraftOrderSchema = createInsertSchema(draftOrder).omit({
+export const insertDraftOrderSchema = (createInsertSchema(draftOrder) as any).omit({
   id: true,
 });
 
@@ -578,7 +633,7 @@ export const draftPicks = pgTable("draft_picks", {
   uniqueIndex("uq_draft_selected_org_once").on(table.draftId, table.selectedOrgName),
 ]);
 
-export const insertDraftPickSchema = createInsertSchema(draftPicks).omit({
+export const insertDraftPickSchema = (createInsertSchema(draftPicks) as any).omit({
   id: true,
   createdAt: true,
   madeAt: true,
@@ -598,7 +653,7 @@ export const autoDraftLists = pgTable("auto_draft_lists", {
   index("idx_auto_draft_lists_rank").on(table.draftId, table.userId, table.rank),
 ]);
 
-export const insertAutoDraftListSchema = createInsertSchema(autoDraftLists).omit({
+export const insertAutoDraftListSchema = (createInsertSchema(autoDraftLists) as any).omit({
   id: true,
 });
 
@@ -609,6 +664,10 @@ export const leagueRosterAssignments = pgTable("league_roster_assignments", {
   userId: varchar("user_id").references(() => users.id).notNull(),
   mlbPlayerId: integer("mlb_player_id").references(() => mlbPlayers.id).notNull(),
   rosterType: varchar("roster_type", { length: 10 }).notNull(), // 'mlb', 'milb', 'draft'
+  contractStatus: varchar("contract_status", { length: 80 }),
+  salary2026: real("salary_2026"),
+  minorLeagueStatus: varchar("minor_league_status", { length: 8 }),
+  minorLeagueYears: integer("minor_league_years"),
   season: integer("season").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
@@ -616,7 +675,7 @@ export const leagueRosterAssignments = pgTable("league_roster_assignments", {
   index("idx_roster_assignments_user").on(table.userId),
 ]);
 
-export const insertLeagueRosterAssignmentSchema = createInsertSchema(leagueRosterAssignments).omit({
+export const insertLeagueRosterAssignmentSchema = (createInsertSchema(leagueRosterAssignments) as any).omit({
   id: true,
   createdAt: true,
 });
@@ -626,7 +685,9 @@ export const mlbPlayers = pgTable("mlb_players", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   mlbId: integer("mlb_id").unique().notNull(),
   fullName: varchar("full_name", { length: 255 }).notNull(),
+  fullFmlName: varchar("full_fml_name", { length: 255 }),
   firstName: varchar("first_name", { length: 128 }),
+  middleName: varchar("middle_name", { length: 128 }),
   lastName: varchar("last_name", { length: 128 }),
   primaryPosition: varchar("primary_position", { length: 10 }),
   positionName: varchar("position_name", { length: 50 }),
@@ -644,6 +705,27 @@ export const mlbPlayers = pgTable("mlb_players", {
   isActive: boolean("is_active").default(true),
   hadHittingStats: boolean("had_hitting_stats").default(false),
   hadPitchingStats: boolean("had_pitching_stats").default(false),
+  hittingAtBats: integer("hitting_at_bats").default(0),
+  hittingWalks: integer("hitting_walks").default(0),
+  hittingSingles: integer("hitting_singles").default(0),
+  hittingDoubles: integer("hitting_doubles").default(0),
+  hittingTriples: integer("hitting_triples").default(0),
+  hittingHomeRuns: integer("hitting_home_runs").default(0),
+  hittingAvg: real("hitting_avg"),
+  hittingObp: real("hitting_obp"),
+  hittingSlg: real("hitting_slg"),
+  hittingOps: real("hitting_ops"),
+  pitchingGames: integer("pitching_games").default(0),
+  pitchingGamesStarted: integer("pitching_games_started").default(0),
+  pitchingStrikeouts: integer("pitching_strikeouts").default(0),
+  pitchingWalks: integer("pitching_walks").default(0),
+  pitchingHits: integer("pitching_hits").default(0),
+  pitchingHomeRuns: integer("pitching_home_runs").default(0),
+  pitchingEra: real("pitching_era"),
+  pitchingInningsPitched: real("pitching_innings_pitched").default(0),
+  hittingGamesStarted: integer("hitting_games_started").default(0),
+  hittingPlateAppearances: integer("hitting_plate_appearances").default(0),
+  isTwoWayQualified: boolean("is_two_way_qualified").default(false),
   season: integer("season").notNull(),
   lastSyncedAt: timestamp("last_synced_at").defaultNow(),
 }, (table) => [
@@ -652,7 +734,7 @@ export const mlbPlayers = pgTable("mlb_players", {
   index("idx_mlb_players_sport_level").on(table.sportLevel),
 ]);
 
-export const insertMlbPlayerSchema = createInsertSchema(mlbPlayers).omit({
+export const insertMlbPlayerSchema = (createInsertSchema(mlbPlayers) as any).omit({
   id: true,
   lastSyncedAt: true,
 });
@@ -700,6 +782,9 @@ export type InsertBidBundleItem = z.infer<typeof insertBidBundleItemSchema>;
 
 export type EmailOptOut = typeof emailOptOuts.$inferSelect;
 export type InsertEmailOptOut = z.infer<typeof insertEmailOptOutSchema>;
+
+export type TeamOwnershipInvite = typeof teamOwnershipInvites.$inferSelect;
+export type InsertTeamOwnershipInvite = z.infer<typeof insertTeamOwnershipInviteSchema>;
 
 export type MlbPlayer = typeof mlbPlayers.$inferSelect;
 export type InsertMlbPlayer = z.infer<typeof insertMlbPlayerSchema>;
@@ -771,3 +856,5 @@ export type InsertAutoDraftList = z.infer<typeof insertAutoDraftListSchema>;
 export type AutoDraftListWithPlayer = AutoDraftList & {
   player: MlbPlayer;
 };
+
+

@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cbl
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cbl"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    image: node:22
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace
+      - app_node_modules:/workspace/node_modules
+    env_file:
+      - .env.docker
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -lc "if [ ! -d node_modules/drizzle-kit ]; then npm ci; fi &&
+              npm run db:push -- --force &&
+              npx tsx server/index.ts"
+    ports:
+      - "5000:5000"
+
+volumes:
+  pgdata:
+  app_node_modules:

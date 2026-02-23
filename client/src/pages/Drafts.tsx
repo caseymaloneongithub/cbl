@@ -4,11 +4,12 @@ import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import type { DraftWithDetails } from "@shared/schema";
 import { ListOrdered, CheckCircle, Play, Settings } from "lucide-react";
 
 export default function Drafts() {
-  const { selectedLeagueId } = useLeague();
+  const { selectedLeagueId, currentLeague } = useLeague();
   const [, navigate] = useLocation();
 
   const { data: drafts, isLoading } = useQuery<DraftWithDetails[]>({
@@ -41,6 +42,7 @@ export default function Drafts() {
           Drafts
         </h1>
         <p className="text-muted-foreground">View and participate in your league's drafts.</p>
+        <p className="text-sm text-muted-foreground mt-1">League: {currentLeague?.name || "Not selected"} (ID {selectedLeagueId || "?"})</p>
       </div>
 
       {isLoading ? (
@@ -53,8 +55,7 @@ export default function Drafts() {
           {drafts.map(draft => (
             <Card
               key={draft.id}
-              className="cursor-pointer hover-elevate"
-              onClick={() => navigate(`/draft/${draft.id}`)}
+              className="hover-elevate"
               data-testid={`card-draft-${draft.id}`}
             >
               <CardContent className="flex items-center justify-between gap-4 flex-wrap py-4">
@@ -70,6 +71,14 @@ export default function Drafts() {
                   <span data-testid={`text-player-count-${draft.id}`}>{draft.playerCount} players</span>
                   <span data-testid={`text-pick-count-${draft.id}`}>{draft.pickCount} picks</span>
                   <span data-testid={`text-team-count-${draft.id}`}>{draft.teamCount} teams</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigate(`/draft/${draft.id}`)}
+                    data-testid={`button-open-draft-${draft.id}`}
+                  >
+                    Open Draft
+                  </Button>
                 </div>
               </CardContent>
             </Card>

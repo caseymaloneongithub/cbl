@@ -38,12 +38,50 @@ import {
 function MlbPlayerSync() {
   const { toast } = useToast();
   const [syncSeason, setSyncSeason] = useState(new Date().getFullYear() - 1);
+
+  const toCount = (value: unknown): number => {
+    if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+    if (typeof value === "string") {
+      const parsed = Number.parseInt(value, 10);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    if (value && typeof value === "object") {
+      const record = value as Record<string, unknown>;
+      if ("count" in record) return toCount(record.count);
+      if ("total" in record) return toCount(record.total);
+    }
+    return 0;
+  };
   
   const { data: status, isLoading: loadingStatus } = useQuery<{
     total: number;
-    byLevel: Record<string, number>;
+    season: number;
+    twoWayQualified: number;
+    byLevel: Record<string, { total: number; hitters: number; pitchers: number; twoWayQualified: number }>;
   }>({
-    queryKey: ["/api/admin/mlb-players/status"],
+    queryKey: ["/api/admin/mlb-players/status", String(syncSeason)],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/mlb-players/status?season=${syncSeason}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch MLB player status");
+      const raw = await res.json();
+      const levels = ["MLB", "AAA", "AA", "High-A", "Single-A", "Rookie"];
+      const byLevel: Record<string, { total: number; hitters: number; pitchers: number; twoWayQualified: number }> = {};
+      for (const level of levels) {
+        const levelRaw = (raw?.byLevel?.[level] ?? {}) as Record<string, unknown>;
+        byLevel[level] = {
+          total: toCount(levelRaw.total ?? raw?.byLevel?.[level]),
+          hitters: toCount(levelRaw.hitters),
+          pitchers: toCount(levelRaw.pitchers),
+          twoWayQualified: toCount(levelRaw.twoWayQualified),
+        };
+      }
+      return {
+        total: toCount(raw?.total),
+        season: toCount(raw?.season),
+        twoWayQualified: toCount(raw?.twoWayQualified),
+        byLevel,
+      };
+    },
   });
 
   const syncMutation = useMutation({
@@ -118,9 +156,12 @@ function MlbPlayerSync() {
           {["MLB", "AAA", "AA", "High-A", "Single-A", "Rookie"].map((level) => (
             <div key={level} className="text-center p-3 rounded-md bg-muted/50">
               <div className="text-lg font-semibold" data-testid={`text-mlb-${level.toLowerCase()}`}>
-                {(status.byLevel[level] || 0).toLocaleString()}
+                {(status.byLevel[level]?.total || 0).toLocaleString()}
               </div>
               <div className="text-xs text-muted-foreground">{level}</div>
+              <div className="text-[10px] text-muted-foreground mt-1">
+                H {status.byLevel[level]?.hitters || 0} | P {status.byLevel[level]?.pitchers || 0} | 2W {status.byLevel[level]?.twoWayQualified || 0}
+              </div>
             </div>
           ))}
         </div>
@@ -569,7 +610,7 @@ export default function SuperAdmin() {
               MLB Player Database
             </CardTitle>
             <CardDescription>
-              Sync affiliated baseball players from the MLB API (MLB, AAA, AA, Rookie excl. DSL)
+              Sync affiliated pro players from the MLB API by season (MLB, AAA, AA, High-A, Single-A, Rookie excl. DSL). Two-way = 20+ IP and 10+ PA.
             </CardDescription>
           </div>
         </CardHeader>

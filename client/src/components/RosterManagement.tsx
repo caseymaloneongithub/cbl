@@ -1,9 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -39,9 +41,11 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatAffiliatedTeamLabel } from "@/lib/teamDisplay";
+import { isUncardedOnMlbRoster } from "@/lib/playerCarding";
 import { useToast } from "@/hooks/use-toast";
 import type { MlbPlayer, LeagueMember, League } from "@shared/schema";
-import { Search, UserPlus, Trash2, ArrowRightLeft, Loader2, Users, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
+import { Search, UserPlus, Trash2, ArrowRightLeft, Loader2, Users, ChevronLeft, ChevronRight, AlertTriangle, Download, FileSpreadsheet } from "lucide-react";
 
 interface RosterAssignment {
   id: number;
@@ -66,30 +70,189 @@ interface RosterManagementProps {
   members: LeagueMember[];
   isCommissioner: boolean;
   rosterLevel?: "mlb" | "milb";
+  showOnboardingTools?: boolean;
+  onboardingScope?: "mlb" | "milb";
 }
 
-export default function RosterManagement({ leagueId, league, members, isCommissioner, rosterLevel }: RosterManagementProps) {
+interface ReconciliationCandidate {
+  mlbApiId: number;
+  fullName: string;
+  age: number | null;
+  currentTeamName: string | null;
+  parentOrgName: string | null;
+  sportLevel: string;
+  lastActiveSeason?: number | null;
+  score: number;
+}
+
+interface ReconciliationRow {
+  rowNum: number;
+  playerName: string;
+  teamAbbreviation: string;
+  rosterType: "mlb" | "milb" | "draft";
+  ageHint?: number | null;
+  mlbTeamHint?: string | null;
+  orgHint?: string | null;
+  fangraphsId?: string | null;
+  resolutionHint?: string | null;
+  duplicateConflictKey?: string | null;
+  duplicateTeamOptions?: Array<{
+    userId: string;
+    teamAbbreviation: string;
+    rowNums: number[];
+  }>;
+  candidates: ReconciliationCandidate[];
+}
+
+interface CsvUploadResult {
+  processed: number;
+  created: number;
+  errors: string[];
+  warnings: string[];
+  unresolvedCount: number;
+  cutCount: number;
+  middleNamesUpdated: number;
+}
+
+interface LatestReconciliationResponse {
+  source: string;
+  rosterType?: "mlb" | "milb" | "draft";
+  processed: number;
+  created: number;
+  unresolvedCount: number;
+  errors?: string[];
+  csvData?: string | null;
+  persistedCutRows?: number[];
+  unresolved: ReconciliationRow[];
+}
+
+interface ReconciliationProgressResponse {
+  leagueId: number;
+  season: number;
+  rosterType?: "mlb" | "milb" | "draft";
+  updatedAt: string;
+  running: boolean;
+  processed: number;
+  totalRows: number;
+  percent: number;
+  stage: "matching" | "applying" | "awaiting_resolution" | "importing" | "completed" | "error";
+  message?: string | null;
+}
+
+type ReconciliationAction = "idle" | "upload" | "rerun" | "apply" | "save";
+
+interface DuplicateMlbAssignment {
+  assignmentId: number;
+  userId: string;
+  teamName: string | null;
+  teamAbbreviation: string | null;
+  createdAt?: string | null;
+}
+
+interface DuplicateMlbPlayerRecord {
+  mlbPlayerId: number;
+  mlbApiId: number | null;
+  playerName: string;
+  assignments: DuplicateMlbAssignment[];
+}
+
+interface DuplicateMlbAssignmentsResponse {
+  leagueId: number;
+  season: number;
+  rosterType: "mlb";
+  duplicatePlayerCount: number;
+  duplicateAssignmentCount: number;
+  duplicates: DuplicateMlbPlayerRecord[];
+}
+
+export default function RosterManagement({ leagueId, league, members, isCommissioner, rosterLevel, showOnboardingTools = false, onboardingScope }: RosterManagementProps) {
   const { toast } = useToast();
   const [season] = useState(2025);
   const [selectedTeamId, setSelectedTeamId] = useState<string>("all");
   const [selectedRosterType, setSelectedRosterType] = useState<string>(rosterLevel || "all");
   const [rosterSearch, setRosterSearch] = useState("");
   const [faSearch, setFaSearch] = useState("");
-  const [faLevel, setFaLevel] = useState<string>(rosterLevel === "mlb" ? "MLB" : rosterLevel === "milb" ? "minors" : "all");
+  const [faLevel, setFaLevel] = useState<string>(rosterLevel === "mlb" ? "MLB" : rosterLevel === "milb" ? "MiLB" : "all");
   const [faPage, setFaPage] = useState(0);
   const FA_PAGE_SIZE = 50;
+  const [csvUploadText, setCsvUploadText] = useState("");
+  const [csvDefaultRosterType, setCsvDefaultRosterType] = useState<"mlb" | "milb">(
+    onboardingScope || (rosterLevel === "mlb" ? "mlb" : "milb"),
+  );
 
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [assignPlayer, setAssignPlayer] = useState<MlbPlayer | null>(null);
   const [assignUserId, setAssignUserId] = useState("");
   const [assignRosterType, setAssignRosterType] = useState("mlb");
+  const [unresolvedRows, setUnresolvedRows] = useState<ReconciliationRow[]>([]);
+  const [resolutionMap, setResolutionMap] = useState<Record<string, string>>({});
+  const [duplicateTeamResolutionMap, setDuplicateTeamResolutionMap] = useState<Record<string, string>>({});
+  const [cutMap, setCutMap] = useState<Record<string, boolean>>({});
+  const [confirmedRowMap, setConfirmedRowMap] = useState<Record<string, boolean>>({});
+  const [confirmedDuplicateConflictMap, setConfirmedDuplicateConflictMap] = useState<Record<string, string>>({});
+  const [lastCsvUploadResult, setLastCsvUploadResult] = useState<CsvUploadResult | null>(null);
+  const [hydratedFromLatest, setHydratedFromLatest] = useState(false);
+  const [isReconciling, setIsReconciling] = useState(false);
+  const [reconciliationAction, setReconciliationAction] = useState<ReconciliationAction>("idle");
+  const reconciliationScope = useMemo(() => {
+    if (showOnboardingTools && onboardingScope) return onboardingScope;
+    if (showOnboardingTools) return csvDefaultRosterType;
+    return (rosterLevel === "mlb" || rosterLevel === "milb") ? rosterLevel : csvDefaultRosterType;
+  }, [showOnboardingTools, rosterLevel, csvDefaultRosterType, onboardingScope]);
+  const reconciliationDraftStorageKey = useMemo(
+    () => `cbl.reconcileDraft.${leagueId}.${season}.${reconciliationScope}`,
+    [leagueId, season, reconciliationScope],
+  );
+  const reconciliationCsvStorageKey = useMemo(
+    () => `cbl.reconcileCsv.${leagueId}.${season}.${reconciliationScope}`,
+    [leagueId, season, reconciliationScope],
+  );
+  const normalizeCsvForHash = (text: string) =>
+    String(text || "")
+      .replace(/\r\n/g, "\n")
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .join("\n")
+      .trim();
+  const hashText = (text: string) => {
+    const normalized = normalizeCsvForHash(text);
+    let hash = 0;
+    for (let i = 0; i < normalized.length; i++) {
+      hash = ((hash << 5) - hash + normalized.charCodeAt(i)) | 0;
+    }
+    return String(hash);
+  };
+  const isTemplateLikeCsv = (rawCsv: string) => {
+    const normalized = String(rawCsv || "").toLowerCase();
+    if (!normalized.trim()) return false;
+    const hasExampleProspect = normalized.includes("example prospect");
+    const hasShoheiTemplate = normalized.includes("shohei ohtani");
+    const lines = normalized.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    return lines.length <= 6 && hasExampleProspect && hasShoheiTemplate;
+  };
 
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const [moveAssignment, setMoveAssignment] = useState<RosterAssignment | null>(null);
   const [moveRosterType, setMoveRosterType] = useState("");
   const [moveUserId, setMoveUserId] = useState("");
+  const [tradeDialogOpen, setTradeDialogOpen] = useState(false);
+  const [tradeTeamAUserId, setTradeTeamAUserId] = useState("");
+  const [tradeTeamBUserId, setTradeTeamBUserId] = useState("");
+  const [tradeTeamAAssignmentIds, setTradeTeamAAssignmentIds] = useState<number[]>([]);
+  const [tradeTeamBAssignmentIds, setTradeTeamBAssignmentIds] = useState<number[]>([]);
 
-  const activeMembers = members.filter(m => !m.isArchived);
+  const activeMembers = useMemo(
+    () =>
+      members
+        .filter((m) => !m.isArchived)
+        .slice()
+        .sort((a, b) => {
+          const aKey = (a.teamName || a.teamAbbreviation || a.userId).toLowerCase();
+          const bKey = (b.teamName || b.teamAbbreviation || b.userId).toLowerCase();
+          return aKey.localeCompare(bKey);
+        }),
+    [members],
+  );
 
   const { data: rosterData, isLoading: loadingRoster } = useQuery<{
     assignments: RosterAssignment[];
@@ -165,6 +328,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
       toast({ title: "Player removed from roster" });
       queryClient.invalidateQueries({ queryKey: ["/api/leagues", leagueId, "roster-assignments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/leagues", leagueId, "unassigned-players"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues", leagueId, "roster-assignments", "duplicates", season, reconciliationScope] });
     },
     onError: (error: any) => {
       toast({ title: "Failed to remove", description: error.message, variant: "destructive" });
@@ -185,12 +349,612 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
     },
   });
 
+  const scopeLabel = reconciliationScope.toUpperCase();
+  const latestReconciliationQuery = useQuery<LatestReconciliationResponse | null>({
+    queryKey: ["/api/leagues", leagueId, "roster-reconciliation", "latest", reconciliationScope],
+    queryFn: async () => {
+      const res = await fetch(`/api/leagues/${leagueId}/roster-reconciliation/latest?rosterType=${encodeURIComponent(reconciliationScope)}`, { credentials: "include" });
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error("Failed to load latest unresolved rows");
+      return res.json();
+    },
+    enabled: isCommissioner && showOnboardingTools,
+    retry: false,
+  });
+  const reconciliationProgressQuery = useQuery<ReconciliationProgressResponse | null>({
+    queryKey: ["/api/leagues", leagueId, "roster-reconciliation", "progress", reconciliationScope],
+    queryFn: async () => {
+      const res = await fetch(`/api/leagues/${leagueId}/roster-reconciliation/progress?rosterType=${encodeURIComponent(reconciliationScope)}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load reconciliation progress");
+      return res.json();
+    },
+    enabled: isCommissioner && showOnboardingTools,
+    retry: false,
+    refetchInterval: (query) => {
+      const data = query.state.data as ReconciliationProgressResponse | null | undefined;
+      if (isReconciling || data?.running) return 1000;
+      return false;
+    },
+  });
+  const duplicateAssignmentsQuery = useQuery<DuplicateMlbAssignmentsResponse>({
+    queryKey: ["/api/leagues", leagueId, "roster-assignments", "duplicates", season, reconciliationScope],
+    queryFn: async () => {
+      const res = await fetch(`/api/leagues/${leagueId}/roster-assignments/duplicates?season=${season}&rosterType=${encodeURIComponent(reconciliationScope)}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load duplicate assignments");
+      return res.json();
+    },
+    enabled: isCommissioner && showOnboardingTools,
+    retry: false,
+  });
+  const resetReconciliationScopeMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", `/api/leagues/${leagueId}/roster-reconciliation/reset`, {
+        rosterType: reconciliationScope,
+        season,
+      });
+    },
+    onSuccess: () => {
+      setCsvUploadText("");
+      setUnresolvedRows([]);
+      setResolutionMap({});
+      setDuplicateTeamResolutionMap({});
+      setCutMap({});
+      setConfirmedRowMap({});
+      setConfirmedDuplicateConflictMap({});
+      setLastCsvUploadResult(null);
+      setHydratedFromLatest(false);
+      localStorage.removeItem(reconciliationDraftStorageKey);
+      localStorage.removeItem(reconciliationCsvStorageKey);
+      latestReconciliationQuery.refetch();
+      reconciliationProgressQuery.refetch();
+      toast({ title: `${scopeLabel} reconciliation reset` });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to reset reconciliation", description: error.message, variant: "destructive" });
+    },
+  });
+
+  useEffect(() => {
+    if (hydratedFromLatest) return;
+    if (!latestReconciliationQuery.isFetchedAfterMount) return;
+    if (lastCsvUploadResult) return;
+    if (unresolvedRows.length > 0) return;
+    const latest = latestReconciliationQuery.data;
+    if (!latest) return;
+    if (isTemplateLikeCsv(String(latest.csvData || ""))) {
+      setHydratedFromLatest(true);
+      setLastCsvUploadResult(null);
+      setUnresolvedRows([]);
+      setResolutionMap({});
+      setDuplicateTeamResolutionMap({});
+      setCutMap({});
+      setConfirmedRowMap({});
+      setConfirmedDuplicateConflictMap({});
+      toast({
+        title: "Template snapshot ignored",
+        description: "Latest reconciliation state contains sample template rows. Upload your real CSV to continue.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const unresolved = Array.isArray(latest.unresolved) ? latest.unresolved : [];
+    const latestErrors = Array.isArray(latest.errors) ? latest.errors : [];
+    if (unresolved.length === 0 && latestErrors.length === 0) return;
+    const incomingCsvData = (!csvUploadText.trim() && latest.csvData) ? String(latest.csvData) : csvUploadText;
+    if (!csvUploadText.trim() && latest.csvData) setCsvUploadText(latest.csvData);
+    const incomingCsvHash = hashText(String(incomingCsvData || "").trim());
+    const initialMap: Record<string, string> = {};
+    for (const row of unresolved) {
+      if (row.candidates?.[0]?.mlbApiId) {
+        initialMap[String(row.rowNum)] = String(row.candidates[0].mlbApiId);
+      }
+    }
+    let storedResolutionMap: Record<string, string> = {};
+    let storedDuplicateTeamResolutionMap: Record<string, string> = {};
+    let storedCutMap: Record<string, boolean> = {};
+    const unresolvedRowNums = new Set(unresolved.map((r) => String(r.rowNum)));
+    const unresolvedConflictKeys = new Set(
+      unresolved
+        .map((r) => String(r.duplicateConflictKey || "").trim())
+        .filter(Boolean),
+    );
+    try {
+      const raw = localStorage.getItem(reconciliationDraftStorageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const filterStringMap = (value: unknown) => {
+          const out: Record<string, string> = {};
+          if (!value || typeof value !== "object") return out;
+          for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+            if (!unresolvedRowNums.has(String(k))) continue;
+            if (typeof v === "string") out[String(k)] = v;
+            else if (typeof v === "number" && Number.isFinite(v)) out[String(k)] = String(v);
+          }
+          return out;
+        };
+        const filterBooleanMap = (value: unknown) => {
+          const out: Record<string, boolean> = {};
+          if (!value || typeof value !== "object") return out;
+          for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+            if (!unresolvedRowNums.has(String(k))) continue;
+            out[String(k)] = v === true;
+          }
+          return out;
+        };
+        const sameLeagueSeason =
+          Number(parsed?.leagueId) === Number(leagueId) &&
+          Number(parsed?.season) === Number(season) &&
+          String(parsed?.scope || "") === String(reconciliationScope);
+        const sameCsv = String(parsed?.csvHash || "") === incomingCsvHash;
+        if (sameLeagueSeason && (sameCsv || unresolvedRowNums.size > 0)) {
+          storedResolutionMap = filterStringMap(parsed?.resolutionMap);
+          const duplicateMapRaw = parsed?.duplicateTeamResolutionMap;
+          if (duplicateMapRaw && typeof duplicateMapRaw === "object") {
+            for (const [k, v] of Object.entries(duplicateMapRaw as Record<string, unknown>)) {
+              if (!unresolvedConflictKeys.has(String(k))) continue;
+              if (typeof v === "string" && v.trim()) storedDuplicateTeamResolutionMap[String(k)] = v;
+            }
+          }
+          storedCutMap = filterBooleanMap(parsed?.cutMap);
+        }
+      }
+    } catch {
+      // Ignore bad local draft state.
+    }
+    const persistedCutsFromServer: Record<string, boolean> = {};
+    for (const rowNum of Array.isArray(latest.persistedCutRows) ? latest.persistedCutRows : []) {
+      const numericRowNum = Number(rowNum);
+      if (Number.isInteger(numericRowNum) && numericRowNum > 0) {
+        persistedCutsFromServer[String(numericRowNum)] = true;
+      }
+    }
+    const mergedCutMap: Record<string, boolean> = { ...persistedCutsFromServer, ...storedCutMap };
+    // Server unresolved rows are source of truth; do not re-hide rows from stale local confirmations.
+    const mergedConfirmedMap: Record<string, boolean> = {};
+    const visibleUnresolved = unresolved;
+    setUnresolvedRows(visibleUnresolved);
+    setResolutionMap({ ...initialMap, ...storedResolutionMap });
+    setDuplicateTeamResolutionMap(storedDuplicateTeamResolutionMap);
+    setCutMap(mergedCutMap);
+    setConfirmedRowMap(mergedConfirmedMap);
+    setLastCsvUploadResult((prev) => prev ?? ({
+      processed: Number(latest.processed || 0),
+      created: Number(latest.created || 0),
+      errors: latestErrors,
+      warnings: [],
+      unresolvedCount: Number(latest.unresolvedCount || unresolved.length),
+      cutCount: Object.keys(mergedCutMap).filter((rowNum) => !!mergedCutMap[rowNum]).length,
+      middleNamesUpdated: 0,
+    }));
+    setHydratedFromLatest(true);
+  }, [
+    hydratedFromLatest,
+    latestReconciliationQuery.data,
+    latestReconciliationQuery.isFetchedAfterMount,
+    csvUploadText,
+    reconciliationDraftStorageKey,
+    lastCsvUploadResult,
+    unresolvedRows.length,
+  ]);
+
+  useEffect(() => {
+    const csvHash = hashText(csvUploadText.trim());
+    const hasDraftState =
+      Object.keys(resolutionMap).length > 0 ||
+      Object.keys(duplicateTeamResolutionMap).length > 0 ||
+      Object.keys(cutMap).some((rowNum) => !!cutMap[rowNum]) ||
+      Object.keys(confirmedRowMap).some((rowNum) => !!confirmedRowMap[rowNum]);
+    if (!hasDraftState) {
+      localStorage.removeItem(reconciliationDraftStorageKey);
+      return;
+    }
+    const payload = {
+      leagueId,
+      season,
+      scope: reconciliationScope,
+      csvHash,
+      resolutionMap,
+      duplicateTeamResolutionMap,
+      cutMap,
+      confirmedRowMap,
+      updatedAt: new Date().toISOString(),
+    };
+    localStorage.setItem(reconciliationDraftStorageKey, JSON.stringify(payload));
+  }, [csvUploadText, resolutionMap, duplicateTeamResolutionMap, cutMap, confirmedRowMap, reconciliationDraftStorageKey]);
+
+  useEffect(() => {
+    if (!showOnboardingTools) return;
+    try {
+      const scopedCsv = localStorage.getItem(reconciliationCsvStorageKey);
+      setCsvUploadText(scopedCsv || "");
+    } catch {
+      setCsvUploadText("");
+    }
+  }, [showOnboardingTools, reconciliationCsvStorageKey]);
+
+  useEffect(() => {
+    if (!showOnboardingTools) return;
+    const trimmed = csvUploadText.trim();
+    if (!trimmed) {
+      localStorage.removeItem(reconciliationCsvStorageKey);
+      return;
+    }
+    localStorage.setItem(reconciliationCsvStorageKey, csvUploadText);
+  }, [showOnboardingTools, reconciliationCsvStorageKey, csvUploadText]);
+
+  const handleReloadLatestReconciliation = () => {
+    // Force re-hydration from latest server snapshot.
+    setHydratedFromLatest(false);
+    setUnresolvedRows([]);
+    setResolutionMap({});
+    setDuplicateTeamResolutionMap({});
+    setCutMap({});
+    setConfirmedRowMap({});
+    setConfirmedDuplicateConflictMap({});
+    setLastCsvUploadResult(null);
+    queryClient.invalidateQueries({ queryKey: ["/api/leagues", leagueId, "roster-reconciliation", "latest", reconciliationScope] });
+    latestReconciliationQuery.refetch();
+  };
+
+  useEffect(() => {
+    if (!showOnboardingTools) return;
+    if (onboardingScope) {
+      setCsvDefaultRosterType(onboardingScope);
+      return;
+    }
+    // Switching MLB/MiLB upload mode should switch reconciliation scope and reload scoped state.
+    setHydratedFromLatest(false);
+    setUnresolvedRows([]);
+    setResolutionMap({});
+    setDuplicateTeamResolutionMap({});
+    setCutMap({});
+    setConfirmedRowMap({});
+    setConfirmedDuplicateConflictMap({});
+    setLastCsvUploadResult(null);
+  }, [showOnboardingTools, reconciliationScope, onboardingScope]);
+
+  const tradeMutation = useMutation({
+    mutationFn: async (payload: {
+      season: number;
+      teamAUserId: string;
+      teamBUserId: string;
+      teamAAssignmentIds: number[];
+      teamBAssignmentIds: number[];
+    }) => {
+      const res = await apiRequest("POST", `/api/leagues/${leagueId}/roster-assignments/trade`, payload);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: "Trade Completed",
+        description: `${data.movedFromA || 0} moved from Team A, ${data.movedFromB || 0} moved from Team B`,
+      });
+      setTradeDialogOpen(false);
+      setTradeTeamAAssignmentIds([]);
+      setTradeTeamBAssignmentIds([]);
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues", leagueId, "roster-assignments"] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Trade Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const uploadRosterCsvMutation = useMutation({
+    onMutate: () => {
+      setIsReconciling(true);
+    },
+    mutationFn: async (payload?: {
+      resolutions?: Record<string, number>;
+      duplicateTeamResolutions?: Record<string, string>;
+      cuts?: number[];
+      action?: ReconciliationAction;
+    }) => {
+      const action = payload?.action || "upload";
+      const resolutions = payload?.resolutions;
+      const cuts = payload?.cuts ?? Object.entries(cutMap)
+        .filter(([, isCut]) => isCut)
+        .map(([rowNum]) => Number(rowNum))
+        .filter((rowNum) => Number.isInteger(rowNum) && rowNum > 0);
+      const duplicateTeamResolutions =
+        payload?.duplicateTeamResolutions ?? duplicateTeamResolutionMap;
+      const response = await apiRequest("POST", `/api/leagues/${leagueId}/roster-assignments/upload-csv`, {
+        csvData: csvUploadText,
+        season,
+        defaultRosterType: csvDefaultRosterType,
+        operation: action,
+        assumePageScope: !!onboardingScope,
+        resolutions,
+        duplicateTeamResolutions,
+        cuts,
+      });
+      return response.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues", leagueId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues"] });
+      if (data.requiresResolution && Array.isArray(data.unresolved)) {
+        // We are already handling fresh server response; prevent stale latest-snapshot hydration.
+        setHydratedFromLatest(true);
+        const unresolvedRowsData = (data.unresolved as ReconciliationRow[]).filter(
+          (row) => row.rosterType === reconciliationScope,
+        );
+        const isApplyResult = reconciliationAction === "apply";
+        const isSaveResult = reconciliationAction === "save";
+        const confirmedSnapshot = (isApplyResult || isSaveResult) ? {} : { ...confirmedRowMap };
+        const visibleUnresolvedRows = unresolvedRowsData.filter((row) => !confirmedSnapshot[String(row.rowNum)]);
+        const unresolvedCount = visibleUnresolvedRows.length;
+        setLastCsvUploadResult({
+          processed: Number(data.processed || 0),
+          created: Number(data.created || 0),
+          errors: Array.isArray(data.errors) ? data.errors : [],
+          warnings: Array.isArray(data.warnings) ? data.warnings : [],
+          unresolvedCount,
+          cutCount: Number(data.cutCount || 0),
+          middleNamesUpdated: Number(data.middleNamesUpdated || 0),
+        });
+        const nextPersistedCuts: Record<string, boolean> = {};
+        for (const rowNum of Array.isArray(data.persistedCutRows) ? data.persistedCutRows : []) {
+          const numericRowNum = Number(rowNum);
+          if (Number.isInteger(numericRowNum) && numericRowNum > 0) {
+            nextPersistedCuts[String(numericRowNum)] = true;
+          }
+        }
+        setUnresolvedRows(visibleUnresolvedRows);
+        const initialMap: Record<string, string> = {};
+        const duplicateInitialMap: Record<string, string> = {};
+        for (const row of unresolvedRowsData) {
+          if (row.candidates?.[0]?.mlbApiId) {
+            initialMap[String(row.rowNum)] = String(row.candidates[0].mlbApiId);
+          }
+          if (row.duplicateConflictKey && row.duplicateTeamOptions?.length) {
+            const preferred = row.duplicateTeamOptions.find((o) => o.teamAbbreviation === row.teamAbbreviation);
+            if (preferred) duplicateInitialMap[row.duplicateConflictKey] = preferred.userId;
+          }
+        }
+        setResolutionMap((prev) => ({ ...initialMap, ...prev }));
+        setDuplicateTeamResolutionMap((prev) => ({ ...duplicateInitialMap, ...prev }));
+        setCutMap((prev) => ({ ...nextPersistedCuts, ...prev }));
+        if (isApplyResult) {
+          // Re-validate from server after apply: server is source of truth for remaining unresolved rows.
+          setConfirmedRowMap({});
+          setConfirmedDuplicateConflictMap({});
+        }
+        if (unresolvedCount > 0) {
+          toast({ title: "Review Needed", description: `${unresolvedCount} rows need commissioner confirmation before import.` });
+        } else if (isSaveResult) {
+          toast({ title: "Saved", description: "Confirmed reconciliation saved. Continue confirming rows, then apply to import." });
+        } else {
+          toast({ title: "Fix CSV Rows", description: "No players were imported. Correct the row errors and upload again.", variant: "destructive" });
+        }
+        return;
+      }
+      setLastCsvUploadResult({
+        processed: Number(data.processed || 0),
+        created: Number(data.created || 0),
+        errors: Array.isArray(data.errors) ? data.errors : [],
+        warnings: Array.isArray(data.warnings) ? data.warnings : [],
+        unresolvedCount: 0,
+        cutCount: Number(data.cutCount || 0),
+        middleNamesUpdated: Number(data.middleNamesUpdated || 0),
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues", leagueId, "roster-assignments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues", leagueId, "unassigned-players"] });
+      const parts = [`${data.created || 0} assigned`];
+      if ((data.cutCount || 0) > 0) parts.push(`${data.cutCount} cut`);
+      if (data.middleNamesUpdated > 0) parts.push(`${data.middleNamesUpdated} middle names saved`);
+      if (data.errors?.length) parts.push(`${data.errors.length} errors`);
+      if (data.warnings?.length) parts.push(`${data.warnings.length} warnings`);
+      toast({ title: "CSV Upload Complete", description: parts.join(", ") });
+      setUnresolvedRows([]);
+      setResolutionMap({});
+      setDuplicateTeamResolutionMap({});
+      setCutMap({});
+      setConfirmedRowMap({});
+      setConfirmedDuplicateConflictMap({});
+      // Finalize completed; keep current in-memory result and refresh latest snapshot in background.
+      setHydratedFromLatest(true);
+      latestReconciliationQuery.refetch();
+      if (data.errors?.length) {
+        toast({ title: "CSV Errors", description: data.errors.slice(0, 3).join(" | "), variant: "destructive" });
+      }
+      if (data.warnings?.length) {
+        toast({ title: "Roster Limit Warnings", description: data.warnings.slice(0, 3).join(" | ") });
+      }
+      if ((data.created || 0) > 0) {
+        setCsvUploadText("");
+      }
+    },
+    onError: (error: any) => {
+      toast({ title: "CSV Upload Failed", description: error.message, variant: "destructive" });
+    },
+    onSettled: () => {
+      setIsReconciling(false);
+      setReconciliationAction("idle");
+      reconciliationProgressQuery.refetch();
+    },
+  });
+  const runReconciliationUpload = (
+    action: ReconciliationAction,
+    resolutions?: Record<string, number>,
+    options?: { duplicateTeamResolutions?: Record<string, string>; cuts?: number[] },
+  ) => {
+    // During active upload/rerun/apply, never auto-hydrate from cached latest snapshots.
+    setHydratedFromLatest(true);
+    if (action === "upload" || action === "rerun") {
+      setUnresolvedRows([]);
+      setResolutionMap({});
+      setDuplicateTeamResolutionMap({});
+      setCutMap({});
+      setConfirmedRowMap({});
+      setConfirmedDuplicateConflictMap({});
+      setLastCsvUploadResult(null);
+      localStorage.removeItem(reconciliationDraftStorageKey);
+    }
+    setReconciliationAction(action);
+    uploadRosterCsvMutation.mutate({
+      resolutions,
+      action,
+      duplicateTeamResolutions: options?.duplicateTeamResolutions,
+      cuts: options?.cuts,
+    });
+  };
+
   const filteredAssignments = useMemo(() => {
     if (!rosterData?.assignments) return [];
     if (!rosterSearch) return rosterData.assignments;
     const q = rosterSearch.toLowerCase();
     return rosterData.assignments.filter(a => a.player.fullName.toLowerCase().includes(q));
   }, [rosterData?.assignments, rosterSearch]);
+
+  const parsedUploadErrors = useMemo(() => {
+    if (!lastCsvUploadResult?.errors?.length) return [];
+    return lastCsvUploadResult.errors.map((err) => {
+      const match = /^Row\s+(\d+):\s*(.+)$/i.exec(err);
+      return {
+        rowNum: match ? Number(match[1]) : null,
+        reason: match ? match[2] : err,
+        raw: err,
+      };
+    });
+  }, [lastCsvUploadResult?.errors]);
+
+  const numericResolutionMap = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const [rowNum, value] of Object.entries(resolutionMap)) {
+      if (cutMap[rowNum]) continue;
+      const id = Number(value);
+      if (Number.isInteger(id) && id > 0) out[rowNum] = id;
+    }
+    return out;
+  }, [resolutionMap, cutMap]);
+  const progressPayload = reconciliationProgressQuery.data;
+  const progressActive = Boolean(isReconciling || progressPayload?.running);
+  const progressProcessed = Number(progressPayload?.processed || 0);
+  const progressTotal = Number(progressPayload?.totalRows || 0);
+  const progressPercent = progressTotal > 0
+    ? Math.max(0, Math.min(100, Math.round((progressProcessed / progressTotal) * 100)))
+    : Number(progressPayload?.percent || 0);
+  const selectedCutCount = useMemo(
+    () => Object.values(cutMap).filter((v) => v === true).length,
+    [cutMap],
+  );
+  const reconciliationUnresolvedCount = unresolvedRows.length;
+  const readyToImportCount = Math.max(
+    0,
+    Number(lastCsvUploadResult?.processed || 0) - reconciliationUnresolvedCount - selectedCutCount,
+  );
+  const hideFinalTotalsWhileProcessing = progressActive && (
+    progressPayload?.stage === "matching" ||
+    progressPayload?.stage === "applying" ||
+    progressPayload?.stage === "importing"
+  );
+  const confirmedRowCount = useMemo(
+    () => Object.keys(confirmedRowMap).filter((rowNum) => confirmedRowMap[rowNum]).length,
+    [confirmedRowMap],
+  );
+  const confirmedNumericResolutionMap = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const [rowNum, confirmed] of Object.entries(confirmedRowMap)) {
+      if (!confirmed) continue;
+      if (cutMap[rowNum]) continue;
+      const id = Number(resolutionMap[rowNum]);
+      if (Number.isInteger(id) && id > 0) out[rowNum] = id;
+    }
+    return out;
+  }, [confirmedRowMap, cutMap, resolutionMap]);
+  const confirmedDuplicateTeamResolutionMap = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const [rowNum, confirmed] of Object.entries(confirmedRowMap)) {
+      if (!confirmed) continue;
+      const conflictKey = confirmedDuplicateConflictMap[rowNum];
+      if (!conflictKey) continue;
+      const selectedUserId = String(duplicateTeamResolutionMap[conflictKey] || "").trim();
+      if (selectedUserId) out[conflictKey] = selectedUserId;
+    }
+    return out;
+  }, [confirmedRowMap, confirmedDuplicateConflictMap, duplicateTeamResolutionMap]);
+  const confirmedCutRows = useMemo(() => {
+    return Object.entries(confirmedRowMap)
+      .filter(([rowNum, confirmed]) => confirmed && !!cutMap[rowNum])
+      .map(([rowNum]) => Number(rowNum))
+      .filter((rowNum) => Number.isInteger(rowNum) && rowNum > 0);
+  }, [confirmedRowMap, cutMap]);
+  const selectedCandidateRowsByMlbId = useMemo(() => {
+    const out = new Map<number, number[]>();
+    const push = (mlbApiId: number, rowNum: number) => {
+      const existing = out.get(mlbApiId) || [];
+      existing.push(rowNum);
+      out.set(mlbApiId, existing);
+    };
+    for (const row of unresolvedRows) {
+      const rowKey = String(row.rowNum);
+      if (cutMap[rowKey]) continue;
+      if (row.duplicateConflictKey) continue;
+      const id = Number(resolutionMap[rowKey]);
+      if (Number.isInteger(id) && id > 0) push(id, row.rowNum);
+    }
+    for (const [rowKey, confirmed] of Object.entries(confirmedRowMap)) {
+      if (!confirmed || cutMap[rowKey]) continue;
+      const rowNum = Number(rowKey);
+      if (!Number.isInteger(rowNum) || rowNum <= 0) continue;
+      const id = Number(resolutionMap[rowKey]);
+      if (Number.isInteger(id) && id > 0) push(id, rowNum);
+    }
+    return out;
+  }, [unresolvedRows, resolutionMap, confirmedRowMap, cutMap]);
+  const hideReconciliationCardDuringProcessing = progressActive && (
+    progressPayload?.stage === "matching" ||
+    progressPayload?.stage === "applying" ||
+    progressPayload?.stage === "importing"
+  );
+  const phaseState = useMemo(() => {
+    type Phase = "matching" | "reconciliation" | "finalize";
+    const phases: Phase[] = ["matching", "reconciliation", "finalize"];
+    let current: Phase = "matching";
+    const stage = progressPayload?.stage;
+    if (stage === "awaiting_resolution") current = "reconciliation";
+    else if (stage === "importing" || stage === "completed" || stage === "applying") current = "finalize";
+    else if (!progressActive) {
+      if (unresolvedRows.length > 0 || confirmedRowCount > 0) current = "reconciliation";
+      else if (lastCsvUploadResult) current = "finalize";
+    }
+    const currentIndex = phases.indexOf(current);
+    return phases.map((phase, index) => ({
+      phase,
+      label: phase === "matching" ? "Matching" : phase === "reconciliation" ? "Reconciliation" : "Finalize",
+      status: index < currentIndex ? "done" : index === currentIndex ? "current" : "todo",
+    }));
+  }, [progressPayload?.stage, progressActive, unresolvedRows.length, confirmedRowCount, lastCsvUploadResult]);
+  const inReconciliationPhase = phaseState.some((p) => p.phase === "reconciliation" && p.status === "current");
+  const canConfirmRow = (row: ReconciliationRow) => {
+    if (cutMap[String(row.rowNum)]) return true;
+    if (row.duplicateConflictKey) {
+      const selectedUserId = String(duplicateTeamResolutionMap[row.duplicateConflictKey] || "").trim();
+      if (selectedUserId) return true;
+    }
+    const id = Number(resolutionMap[String(row.rowNum)]);
+    return Number.isInteger(id) && id > 0;
+  };
+  const handleConfirmRow = (row: ReconciliationRow) => {
+    const rowKey = String(row.rowNum);
+    if (!canConfirmRow(row)) {
+      toast({
+        title: "Resolve row first",
+        description: "Choose team/player, enter an MLB ID, or mark Cut before confirming this row.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setConfirmedRowMap((prev) => ({ ...prev, [rowKey]: true }));
+    if (row.duplicateConflictKey) {
+      setConfirmedDuplicateConflictMap((prev) => ({ ...prev, [rowKey]: row.duplicateConflictKey! }));
+    }
+    setUnresolvedRows((prev) => prev.filter((r) => r.rowNum !== row.rowNum));
+    toast({
+      title: "Confirmed",
+      description: "Row confirmed locally. Click Save Progress to persist, or keep confirming and apply when ready.",
+    });
+  };
 
   const teamCountMap = useMemo(() => {
     const map: Record<string, { mlb: number; milb: number; draft: number }> = {};
@@ -207,10 +971,156 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
   const totalAssigned = useMemo(() => {
     return Object.values(teamCountMap).reduce((sum, c) => sum + c.mlb + c.milb + c.draft, 0);
   }, [teamCountMap]);
+  const rosterSummaryTotals = useMemo(() => {
+    return activeMembers.reduce(
+      (acc, member) => {
+        const counts = teamCountMap[member.userId] || { mlb: 0, milb: 0, draft: 0 };
+        acc.mlb += counts.mlb;
+        acc.milb += counts.milb;
+        acc.draft += counts.draft;
+        return acc;
+      },
+      { mlb: 0, milb: 0, draft: 0 },
+    );
+  }, [activeMembers, teamCountMap]);
 
   const getMemberName = (userId: string) => {
     const m = members.find(m => m.userId === userId);
     return m?.teamName || m?.teamAbbreviation || userId;
+  };
+
+  const tradeTeamAAssignments = useMemo(() => {
+    if (!rosterData?.assignments || !tradeTeamAUserId) return [];
+    return rosterData.assignments.filter((a) => a.userId === tradeTeamAUserId);
+  }, [rosterData?.assignments, tradeTeamAUserId]);
+
+  const tradeTeamBAssignments = useMemo(() => {
+    if (!rosterData?.assignments || !tradeTeamBUserId) return [];
+    return rosterData.assignments.filter((a) => a.userId === tradeTeamBUserId);
+  }, [rosterData?.assignments, tradeTeamBUserId]);
+
+  const csvUploadTemplate = useMemo(() => {
+    const teamAbbr = (activeMembers[0]?.teamAbbreviation || "NYY").toUpperCase();
+    if (csvDefaultRosterType === "mlb") {
+      return `mlb_api_id,player_name,middle_name,team_abbreviation,roster_type,age,mlb_team,org,fangraphs_id,status,2026\n660271,Shohei Ohtani,,${teamAbbr},mlb,30,Los Angeles Dodgers,Dodgers,19755,ARB,45\n`;
+    }
+    return `mlb_api_id,last_name,first_name,team_abbreviation,roster_type,age,mlb_team,org,fangraphs_id,status,years,acquired\n,Prospect,Example James,${teamAbbr},milb,22,,Dodgers,12345,MH,0,D 2026\n`;
+  }, [activeMembers, csvDefaultRosterType]);
+
+  const csvUploadPreview = useMemo(() => {
+    const raw = csvUploadText.trim();
+    if (!raw) return null;
+    const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length < 2) return { error: "CSV must include a header and at least one data row." };
+    const detectDelimiter = (line: string) => {
+      const comma = (line.match(/,/g) || []).length;
+      const semicolon = (line.match(/;/g) || []).length;
+      const tab = (line.match(/\t/g) || []).length;
+      if (tab > comma && tab > semicolon) return "\t";
+      if (semicolon > comma) return ";";
+      return ",";
+    };
+    const delimiter = detectDelimiter(lines[0]);
+    const normalizeHeader = (rawHeader: string) =>
+      String(rawHeader || "")
+        .replace(/^\uFEFF/, "")
+        .replace(/^"+|"+$/g, "")
+        .trim()
+        .toLowerCase();
+    const headers = lines[0].split(delimiter).map((h) => normalizeHeader(h));
+    const mlbIdIdx = headers.findIndex((h) => ["mlb_api_id", "mlb_id", "mlbid", "player_id", "id"].includes(h));
+    const nameIdx = headers.findIndex((h) => ["player_name", "name", "player", "full_name", "player full name"].includes(h));
+    const firstNameIdx = headers.findIndex((h) => ["first_name", "first name", "firstname", "first", "fname"].includes(h));
+    const lastNameIdx = headers.findIndex((h) => ["last_name", "last name", "lastname", "last", "lname"].includes(h));
+    const abbrIdx = headers.findIndex((h) => ["team_abbreviation", "team_abbrev", "abbreviation", "team", "abbr", "cbl"].includes(h));
+    const rosterTypeIdx = headers.findIndex((h) => ["roster_type", "roster type", "type", "scope"].includes(h));
+    if ((mlbIdIdx === -1 && nameIdx === -1 && (firstNameIdx === -1 || lastNameIdx === -1)) || abbrIdx === -1) {
+      return { error: "Missing required columns. Include team abbreviation and either MLB API ID, player_name, or first_name + last_name." };
+    }
+    if (isTemplateLikeCsv(raw)) {
+      return { error: "Template rows detected (Example Prospect/Shohei Ohtani). Replace with real rows before uploading." };
+    }
+
+    const knownAbbr = new Set(activeMembers.map((m) => (m.teamAbbreviation || "").toUpperCase()).filter(Boolean));
+    const unknownTeams = new Set<string>();
+    let validRows = 0;
+    let invalidMlbIds = 0;
+    let missingValues = 0;
+    let invalidRosterTypes = 0;
+
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(delimiter).map((c) => c.trim());
+      const mlbRaw = mlbIdIdx >= 0 ? cols[mlbIdIdx] : "";
+      const firstNameRaw = firstNameIdx >= 0 ? cols[firstNameIdx] : "";
+      const lastNameRaw = lastNameIdx >= 0 ? cols[lastNameIdx] : "";
+      const nameRaw = nameIdx >= 0
+        ? cols[nameIdx]
+        : [firstNameRaw, lastNameRaw].filter(Boolean).join(" ").trim();
+      const abbrRaw = (cols[abbrIdx] || "").toUpperCase();
+      const rosterRaw = (rosterTypeIdx >= 0 ? cols[rosterTypeIdx] : csvDefaultRosterType).toLowerCase();
+      const rosterTypeValid = rosterRaw === "" || rosterRaw === "mlb" || rosterRaw === "milb" || rosterRaw === "draft";
+      if ((!mlbRaw && !nameRaw) || !abbrRaw) {
+        missingValues++;
+        continue;
+      }
+      if (mlbRaw) {
+        const mlbId = Number(mlbRaw);
+        if (!Number.isInteger(mlbId) || mlbId <= 0) {
+          invalidMlbIds++;
+          continue;
+        }
+      }
+      if (!knownAbbr.has(abbrRaw)) {
+        unknownTeams.add(abbrRaw);
+      }
+      if (!rosterTypeValid) {
+        invalidRosterTypes++;
+        continue;
+      }
+      validRows++;
+    }
+
+    return {
+      totalRows: lines.length - 1,
+      validRows,
+      invalidMlbIds,
+      missingValues,
+      invalidRosterTypes,
+      unknownTeams: Array.from(unknownTeams),
+    };
+  }, [csvUploadText, activeMembers, csvDefaultRosterType]);
+
+  const downloadTextFile = (filename: string, text: string) => {
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+  const downloadReconciliationAudit = async () => {
+    try {
+      const res = await fetch(
+        `/api/leagues/${leagueId}/roster-reconciliation/audit?rosterType=${encodeURIComponent(reconciliationScope)}&format=csv`,
+        { credentials: "include" },
+      );
+      if (!res.ok) throw new Error("Failed to download reconciliation audit report");
+      const blob = await res.blob();
+      const filename = `reconciliation-audit-${reconciliationScope}-${season}.csv`;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      toast({ title: "Download Failed", description: error.message, variant: "destructive" });
+    }
   };
 
   const getRosterTypeBadge = (type: string) => {
@@ -236,6 +1146,10 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
     setMoveDialogOpen(true);
   };
 
+  const parsedCsvUploadPreview = csvUploadPreview && !("error" in csvUploadPreview)
+    ? csvUploadPreview
+    : null;
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -255,7 +1169,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="text-total-unassigned">{faData?.total ?? "..."}</div>
-            <p className="text-xs text-muted-foreground">free agents + draft eligible</p>
+            <p className="text-xs text-muted-foreground">major/minor league free agents</p>
           </CardContent>
         </Card>
         <Card>
@@ -271,6 +1185,515 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
           </CardContent>
         </Card>
       </div>
+
+      {isCommissioner && showOnboardingTools && (
+        <Card id="reconciliation">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 flex-wrap">
+            <CardTitle>Commissioner CSV Upload ({scopeLabel} Scope)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Step 1: {onboardingScope ? `This page is locked to ${scopeLabel} scope.` : "Choose upload type (MiLB or MLB)."} Step 2: Load or download the template. Step 3: Fill rows using MLB API IDs or name columns (<code>player_name</code> or <code>first_name</code> + <code>last_name</code>) with team abbreviation. Optional: add <code>middle_name</code>, age/team hints, and MLB contract status + 2026 salary. Step 4: Upload and resolve every row until there are zero unresolved/errors.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              For MiLB onboarding, use <code>last_name</code> + <code>first_name</code>. The <code>first_name</code> field can include middle names (example: <code>Benjamin David</code>).
+            </p>
+            <p className="text-xs text-muted-foreground">
+              After each upload, review the "Reconciliation Summary" below for imported vs skipped rows and exact skip reasons. Missing <code>roster_type</code> defaults to <code>{reconciliationScope}</code>.
+            </p>
+            {!onboardingScope ? (
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  type="button"
+                  variant={csvDefaultRosterType === "milb" ? "default" : "outline"}
+                  onClick={() => setCsvDefaultRosterType("milb")}
+                  data-testid="button-upload-type-milb"
+                >
+                  MiLB Upload
+                </Button>
+                <Button
+                  type="button"
+                  variant={csvDefaultRosterType === "mlb" ? "default" : "outline"}
+                  onClick={() => setCsvDefaultRosterType("mlb")}
+                  data-testid="button-upload-type-mlb"
+                >
+                  MLB Upload
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Missing <code>roster_type</code> will default to <code>{csvDefaultRosterType}</code>.
+                </span>
+              </div>
+            ) : (
+              <div className="text-xs text-muted-foreground">
+                This page is locked to <code>{onboardingScope}</code> reconciliation scope.
+              </div>
+            )}
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button type="button" variant="outline" onClick={() => setCsvUploadText(csvUploadTemplate)} data-testid="button-load-roster-csv-template">
+                <FileSpreadsheet className="h-4 w-4 mr-2" />Load Template
+              </Button>
+              <Button type="button" variant="outline" onClick={() => downloadTextFile(`roster-assignment-template-${csvDefaultRosterType}.csv`, csvUploadTemplate)} data-testid="button-download-roster-csv-template">
+                <Download className="h-4 w-4 mr-2" />Download Template
+              </Button>
+            </div>
+            <Input
+              type="file"
+              accept=".csv,text/csv"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => setCsvUploadText(String(ev.target?.result || ""));
+                reader.readAsText(file);
+              }}
+              data-testid="input-roster-csv-file"
+            />
+            <Textarea
+              rows={6}
+              value={csvUploadText}
+              onChange={(e) => setCsvUploadText(e.target.value)}
+              placeholder={csvUploadTemplate}
+              data-testid="textarea-roster-csv"
+            />
+            {csvUploadPreview?.error && (
+              <p className="text-sm text-destructive" data-testid="text-roster-csv-error">{csvUploadPreview.error}</p>
+            )}
+            {!!parsedCsvUploadPreview && (
+              <div className="rounded-md border bg-muted/20 p-3 text-sm space-y-1" data-testid="roster-csv-preview">
+                <p><span className="font-medium">{parsedCsvUploadPreview.validRows}</span> valid rows out of {parsedCsvUploadPreview.totalRows}</p>
+                {parsedCsvUploadPreview.invalidMlbIds > 0 && <p className="text-muted-foreground">{parsedCsvUploadPreview.invalidMlbIds} rows have invalid MLB API IDs</p>}
+                {parsedCsvUploadPreview.missingValues > 0 && <p className="text-muted-foreground">{parsedCsvUploadPreview.missingValues} rows are missing required values</p>}
+                {parsedCsvUploadPreview.invalidRosterTypes > 0 && <p className="text-muted-foreground">{parsedCsvUploadPreview.invalidRosterTypes} rows use unsupported roster type values</p>}
+                {parsedCsvUploadPreview.unknownTeams.length > 0 && (
+                  <p className="text-destructive">
+                    Unknown team abbreviations: {parsedCsvUploadPreview.unknownTeams.slice(0, 10).join(", ")}
+                    {parsedCsvUploadPreview.unknownTeams.length > 10 ? "..." : ""}
+                  </p>
+                )}
+              </div>
+            )}
+            <Button
+              onClick={() => runReconciliationUpload("upload", undefined)}
+              disabled={uploadRosterCsvMutation.isPending || !csvUploadText.trim() || !!csvUploadPreview?.error}
+              data-testid="button-upload-roster-csv"
+            >
+              {uploadRosterCsvMutation.isPending && reconciliationAction === "upload"
+                ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Uploading...</>
+                : "Upload CSV Assignments"}
+            </Button>
+            {isCommissioner && (
+              <div className="rounded-md border border-amber-400/60 bg-amber-50/40 p-3 space-y-2" data-testid="roster-reconcile-load-latest">
+                <p className="text-sm">
+                  Active reconciliation scope: <span className="font-medium">{scopeLabel}</span>. Upload, re-run, apply, and latest-load actions only process this scope.
+                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleReloadLatestReconciliation}
+                    disabled={latestReconciliationQuery.isFetching}
+                    data-testid="button-load-latest-unresolved"
+                  >
+                    {latestReconciliationQuery.isFetching ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Loading...</> : "Reload Latest Reconciliation"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => runReconciliationUpload("rerun", undefined)}
+                    disabled={uploadRosterCsvMutation.isPending || !csvUploadText.trim() || !!csvUploadPreview?.error}
+                    data-testid="button-rerun-roster-matching"
+                  >
+                    {uploadRosterCsvMutation.isPending && reconciliationAction === "rerun"
+                      ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Re-running...</>
+                      : "Re-run Matching on Loaded CSV"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => resetReconciliationScopeMutation.mutate()}
+                    disabled={resetReconciliationScopeMutation.isPending || uploadRosterCsvMutation.isPending}
+                    data-testid="button-reset-reconciliation-scope"
+                  >
+                    {resetReconciliationScopeMutation.isPending
+                      ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Resetting...</>
+                      : "Reset This Scope"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={downloadReconciliationAudit}
+                    disabled={uploadRosterCsvMutation.isPending}
+                    data-testid="button-download-reconciliation-audit"
+                  >
+                    Download Audit Report
+                  </Button>
+                </div>
+              </div>
+            )}
+            {(lastCsvUploadResult || progressActive) && (
+              <div className="rounded-md border bg-muted/20 p-3 space-y-2" data-testid="roster-upload-reconciliation-summary">
+                <div className="flex items-center gap-3 text-xs" data-testid="reconciliation-phase-dots">
+                  {phaseState.map((p, idx) => (
+                    <div key={`phase-${p.phase}`} className="flex items-center gap-2">
+                      <span
+                        className={
+                          p.status === "done"
+                            ? "inline-block h-2.5 w-2.5 rounded-full bg-emerald-600"
+                            : p.status === "current"
+                              ? "inline-block h-2.5 w-2.5 rounded-full bg-blue-600 ring-2 ring-blue-200"
+                              : "inline-block h-2.5 w-2.5 rounded-full bg-slate-300"
+                        }
+                      />
+                      <span className={p.status === "current" ? "font-medium text-foreground" : "text-muted-foreground"}>
+                        {p.label}
+                      </span>
+                      {idx < phaseState.length - 1 ? <span className="text-muted-foreground">-</span> : null}
+                    </div>
+                  ))}
+                </div>
+                <div className="text-sm font-medium">
+                  Reconciliation Summary: {
+                    hideFinalTotalsWhileProcessing
+                      ? `Processing ${progressProcessed.toLocaleString()} / ${progressTotal.toLocaleString()} rows`
+                      : (lastCsvUploadResult ? `${lastCsvUploadResult.created} imported / ${lastCsvUploadResult.processed} rows` : "Running...")
+                  }
+                </div>
+                {progressActive && (
+                  <div className="text-xs text-muted-foreground flex items-center gap-2" data-testid="text-reconciliation-progress-live">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    {reconciliationAction === "apply" ? "Validating and importing confirmed mappings. " : ""}
+                    Processing {progressProcessed.toLocaleString()} / {progressTotal.toLocaleString()} rows ({progressPercent}%)
+                    {progressPayload?.message ? ` | ${progressPayload.message}` : ""}
+                  </div>
+                )}
+                <div className="text-xs text-muted-foreground">
+                  {hideFinalTotalsWhileProcessing ? (
+                    <>Rows are being evaluated. Imported/skipped totals will appear after processing completes.</>
+                  ) : ((reconciliationUnresolvedCount > 0 || confirmedRowCount > 0) || inReconciliationPhase) ? (
+                    <>
+                      Pending import: {readyToImportCount} rows
+                      {reconciliationUnresolvedCount > 0 ? ` | Needs manual resolution: ${reconciliationUnresolvedCount}` : ""}
+                      {confirmedRowCount > 0 ? ` | Confirmed: ${confirmedRowCount}` : ""}
+                      {selectedCutCount > 0 ? ` | Marked cut: ${selectedCutCount}` : ""}
+                    </>
+                  ) : lastCsvUploadResult ? (
+                    <>
+                      Skipped: {Math.max(0, lastCsvUploadResult.processed - lastCsvUploadResult.created)} rows
+                      {lastCsvUploadResult.unresolvedCount > 0 ? ` | Needs manual resolution: ${lastCsvUploadResult.unresolvedCount}` : ""}
+                      {lastCsvUploadResult.cutCount > 0 ? ` | Cut: ${lastCsvUploadResult.cutCount}` : ""}
+                      {lastCsvUploadResult.middleNamesUpdated > 0 ? ` | Middle names updated: ${lastCsvUploadResult.middleNamesUpdated}` : ""}
+                    </>
+                  ) : (
+                    <>Waiting for reconciliation result...</>
+                  )}
+                </div>
+                {lastCsvUploadResult && lastCsvUploadResult.errors.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-destructive">Skipped Row Reasons ({lastCsvUploadResult.errors.length})</p>
+                    <div className="max-h-36 overflow-y-auto rounded border bg-background p-2 text-xs">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="h-7 text-xs">Row</TableHead>
+                            <TableHead className="h-7 text-xs">Reason</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {parsedUploadErrors.map((err, idx) => (
+                            <TableRow key={`upload-error-${idx}`}>
+                              <TableCell className="py-1 text-destructive">{err.rowNum ?? "-"}</TableCell>
+                              <TableCell className="py-1 text-destructive">{err.reason}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Tip: fix these rows in your CSV (or add MLB IDs), then re-upload.
+                    </p>
+                  </div>
+                )}
+                {lastCsvUploadResult && lastCsvUploadResult.warnings.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium">Warnings ({lastCsvUploadResult.warnings.length})</p>
+                    <div className="max-h-24 overflow-y-auto rounded border bg-background p-2 text-xs text-muted-foreground">
+                      {lastCsvUploadResult.warnings.map((warning, idx) => (
+                        <div key={`upload-warning-${idx}`}>{warning}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            {isCommissioner && showOnboardingTools && (duplicateAssignmentsQuery.data?.duplicatePlayerCount || 0) > 0 && (
+              <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 space-y-2" data-testid="roster-duplicate-mlb-panel">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <p className="text-sm font-medium text-destructive">
+                    Duplicate {scopeLabel} assignments detected: {duplicateAssignmentsQuery.data?.duplicatePlayerCount ?? 0} players
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => duplicateAssignmentsQuery.refetch()}
+                    disabled={duplicateAssignmentsQuery.isFetching}
+                    data-testid="button-refresh-duplicate-mlb-panel"
+                  >
+                    {duplicateAssignmentsQuery.isFetching ? <><Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />Refreshing...</> : "Refresh"}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Duplicate assignments are blocked going forward. Remove incorrect assignments here, then continue reconciliation.
+                </p>
+                <div className="max-h-44 overflow-y-auto rounded border bg-background p-2">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="h-7 text-xs">Player</TableHead>
+                        <TableHead className="h-7 text-xs">Assigned Teams</TableHead>
+                        <TableHead className="h-7 text-xs">Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(duplicateAssignmentsQuery.data?.duplicates || []).map((dup) => (
+                        <TableRow key={`dup-mlb-${dup.mlbPlayerId}`}>
+                          <TableCell className="py-1 align-top">
+                            <div className="text-sm font-medium">{dup.playerName}</div>
+                            <div className="text-xs text-muted-foreground">{dup.mlbApiId ? `MLB ID ${dup.mlbApiId}` : "No MLB ID"}</div>
+                          </TableCell>
+                          <TableCell className="py-1 align-top">
+                            <div className="space-y-1">
+                              {dup.assignments.map((a, index) => (
+                                <div key={`dup-mlb-assignment-${a.assignmentId}`} className="text-xs">
+                                  {a.teamName || a.teamAbbreviation || a.userId}
+                                  {index === 0 ? " (keep)" : ""}
+                                </div>
+                              ))}
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-1 align-top">
+                            <div className="space-y-1">
+                              {dup.assignments.map((a, index) => (
+                                <Button
+                                  key={`button-remove-dup-mlb-${a.assignmentId}`}
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs"
+                                  disabled={removeMutation.isPending || index === 0}
+                                  onClick={() => removeMutation.mutate(a.assignmentId)}
+                                  data-testid={`button-remove-duplicate-mlb-${a.assignmentId}`}
+                                >
+                                  {index === 0 ? "Keep" : `Remove ${a.teamAbbreviation || a.teamName || a.userId}`}
+                                </Button>
+                              ))}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+            {!hideReconciliationCardDuringProcessing && (unresolvedRows.length > 0 || confirmedRowCount > 0) && (
+              <div className="rounded-md border border-amber-400/60 bg-amber-50/40 p-3 space-y-3" data-testid="roster-reconcile-panel">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <AlertTriangle className="h-4 w-4" />
+                  Roster Reconciliation Needed ({unresolvedRows.length} remaining{confirmedRowCount > 0 ? `, ${confirmedRowCount} confirmed` : ""})
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Confirm each mapped row to remove it from the list, then apply all confirmed rows to import. Apply re-validates the loaded CSV with your confirmed mappings/cuts; it does not clear your confirmations.
+                </p>
+                {unresolvedRows.length > 0 ? (
+                  <div className="max-h-72 overflow-y-auto border rounded-md">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Row</TableHead>
+                          <TableHead>Input</TableHead>
+                          <TableHead>Hints</TableHead>
+                          <TableHead>Choose Team</TableHead>
+                          <TableHead>Choose Player</TableHead>
+                          <TableHead>Manual MLB ID</TableHead>
+                          <TableHead>Cut</TableHead>
+                          <TableHead>Action</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {unresolvedRows.map((row) => (
+                          <TableRow key={`resolve-${row.rowNum}`}>
+                            <TableCell className="font-medium">{row.rowNum}</TableCell>
+                            <TableCell>
+                              <div className="text-sm font-medium">{row.playerName}</div>
+                              <div className="text-xs text-muted-foreground">{row.teamAbbreviation} | {row.rosterType.toUpperCase()}</div>
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {row.ageHint ? `Age ${row.ageHint}` : "No age hint"}
+                              {row.mlbTeamHint ? ` | Team ${row.mlbTeamHint}` : ""}
+                              {row.orgHint ? ` | Org ${row.orgHint}` : ""}
+                              {row.fangraphsId ? ` | FG ${row.fangraphsId}` : ""}
+                              {row.resolutionHint ? (
+                                <div className="mt-1 text-amber-700">{row.resolutionHint}</div>
+                              ) : null}
+                            </TableCell>
+                            <TableCell>
+                              {row.duplicateConflictKey && row.duplicateTeamOptions?.length ? (
+                                <Select
+                                  value={duplicateTeamResolutionMap[row.duplicateConflictKey] || ""}
+                                  onValueChange={(v) =>
+                                    setDuplicateTeamResolutionMap((prev) => ({ ...prev, [String(row.duplicateConflictKey)]: v }))
+                                  }
+                                  disabled={!!cutMap[String(row.rowNum)]}
+                                >
+                                  <SelectTrigger className="w-full">
+                                    <SelectValue placeholder="Choose team" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {row.duplicateTeamOptions.map((opt) => (
+                                      <SelectItem key={`${row.rowNum}-dup-team-${opt.userId}`} value={opt.userId}>
+                                        {opt.teamAbbreviation} (rows {opt.rowNums.join(", ")})
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Select
+                                value={resolutionMap[String(row.rowNum)] || ""}
+                                onValueChange={(v) => setResolutionMap((prev) => ({ ...prev, [String(row.rowNum)]: v }))}
+                                disabled={!!cutMap[String(row.rowNum)] || !!row.duplicateConflictKey}
+                              >
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Choose player" />
+                                </SelectTrigger>
+                                  <SelectContent>
+                                    {row.candidates.map((c) => (
+                                      <SelectItem key={`${row.rowNum}-${c.mlbApiId}`} value={String(c.mlbApiId)}>
+                                        {(() => {
+                                          const selectedRows = selectedCandidateRowsByMlbId.get(c.mlbApiId) || [];
+                                          const usedElsewhere = selectedRows.some((r) => r !== row.rowNum);
+                                          const selectedElsewhereText = usedElsewhere
+                                            ? ` * selected on row${selectedRows.filter((r) => r !== row.rowNum).length > 1 ? "s" : ""} ${selectedRows.filter((r) => r !== row.rowNum).join(", ")}`
+                                            : "";
+                                          return `${c.fullName} (${c.sportLevel})${c.lastActiveSeason ? ` | last played ${c.lastActiveSeason}` : ""} | ${formatAffiliatedTeamLabel({
+                                            currentTeamName: c.currentTeamName,
+                                            parentOrgName: c.parentOrgName,
+                                            sportLevel: c.sportLevel,
+                                            fallback: "No team",
+                                          })} | score ${c.score}${selectedElsewhereText}`;
+                                        })()}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                              </Select>
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                value={resolutionMap[String(row.rowNum)] || ""}
+                                onChange={(e) => {
+                                  const onlyDigits = e.target.value.replace(/\D/g, "");
+                                  setResolutionMap((prev) => ({ ...prev, [String(row.rowNum)]: onlyDigits }));
+                                }}
+                                placeholder={row.candidates.length ? "Optional override" : "Enter MLB ID"}
+                                className="h-8"
+                                data-testid={`input-reconcile-mlb-id-${row.rowNum}`}
+                                disabled={!!cutMap[String(row.rowNum)] || !!row.duplicateConflictKey}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Checkbox
+                                  checked={!!cutMap[String(row.rowNum)]}
+                                  onCheckedChange={(checked) => {
+                                    const isChecked = checked === true;
+                                    setCutMap((prev) => ({ ...prev, [String(row.rowNum)]: isChecked }));
+                                  }}
+                                />
+                                <span className="text-xs text-muted-foreground">Cut</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleConfirmRow(row)}
+                                disabled={uploadRosterCsvMutation.isPending || !canConfirmRow(row)}
+                                data-testid={`button-confirm-reconcile-row-${row.rowNum}`}
+                              >
+                                Confirm
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <div className="rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground">
+                    All listed rows are confirmed. Click apply to import confirmed resolutions/cuts.
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => runReconciliationUpload("apply", numericResolutionMap)}
+                    disabled={
+                      uploadRosterCsvMutation.isPending ||
+                      unresolvedRows.length > 0 ||
+                      (unresolvedRows.length === 0 && confirmedRowCount === 0)
+                    }
+                    data-testid="button-apply-roster-reconciliation"
+                  >
+                    {uploadRosterCsvMutation.isPending && reconciliationAction === "apply"
+                      ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Applying confirmed mappings...</>
+                      : `Apply Confirmed Resolutions/Cuts and Import${confirmedRowCount > 0 ? ` (${confirmedRowCount})` : ""}`}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => runReconciliationUpload("save", confirmedNumericResolutionMap, {
+                      duplicateTeamResolutions: confirmedDuplicateTeamResolutionMap,
+                      cuts: confirmedCutRows,
+                    })}
+                    disabled={uploadRosterCsvMutation.isPending || confirmedRowCount === 0}
+                    data-testid="button-save-roster-reconciliation-progress"
+                  >
+                    {uploadRosterCsvMutation.isPending && reconciliationAction === "save"
+                      ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>
+                      : `Save Progress${confirmedRowCount > 0 ? ` (${confirmedRowCount})` : ""}`}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => runReconciliationUpload("rerun", undefined)}
+                    disabled={uploadRosterCsvMutation.isPending || !csvUploadText.trim() || !!csvUploadPreview?.error}
+                    data-testid="button-reset-saved-reconciliation-progress"
+                  >
+                    Reset Saved Progress
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setUnresolvedRows([]);
+                      setResolutionMap({});
+                      setDuplicateTeamResolutionMap({});
+                      setCutMap({});
+                      setConfirmedRowMap({});
+                      setConfirmedDuplicateConflictMap({});
+                    }}
+                    disabled={uploadRosterCsvMutation.isPending}
+                  >
+                    Clear Review
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
@@ -313,6 +1736,15 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                     </TableRow>
                   );
                 })}
+                <TableRow data-testid="row-team-summary-totals">
+                  <TableCell className="font-semibold">Total</TableCell>
+                  <TableCell className="text-center font-semibold">{rosterSummaryTotals.mlb}</TableCell>
+                  <TableCell className="text-center font-semibold">{rosterSummaryTotals.milb}</TableCell>
+                  <TableCell className="text-center font-semibold">{rosterSummaryTotals.draft}</TableCell>
+                  <TableCell className="text-center font-semibold">
+                    {rosterSummaryTotals.mlb + rosterSummaryTotals.milb + rosterSummaryTotals.draft}
+                  </TableCell>
+                </TableRow>
               </TableBody>
             </Table>
           )}
@@ -356,6 +1788,25 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                   <SelectItem value="draft">Draft List</SelectItem>
                 </SelectContent>
               </Select>
+            )}
+            {isCommissioner && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const first = activeMembers[0]?.userId || "";
+                  const second = activeMembers.find((m) => m.userId !== first)?.userId || "";
+                  setTradeTeamAUserId(first);
+                  setTradeTeamBUserId(second);
+                  setTradeTeamAAssignmentIds([]);
+                  setTradeTeamBAssignmentIds([]);
+                  setTradeDialogOpen(true);
+                }}
+                data-testid="button-open-trade-dialog"
+              >
+                <ArrowRightLeft className="h-4 w-4 mr-1" />
+                Trade
+              </Button>
             )}
             {isCommissioner && (
               <AlertDialog>
@@ -407,12 +1858,21 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                 <TableBody>
                   {filteredAssignments.map(a => (
                     <TableRow key={a.id} data-testid={`row-assignment-${a.id}`}>
-                      <TableCell className="font-medium">{a.player.fullName}</TableCell>
+                      <TableCell className="font-medium">
+                        {a.player.fullName}
+                        {isUncardedOnMlbRoster(a.player, a.rosterType) ? " (uncarded)" : ""}
+                      </TableCell>
                       <TableCell>{a.player.primaryPosition || "-"}</TableCell>
                       <TableCell>{a.player.sportLevel}</TableCell>
                       <TableCell>{getMemberName(a.userId)}</TableCell>
                       <TableCell>{getRosterTypeBadge(a.rosterType)}</TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{a.player.currentTeamName || "-"}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {formatAffiliatedTeamLabel({
+                          currentTeamName: a.player.currentTeamName,
+                          parentOrgName: a.player.parentOrgName,
+                          sportLevel: a.player.sportLevel,
+                        })}
+                      </TableCell>
                       {isCommissioner && (
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
@@ -467,11 +1927,6 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                 <SelectItem value="all">All Levels</SelectItem>
                 <SelectItem value="MLB">MLB Free Agents</SelectItem>
                 <SelectItem value="MiLB">MiLB Free Agents</SelectItem>
-                <SelectItem value="AAA">AAA</SelectItem>
-                <SelectItem value="AA">AA</SelectItem>
-                <SelectItem value="High-A">High-A</SelectItem>
-                <SelectItem value="Single-A">Single-A</SelectItem>
-                <SelectItem value="Rookie">Rookie</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -491,7 +1946,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                     <TableRow>
                       <TableHead>Player</TableHead>
                       <TableHead>Position</TableHead>
-                      <TableHead>Type</TableHead>
+                      <TableHead>FA Class</TableHead>
                       <TableHead>Level</TableHead>
                       <TableHead>MLB Team</TableHead>
                       <TableHead>B/T</TableHead>
@@ -504,16 +1959,20 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                         <TableCell className="font-medium">{p.fullName}</TableCell>
                         <TableCell>{p.primaryPosition || "-"}</TableCell>
                         <TableCell>
-                          {p.hadHittingStats && p.hadPitchingStats ? (
-                            <Badge variant="outline">Two-Way</Badge>
-                          ) : p.hadPitchingStats ? (
-                            <Badge variant="secondary">Pitcher</Badge>
+                          {p.sportLevel === "MLB" ? (
+                            <Badge variant="default">MLB FA</Badge>
                           ) : (
-                            <Badge variant="default">Hitter</Badge>
+                            <Badge variant="secondary">MiLB FA</Badge>
                           )}
                         </TableCell>
                         <TableCell>{p.sportLevel}</TableCell>
-                        <TableCell className="text-muted-foreground text-sm">{p.currentTeamName || "-"}</TableCell>
+                        <TableCell className="text-muted-foreground text-sm">
+                          {formatAffiliatedTeamLabel({
+                            currentTeamName: p.currentTeamName,
+                            parentOrgName: p.parentOrgName,
+                            sportLevel: p.sportLevel,
+                          })}
+                        </TableCell>
                         <TableCell className="text-muted-foreground text-sm">{p.batSide || "-"}/{p.throwHand || "-"}</TableCell>
                         {isCommissioner && (
                           <TableCell className="text-right">
@@ -563,6 +2022,148 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
         </CardContent>
       </Card>
 
+      <Dialog open={tradeDialogOpen} onOpenChange={setTradeDialogOpen}>
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>Commissioner Trade</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Select two teams and choose any MLB or MiLB players from each side. The trade executes atomically.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Team A</label>
+                <Select
+                  value={tradeTeamAUserId}
+                  onValueChange={(v) => {
+                    setTradeTeamAUserId(v);
+                    if (v === tradeTeamBUserId) {
+                      const alt = activeMembers.find((m) => m.userId !== v)?.userId || "";
+                      setTradeTeamBUserId(alt);
+                    }
+                    setTradeTeamAAssignmentIds([]);
+                  }}
+                >
+                  <SelectTrigger data-testid="select-trade-team-a">
+                    <SelectValue placeholder="Select Team A" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeMembers.map((m) => (
+                      <SelectItem key={`trade-a-${m.userId}`} value={m.userId}>
+                        {m.teamName || m.teamAbbreviation || m.userId}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="max-h-72 overflow-y-auto border rounded-md p-2 space-y-1">
+                  {tradeTeamAAssignments.length === 0 ? (
+                    <p className="text-sm text-muted-foreground p-2">No players available for Team A</p>
+                  ) : tradeTeamAAssignments.map((a) => (
+                    <label key={`trade-a-assign-${a.id}`} className="flex items-start gap-2 p-1 rounded hover:bg-muted/40">
+                      <Checkbox
+                        checked={tradeTeamAAssignmentIds.includes(a.id)}
+                        onCheckedChange={(checked) => {
+                          setTradeTeamAAssignmentIds((prev) =>
+                            checked ? [...prev, a.id] : prev.filter((id) => id !== a.id),
+                          );
+                        }}
+                      />
+                      <div className="text-sm">
+                        <div className="font-medium">
+                          {a.player.fullName}
+                          {isUncardedOnMlbRoster(a.player, a.rosterType) ? " (uncarded)" : ""}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {a.player.primaryPosition || "-"} | {a.rosterType.toUpperCase()} | {a.player.sportLevel}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Team B</label>
+                <Select
+                  value={tradeTeamBUserId}
+                  onValueChange={(v) => {
+                    setTradeTeamBUserId(v);
+                    if (v === tradeTeamAUserId) {
+                      const alt = activeMembers.find((m) => m.userId !== v)?.userId || "";
+                      setTradeTeamAUserId(alt);
+                    }
+                    setTradeTeamBAssignmentIds([]);
+                  }}
+                >
+                  <SelectTrigger data-testid="select-trade-team-b">
+                    <SelectValue placeholder="Select Team B" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeMembers.map((m) => (
+                      <SelectItem key={`trade-b-${m.userId}`} value={m.userId}>
+                        {m.teamName || m.teamAbbreviation || m.userId}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="max-h-72 overflow-y-auto border rounded-md p-2 space-y-1">
+                  {tradeTeamBAssignments.length === 0 ? (
+                    <p className="text-sm text-muted-foreground p-2">No players available for Team B</p>
+                  ) : tradeTeamBAssignments.map((a) => (
+                    <label key={`trade-b-assign-${a.id}`} className="flex items-start gap-2 p-1 rounded hover:bg-muted/40">
+                      <Checkbox
+                        checked={tradeTeamBAssignmentIds.includes(a.id)}
+                        onCheckedChange={(checked) => {
+                          setTradeTeamBAssignmentIds((prev) =>
+                            checked ? [...prev, a.id] : prev.filter((id) => id !== a.id),
+                          );
+                        }}
+                      />
+                      <div className="text-sm">
+                        <div className="font-medium">
+                          {a.player.fullName}
+                          {isUncardedOnMlbRoster(a.player, a.rosterType) ? " (uncarded)" : ""}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {a.player.primaryPosition || "-"} | {a.rosterType.toUpperCase()} | {a.player.sportLevel}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="rounded-md border bg-muted/20 p-2 text-sm">
+              Trading <span className="font-medium">{tradeTeamAAssignmentIds.length}</span> from Team A and{" "}
+              <span className="font-medium">{tradeTeamBAssignmentIds.length}</span> from Team B.
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTradeDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => tradeMutation.mutate({
+                season,
+                teamAUserId: tradeTeamAUserId,
+                teamBUserId: tradeTeamBUserId,
+                teamAAssignmentIds: tradeTeamAAssignmentIds,
+                teamBAssignmentIds: tradeTeamBAssignmentIds,
+              })}
+              disabled={
+                tradeMutation.isPending ||
+                !tradeTeamAUserId ||
+                !tradeTeamBUserId ||
+                tradeTeamAUserId === tradeTeamBUserId ||
+                (tradeTeamAAssignmentIds.length === 0 && tradeTeamBAssignmentIds.length === 0)
+              }
+              data-testid="button-confirm-trade"
+            >
+              {tradeMutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+              Execute Trade
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -573,7 +2174,12 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
               <div>
                 <p className="font-medium">{assignPlayer.fullName}</p>
                 <p className="text-sm text-muted-foreground">
-                  {assignPlayer.primaryPosition} | {assignPlayer.sportLevel} | {assignPlayer.currentTeamName || "No team"}
+                  {assignPlayer.primaryPosition} | {assignPlayer.sportLevel} | {formatAffiliatedTeamLabel({
+                    currentTeamName: assignPlayer.currentTeamName,
+                    parentOrgName: assignPlayer.parentOrgName,
+                    sportLevel: assignPlayer.sportLevel,
+                    fallback: "No team",
+                  })}
                 </p>
               </div>
               <div className="space-y-2">
@@ -656,7 +2262,10 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
           {moveAssignment && (
             <div className="space-y-4">
               <div>
-                <p className="font-medium">{moveAssignment.player.fullName}</p>
+                <p className="font-medium">
+                  {moveAssignment.player.fullName}
+                  {isUncardedOnMlbRoster(moveAssignment.player, moveAssignment.rosterType) ? " (uncarded)" : ""}
+                </p>
                 <p className="text-sm text-muted-foreground">
                   Currently: {getMemberName(moveAssignment.userId)} - {moveAssignment.rosterType.toUpperCase()}
                 </p>

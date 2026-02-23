@@ -8,7 +8,10 @@
     "build": "tsx script/build.ts",
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "seed:full-prod:generate": "node script/generate-full-prod-seed.cjs cbl_database_dump.sql script/sql/seed-full-prod.sql",
+    "seed:full-prod:reset": "bash script/reset-full-prod-test.sh",
+    "test:draft:full": "powershell -ExecutionPolicy Bypass -File script/draft-full-test.ps1"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

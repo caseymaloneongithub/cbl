@@ -23,7 +23,7 @@ export default function CommissionerDraft() {
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newPickDuration, setNewPickDuration] = useState(60);
+  const [newPickDuration, setNewPickDuration] = useState(30);
   const [newTeamDraftRound, setNewTeamDraftRound] = useState("");
 
   const { data: drafts, isLoading: loadingDrafts } = useQuery<DraftWithDetails[]>({
@@ -51,7 +51,7 @@ export default function CommissionerDraft() {
       toast({ title: "Draft Created" });
       setCreateDialogOpen(false);
       setNewName("");
-      setNewPickDuration(60);
+      setNewPickDuration(30);
       setNewTeamDraftRound("");
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", selectedLeagueId] });
       navigate(`/commissioner/drafts/${data.id}`);

@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLeague } from "@/hooks/useLeague";
 import { useToast } from "@/hooks/use-toast";
-import { useParams, useLocation, Link } from "wouter";
+import { useParams, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,23 +24,24 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { formatAffiliatedTeamLabel } from "@/lib/teamDisplay";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatInTimeZone } from "date-fns-tz";
 import type { DraftWithDetails, DraftPlayerWithDetails, DraftPickWithDetails, DraftRound, DraftOrder, User, LeagueMember } from "@shared/schema";
 import {
-  ArrowLeft, Plus, Loader2, Trash2, Play, Settings, Upload, Users, ListOrdered,
-  FileSpreadsheet, Clock, X, UserPlus,
+  ArrowLeft, Loader2, Trash2, Play, Settings, Upload, Users, ListOrdered,
+  FileSpreadsheet, Clock, X, UserPlus, Download,
 } from "lucide-react";
 
 export default function CommissionerDraftDetail() {
   const { draftId: draftIdParam } = useParams<{ draftId: string }>();
   const draftId = parseInt(draftIdParam || "0");
-  const { selectedLeagueId } = useLeague();
+  const { selectedLeagueId, currentLeague } = useLeague();
   const { toast } = useToast();
   const [, navigate] = useLocation();
 
   const [editName, setEditName] = useState("");
-  const [editPickDuration, setEditPickDuration] = useState(60);
+  const [editPickDuration, setEditPickDuration] = useState(30);
   const [editTeamDraftRound, setEditTeamDraftRound] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [playerIdsText, setPlayerIdsText] = useState("");
@@ -52,7 +53,7 @@ export default function CommissionerDraftDetail() {
   const [commPickRosterType, setCommPickRosterType] = useState<"mlb" | "milb">("milb");
   const [playerSearchText, setPlayerSearchText] = useState("");
 
-  const { data: drafts } = useQuery<DraftWithDetails[]>({
+  const { data: drafts, isLoading: draftsLoading } = useQuery<DraftWithDetails[]>({
     queryKey: ["/api/drafts", selectedLeagueId],
     queryFn: async () => {
       const res = await fetch(`/api/drafts?leagueId=${selectedLeagueId}`, { credentials: "include" });
@@ -144,14 +145,30 @@ export default function CommissionerDraftDetail() {
   });
 
   const uploadPlayers = useMutation({
-    mutationFn: async (mlbIds: number[]) => {
-      const res = await apiRequest("POST", `/api/drafts/${draftId}/players/upload`, { mlbIds });
+    mutationFn: async ({
+      mlbIds,
+      middleNamesByMlbId,
+      minorLeagueStatusByMlbId,
+      minorLeagueYearsByMlbId,
+    }: {
+      mlbIds: number[];
+      middleNamesByMlbId: Record<number, string>;
+      minorLeagueStatusByMlbId: Record<number, string>;
+      minorLeagueYearsByMlbId: Record<number, number>;
+    }) => {
+      const res = await apiRequest("POST", `/api/drafts/${draftId}/players/upload`, {
+        mlbIds,
+        middleNamesByMlbId,
+        minorLeagueStatusByMlbId,
+        minorLeagueYearsByMlbId,
+      });
       return res.json();
     },
     onSuccess: (data) => {
       const parts = [`${data.added} added`];
       if (data.alreadyInPool > 0) parts.push(`${data.alreadyInPool} already in pool`);
       if (data.notFound?.length > 0) parts.push(`${data.notFound.length} not found`);
+      if (data.middleNamesUpdated > 0) parts.push(`${data.middleNamesUpdated} middle names saved`);
       toast({ title: "Upload Complete", description: parts.join(", ") });
       setPlayerIdsText("");
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "players"] });
@@ -254,17 +271,159 @@ export default function CommissionerDraftDetail() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const playerIdAnalysis = useMemo(() => {
+    const rows = playerIdsText
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const hasHeader = rows.length > 0 && /mlb[_\s]?api[_\s]?id|mlb[_\s]?id|mlbid|player[_\s]?id|id/i.test(rows[0]);
+    const dataRows = hasHeader ? rows.slice(1) : rows;
+    const headerCols = hasHeader
+      ? rows[0].split(",").map((h) => h.trim().toLowerCase())
+      : [];
+    const idIdx = hasHeader
+      ? headerCols.findIndex((h) => ["mlb_api_id", "mlb_id", "mlbid", "player_id", "id"].includes(h))
+      : 0;
+    const middleIdx = hasHeader
+      ? headerCols.findIndex((h) => ["middle_name", "middlename", "middle"].includes(h))
+      : 1;
+    const statusIdx = hasHeader
+      ? headerCols.findIndex((h) => ["status", "minor_league_status", "milb_status"].includes(h))
+      : 2;
+    const yearsIdx = hasHeader
+      ? headerCols.findIndex((h) => ["years", "minor_league_years", "milb_years", "year"].includes(h))
+      : 3;
+    const statusYearsIdx = hasHeader
+      ? headerCols.findIndex((h) => ["status_year", "status_years", "milb_status_year"].includes(h))
+      : -1;
+    const validIds: number[] = [];
+    const invalidTokens: string[] = [];
+    const middleNamesByMlbId = new Map<number, string>();
+    const minorLeagueStatusByMlbId = new Map<number, string>();
+    const minorLeagueYearsByMlbId = new Map<number, number>();
+    const parseStatusToken = (value: string): string | null => {
+      const token = String(value || "").trim().toUpperCase();
+      if (!token) return null;
+      if (["MH", "MC", "FA"].includes(token)) return token;
+      const slash = /^([A-Z]{2,3})\s*\/\s*(\d+)$/.exec(token);
+      if (slash && ["MH", "MC", "FA"].includes(slash[1])) return slash[1];
+      return null;
+    };
+    const parseYearsToken = (value: string): number | null => {
+      const token = String(value || "").trim();
+      if (!token) return null;
+      const parsed = Number(token);
+      if (!Number.isInteger(parsed) || parsed < 0) return null;
+      return parsed;
+    };
+    const parseStatusYears = (value: string): { status: string | null; years: number | null } => {
+      const token = String(value || "").trim().toUpperCase();
+      const slash = /^([A-Z]{2,3})\s*\/\s*(\d+)$/.exec(token);
+      if (!slash) return { status: parseStatusToken(token), years: null };
+      return {
+        status: parseStatusToken(slash[1]),
+        years: parseYearsToken(slash[2]),
+      };
+    };
+    for (const row of dataRows) {
+      if (row.includes(",")) {
+        const cols = row.split(",").map((s) => s.trim());
+        const idToken = cols[Math.max(0, idIdx)] || "";
+        const middleName = middleIdx >= 0 ? (cols[middleIdx] || "") : "";
+        const statusToken = statusIdx >= 0 ? (cols[statusIdx] || "") : "";
+        const yearsToken = yearsIdx >= 0 ? (cols[yearsIdx] || "") : "";
+        const statusYearsToken = statusYearsIdx >= 0 ? (cols[statusYearsIdx] || "") : "";
+        if (/^\d+$/.test(idToken)) {
+          const id = Number(idToken);
+          validIds.push(id);
+          if (middleName) middleNamesByMlbId.set(id, middleName);
+          const parsedFromCombined = parseStatusYears(statusYearsToken);
+          const parsedStatus = parseStatusToken(statusToken) ?? parsedFromCombined.status;
+          const parsedYears = parseYearsToken(yearsToken) ?? parsedFromCombined.years;
+          if (parsedStatus) minorLeagueStatusByMlbId.set(id, parsedStatus);
+          if (parsedYears != null) minorLeagueYearsByMlbId.set(id, parsedYears);
+        } else {
+          invalidTokens.push(row);
+        }
+        continue;
+      }
+
+      const tokens = row
+        .split(/[\s,]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      for (const token of tokens) {
+        if (/^\d+$/.test(token)) {
+          validIds.push(Number(token));
+        } else {
+          invalidTokens.push(token);
+        }
+      }
+    }
+    const seen = new Set<number>();
+    const duplicateIds = new Set<number>();
+    for (const id of validIds) {
+      if (seen.has(id)) duplicateIds.add(id);
+      seen.add(id);
+    }
+    return {
+      totalTokens: dataRows.length,
+      validCount: validIds.length,
+      uniqueIds: Array.from(seen),
+      duplicateIds: Array.from(duplicateIds),
+      invalidTokens,
+      middleNamesByMlbId: Object.fromEntries(middleNamesByMlbId.entries()) as Record<number, string>,
+      minorLeagueStatusByMlbId: Object.fromEntries(minorLeagueStatusByMlbId.entries()) as Record<number, string>,
+      minorLeagueYearsByMlbId: Object.fromEntries(minorLeagueYearsByMlbId.entries()) as Record<number, number>,
+    };
+  }, [playerIdsText]);
+
+  const csvTemplateText = useMemo(() => {
+    const roundCount = Math.max(draftRounds?.length || 3, 1);
+    const headers = Array.from({ length: roundCount }, (_, i) => `Round ${i + 1}`);
+    const abbreviations = activeMembers
+      .map((m) => (m.user?.teamAbbreviation || "").toUpperCase().trim())
+      .filter(Boolean);
+    if (abbreviations.length === 0) {
+      return `${headers.join(",")}\n`;
+    }
+    const snakeOrder = [...abbreviations];
+    const reversed = [...abbreviations].reverse();
+    const rows = snakeOrder.map((_, rowIdx) =>
+      headers
+        .map((__, roundIdx) => (roundIdx % 2 === 0 ? snakeOrder[rowIdx] : reversed[rowIdx]))
+        .join(","),
+    );
+    return [headers.join(","), ...rows].join("\n");
+  }, [activeMembers, draftRounds]);
+
+  const playerIdTemplateText = useMemo(() => {
+    return "mlb_api_id,middle_name,status,years\n660271,,MH,0\n665742,James,MC,0\n592450,,MH,1";
+  }, []);
+
+  const downloadTextFile = (filename: string, text: string) => {
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const handleUploadPlayers = () => {
-    const ids = playerIdsText
-      .split(/[\s,]+/)
-      .map(s => s.trim())
-      .filter(s => /^\d+$/.test(s))
-      .map(Number);
-    if (ids.length === 0) {
+    if (playerIdAnalysis.uniqueIds.length === 0) {
       toast({ title: "No valid IDs", description: "Enter numeric MLB player IDs separated by commas or newlines.", variant: "destructive" });
       return;
     }
-    uploadPlayers.mutate(ids);
+    uploadPlayers.mutate({
+      mlbIds: playerIdAnalysis.uniqueIds,
+      middleNamesByMlbId: playerIdAnalysis.middleNamesByMlbId,
+      minorLeagueStatusByMlbId: playerIdAnalysis.minorLeagueStatusByMlbId,
+      minorLeagueYearsByMlbId: playerIdAnalysis.minorLeagueYearsByMlbId,
+    });
   };
 
   const csvPreview = useMemo(() => {
@@ -275,14 +434,20 @@ export default function CommissionerDraftDetail() {
     const abbrSet = new Set(activeMembers.map(m => (m.user?.teamAbbreviation || "").toUpperCase()).filter(Boolean));
     const unknownAbbrs: string[] = [];
     const rows: string[][] = [];
+    const rowLengthIssues: number[] = [];
+    const blankCells: Array<{ row: number; round: string }> = [];
     for (let i = 1; i < lines.length; i++) {
       const cells = lines[i].split(",").map(c => c.trim().toUpperCase());
       rows.push(cells);
+      if (cells.length !== headers.length) rowLengthIssues.push(i + 1);
+      headers.forEach((roundName, idx) => {
+        if (!cells[idx]) blankCells.push({ row: i + 1, round: roundName || `Round ${idx + 1}` });
+      });
       cells.forEach(c => {
         if (c && !abbrSet.has(c) && !unknownAbbrs.includes(c)) unknownAbbrs.push(c);
       });
     }
-    return { headers, rows, unknownAbbrs, rounds: headers.length, picks: rows.length };
+    return { headers, rows, unknownAbbrs, rowLengthIssues, blankCells, rounds: headers.length, picks: rows.length };
   }, [csvText, activeMembers]);
 
   const handleUploadCsv = () => {
@@ -296,6 +461,14 @@ export default function CommissionerDraftDetail() {
     }
     if (csvPreview?.unknownAbbrs && csvPreview.unknownAbbrs.length > 0) {
       toast({ title: "Unknown Abbreviations", description: `Fix these before uploading: ${csvPreview.unknownAbbrs.join(", ")}`, variant: "destructive" });
+      return;
+    }
+    if (csvPreview?.rowLengthIssues && csvPreview.rowLengthIssues.length > 0) {
+      toast({ title: "Invalid CSV Rows", description: `Rows with wrong column count: ${csvPreview.rowLengthIssues.join(", ")}`, variant: "destructive" });
+      return;
+    }
+    if (csvPreview?.blankCells && csvPreview.blankCells.length > 0) {
+      toast({ title: "Blank Cells Found", description: "Each pick slot needs a team abbreviation.", variant: "destructive" });
       return;
     }
     uploadCsvOrder.mutate(csvText);
@@ -370,7 +543,7 @@ export default function CommissionerDraftDetail() {
   const handleInitSettings = () => {
     if (draft) {
       setEditName(draft.name);
-      setEditPickDuration(draft.pickDurationMinutes || 60);
+      setEditPickDuration(draft.pickDurationMinutes || 30);
       setEditTeamDraftRound(draft.teamDraftRound ? String(draft.teamDraftRound) : "");
       setShowSettings(true);
     }
@@ -387,7 +560,7 @@ export default function CommissionerDraftDetail() {
     );
   }
 
-  if (!draft) {
+  if (!draft && draftsLoading) {
     return (
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <Skeleton className="h-8 w-64 mb-4" />
@@ -395,6 +568,23 @@ export default function CommissionerDraftDetail() {
       </div>
     );
   }
+
+  if (!draft && !draftsLoading) {
+    return (
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-4">
+        <p className="text-muted-foreground">Draft not found in the selected league context.</p>
+        <div className="rounded-md border bg-muted/20 p-3 text-sm">
+          <p className="font-medium">Current league: {currentLeague?.name || "Not selected"}</p>
+          <p className="text-muted-foreground">If this draft belongs to a different league, switch leagues in the header and reopen this page.</p>
+        </div>
+        <Button variant="outline" onClick={() => navigate("/commissioner/draft")}>
+          <ArrowLeft className="h-4 w-4 mr-2" />Back to Drafts
+        </Button>
+      </div>
+    );
+  }
+
+  if (!draft) return null;
 
   const statusBadge = (status: string) => {
     const variant = status === "active" ? "default" : status === "completed" ? "secondary" : "outline";
@@ -418,16 +608,77 @@ export default function CommissionerDraftDetail() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
+              <CardTitle>Commissioner Setup Checklist</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="rounded-md border bg-muted/20 p-3">
+                <p className="font-medium">League scope</p>
+                <p className="text-muted-foreground">You are editing this draft in league: <span className="font-medium text-foreground">{currentLeague?.name || "Unknown league"}</span> (ID {selectedLeagueId || "?"}).</p>
+              </div>
+              <p>1. Upload MLB API player IDs and verify the parsing summary before submitting.</p>
+              <p>2. Download or paste the draft-order CSV template, then replace abbreviations as needed.</p>
+              <p>3. Review round settings and start times, then click Start Draft.</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle className="flex items-center gap-2"><Upload className="h-5 w-5" />Upload Player IDs</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Paste MLB API player IDs from your source list. You can use commas/spaces/one per line, or CSV rows like <code>mlb_api_id,middle_name</code> to save optional middle names.
+              </p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setPlayerIdsText("660271\n665742\n592450")}
+                  data-testid="button-load-player-id-template"
+                >
+                  <FileSpreadsheet className="h-4 w-4 mr-2" />Load Example IDs
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => downloadTextFile("draft-player-ids-template.csv", playerIdTemplateText)}
+                  data-testid="button-download-player-id-template"
+                >
+                  <Download className="h-4 w-4 mr-2" />Download ID Template
+                </Button>
+              </div>
               <Textarea
-                placeholder="Paste MLB API player IDs, one per line or comma-separated (e.g., 660271, 665742)"
+                placeholder="IDs only: 660271,665742 OR CSV rows: 660271, 665742,James"
                 value={playerIdsText}
                 onChange={e => setPlayerIdsText(e.target.value)}
                 rows={5}
                 data-testid="textarea-player-ids"
               />
+              {!!playerIdsText.trim() && (
+                <div className="rounded-md border bg-muted/20 p-3 space-y-2 text-sm" data-testid="player-id-preview">
+                  <p>
+                    <span className="font-medium">{playerIdAnalysis.uniqueIds.length}</span> unique valid IDs
+                    {playerIdAnalysis.duplicateIds.length > 0 && (
+                      <span className="text-muted-foreground">, {playerIdAnalysis.duplicateIds.length} duplicates ignored</span>
+                    )}
+                    {playerIdAnalysis.invalidTokens.length > 0 && (
+                      <span className="text-muted-foreground">, {playerIdAnalysis.invalidTokens.length} non-numeric values ignored</span>
+                    )}
+                  </p>
+                  {playerIdAnalysis.duplicateIds.length > 0 && (
+                    <p className="text-muted-foreground">
+                      Duplicate IDs: {playerIdAnalysis.duplicateIds.slice(0, 10).join(", ")}
+                      {playerIdAnalysis.duplicateIds.length > 10 ? "..." : ""}
+                    </p>
+                  )}
+                  {playerIdAnalysis.invalidTokens.length > 0 && (
+                    <p className="text-muted-foreground">
+                      Ignored values: {playerIdAnalysis.invalidTokens.slice(0, 10).join(", ")}
+                      {playerIdAnalysis.invalidTokens.length > 10 ? "..." : ""}
+                    </p>
+                  )}
+                </div>
+              )}
               <Button onClick={handleUploadPlayers} disabled={uploadPlayers.isPending || !playerIdsText.trim()} data-testid="button-upload-players">
                 {uploadPlayers.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Uploading...</> : <><Upload className="mr-2 h-4 w-4" />Upload Players</>}
               </Button>
@@ -474,7 +725,13 @@ export default function CommissionerDraftDetail() {
                         <TableRow key={dp.id} data-testid={`row-player-${dp.id}`}>
                           <TableCell className="font-medium">{dp.player.fullName}</TableCell>
                           <TableCell>{dp.player.primaryPosition || "-"}</TableCell>
-                          <TableCell>{dp.player.currentTeamName || dp.player.parentOrgName || "-"}</TableCell>
+                          <TableCell>
+                            {formatAffiliatedTeamLabel({
+                              currentTeamName: dp.player.currentTeamName,
+                              parentOrgName: dp.player.parentOrgName,
+                              sportLevel: dp.player.sportLevel,
+                            })}
+                          </TableCell>
                           <TableCell><Badge variant={dp.status === "available" ? "outline" : "secondary"}>{dp.status}</Badge></TableCell>
                         </TableRow>
                       ))}
@@ -493,8 +750,8 @@ export default function CommissionerDraftDetail() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="text-sm text-muted-foreground space-y-1">
-                <p>Upload a CSV where column headers are round names and each row is a pick position.</p>
-                <p>Cell values should be team abbreviations (e.g., NYY, BOS, LAD).</p>
+                <p>Upload a CSV where column headers are round names and each row is one pick position.</p>
+                <p>Each cell must be a team abbreviation (for example: NYY, BOS, LAD).</p>
                 {activeMembers.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-2">
                     <span className="text-xs font-medium">Available abbreviations:</span>
@@ -505,6 +762,24 @@ export default function CommissionerDraftDetail() {
                     ))}
                   </div>
                 )}
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setCsvText(csvTemplateText)}
+                  data-testid="button-load-csv-template"
+                >
+                  <FileSpreadsheet className="h-4 w-4 mr-2" />Load Template
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => downloadTextFile("draft-order-template.csv", csvTemplateText)}
+                  data-testid="button-download-csv-template"
+                >
+                  <Download className="h-4 w-4 mr-2" />Download Template
+                </Button>
               </div>
               <Textarea
                 placeholder={`Round 1,Round 2,Round 3\nNYY,BOS,NYY\nBOS,NYY,BOS\nLAD,LAD,LAD`}
@@ -520,6 +795,16 @@ export default function CommissionerDraftDetail() {
                     <span className="font-medium">{csvPreview.rounds} rounds</span>
                     <span className="text-muted-foreground">{csvPreview.picks} picks per round</span>
                   </div>
+                  {csvPreview.rowLengthIssues && csvPreview.rowLengthIssues.length > 0 && (
+                    <p className="text-sm text-destructive" data-testid="csv-row-length-error">
+                      Rows with missing/extra columns: {csvPreview.rowLengthIssues.join(", ")}
+                    </p>
+                  )}
+                  {csvPreview.blankCells && csvPreview.blankCells.length > 0 && (
+                    <p className="text-sm text-destructive" data-testid="csv-blank-cell-error">
+                      Blank pick slots found: {csvPreview.blankCells.length}
+                    </p>
+                  )}
                   {csvPreview.unknownAbbrs && csvPreview.unknownAbbrs.length > 0 && (
                     <div className="text-sm text-destructive flex flex-wrap gap-1 items-center" data-testid="csv-unknown-abbrs">
                       <span className="font-medium">Unknown abbreviations:</span>
@@ -528,7 +813,7 @@ export default function CommissionerDraftDetail() {
                       ))}
                     </div>
                   )}
-                  {csvPreview.unknownAbbrs && csvPreview.unknownAbbrs.length === 0 && (
+                  {csvPreview.unknownAbbrs && csvPreview.unknownAbbrs.length === 0 && (!csvPreview.rowLengthIssues || csvPreview.rowLengthIssues.length === 0) && (!csvPreview.blankCells || csvPreview.blankCells.length === 0) && (
                     <p className="text-sm text-green-600 dark:text-green-400" data-testid="csv-valid">All team abbreviations valid</p>
                   )}
                 </div>
@@ -536,7 +821,7 @@ export default function CommissionerDraftDetail() {
               {csvPreview?.error && (
                 <p className="text-sm text-destructive" data-testid="csv-error">{csvPreview.error}</p>
               )}
-              <Button onClick={handleUploadCsv} disabled={uploadCsvOrder.isPending || !csvText.trim() || !!(csvPreview?.error) || !!(csvPreview?.unknownAbbrs?.length)} data-testid="button-upload-csv-order">
+              <Button onClick={handleUploadCsv} disabled={uploadCsvOrder.isPending || !csvText.trim() || !!(csvPreview?.error) || !!(csvPreview?.unknownAbbrs?.length) || !!(csvPreview?.rowLengthIssues?.length) || !!(csvPreview?.blankCells?.length)} data-testid="button-upload-csv-order">
                 {uploadCsvOrder.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Uploading...</> : <><FileSpreadsheet className="mr-2 h-4 w-4" />Upload Draft Order</>}
               </Button>
             </CardContent>
@@ -673,7 +958,7 @@ export default function CommissionerDraftDetail() {
               ) : (
                 <div className="space-y-2">
                   <p className="text-sm"><span className="text-muted-foreground">Name:</span> {draft.name}</p>
-                  <p className="text-sm"><span className="text-muted-foreground">Pick Duration:</span> {draft.pickDurationMinutes || 60} minutes</p>
+                  <p className="text-sm"><span className="text-muted-foreground">Pick Duration:</span> {draft.pickDurationMinutes || 30} minutes</p>
                   <p className="text-sm"><span className="text-muted-foreground">Team Draft Round:</span> {draft.teamDraftRound || "None"}</p>
                   <Button variant="outline" onClick={handleInitSettings} data-testid="button-edit-settings">
                     <Settings className="h-4 w-4 mr-2" />Edit Settings
@@ -927,7 +1212,13 @@ export default function CommissionerDraftDetail() {
                           >
                             <TableCell className="font-medium py-2">{dp.player.fullName}</TableCell>
                             <TableCell className="py-2 text-muted-foreground">{dp.player.primaryPosition || "-"}</TableCell>
-                            <TableCell className="py-2 text-muted-foreground">{dp.player.currentTeamName || "-"}</TableCell>
+                            <TableCell className="py-2 text-muted-foreground">
+                              {formatAffiliatedTeamLabel({
+                                currentTeamName: dp.player.currentTeamName,
+                                parentOrgName: dp.player.parentOrgName,
+                                sportLevel: dp.player.sportLevel,
+                              })}
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
