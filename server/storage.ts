@@ -357,6 +357,7 @@ export interface IStorage {
   ): Promise<number>;
   clearDraftPlayers(draftId: number): Promise<number>;
   updateDraftPlayerStatus(draftId: number, mlbPlayerId: number, status: string): Promise<void>;
+  updateDraftPlayerMinorLeague(draftId: number, mlbPlayerId: number, minorLeagueStatus: string | null, minorLeagueYears: number | null): Promise<void>;
   
   // Draft rounds
   getDraftRounds(draftId: number): Promise<DraftRound[]>;
@@ -3549,6 +3550,11 @@ export class DatabaseStorage implements IStorage {
 
   async updateDraftPlayerStatus(draftId: number, mlbPlayerId: number, status: string): Promise<void> {
     await db.update(draftPlayers).set({ status })
+      .where(and(eq(draftPlayers.draftId, draftId), eq(draftPlayers.mlbPlayerId, mlbPlayerId)));
+  }
+
+  async updateDraftPlayerMinorLeague(draftId: number, mlbPlayerId: number, minorLeagueStatus: string | null, minorLeagueYears: number | null): Promise<void> {
+    await db.update(draftPlayers).set({ minorLeagueStatus, minorLeagueYears })
       .where(and(eq(draftPlayers.draftId, draftId), eq(draftPlayers.mlbPlayerId, mlbPlayerId)));
   }
 

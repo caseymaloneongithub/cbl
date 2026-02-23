@@ -8994,6 +8994,42 @@ export async function registerRoutes(
     }
   });
 
+  // PATCH /api/drafts/:id/players/:mlbPlayerId - Update minor league status for a draft player
+  app.patch("/api/drafts/:id/players/:mlbPlayerId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const draftId = parseInt(req.params.id);
+      const mlbPlayerId = parseInt(req.params.mlbPlayerId);
+      if (isNaN(draftId) || isNaN(mlbPlayerId)) {
+        return res.status(400).json({ message: "Invalid draft or player ID" });
+      }
+
+      const draft = await storage.getDraft(draftId);
+      if (!draft) {
+        return res.status(404).json({ message: "Draft not found" });
+      }
+
+      if (!await hasLeagueCommissionerAccess(userId, draft.leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const { minorLeagueStatus, minorLeagueYears } = req.body;
+      const validStatuses = ["MH", "MC", "FA"];
+      const normalizedStatus = typeof minorLeagueStatus === "string" && validStatuses.includes(minorLeagueStatus.toUpperCase())
+        ? minorLeagueStatus.toUpperCase()
+        : null;
+      const normalizedYears = typeof minorLeagueYears === "number" && Number.isInteger(minorLeagueYears) && minorLeagueYears >= 0
+        ? minorLeagueYears
+        : null;
+
+      await storage.updateDraftPlayerMinorLeague(draftId, mlbPlayerId, normalizedStatus, normalizedYears);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error updating draft player:", error);
+      res.status(500).json({ message: "Failed to update draft player" });
+    }
+  });
+
   // DELETE /api/drafts/:id/players - Clear draft player pool
   app.delete("/api/drafts/:id/players", isAuthenticated, async (req: any, res) => {
     try {

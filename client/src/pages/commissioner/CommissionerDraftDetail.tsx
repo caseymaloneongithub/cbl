@@ -189,6 +189,16 @@ export default function CommissionerDraftDetail() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const updatePlayerMinorLeague = useMutation({
+    mutationFn: async ({ mlbPlayerId, minorLeagueStatus, minorLeagueYears }: { mlbPlayerId: number; minorLeagueStatus: string | null; minorLeagueYears: number | null }) => {
+      await apiRequest("PATCH", `/api/drafts/${draftId}/players/${mlbPlayerId}`, { minorLeagueStatus, minorLeagueYears });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "players"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const uploadCsvOrder = useMutation({
     mutationFn: async (csvData: string) => {
       const res = await apiRequest("POST", `/api/drafts/${draftId}/order/upload-csv`, { csvData });
@@ -717,6 +727,8 @@ export default function CommissionerDraftDetail() {
                         <TableHead>Name</TableHead>
                         <TableHead>Position</TableHead>
                         <TableHead>Team</TableHead>
+                        <TableHead>MiLB Status</TableHead>
+                        <TableHead>Years</TableHead>
                         <TableHead>Status</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -731,6 +743,45 @@ export default function CommissionerDraftDetail() {
                               parentOrgName: dp.player.parentOrgName,
                               sportLevel: dp.player.sportLevel,
                             })}
+                          </TableCell>
+                          <TableCell>
+                            <Select
+                              value={dp.minorLeagueStatus || "none"}
+                              onValueChange={(v) => updatePlayerMinorLeague.mutate({
+                                mlbPlayerId: dp.mlbPlayerId,
+                                minorLeagueStatus: v === "none" ? null : v,
+                                minorLeagueYears: dp.minorLeagueYears ?? null,
+                              })}
+                              data-testid={`select-milb-status-${dp.id}`}
+                            >
+                              <SelectTrigger className="h-7 w-20 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">—</SelectItem>
+                                <SelectItem value="MH">MH</SelectItem>
+                                <SelectItem value="MC">MC</SelectItem>
+                                <SelectItem value="FA">FA</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              min={0}
+                              className="h-7 w-16 text-xs"
+                              value={dp.minorLeagueYears ?? ""}
+                              onChange={(e) => {
+                                const val = e.target.value === "" ? null : parseInt(e.target.value);
+                                if (val !== null && (isNaN(val) || val < 0)) return;
+                                updatePlayerMinorLeague.mutate({
+                                  mlbPlayerId: dp.mlbPlayerId,
+                                  minorLeagueStatus: dp.minorLeagueStatus ?? null,
+                                  minorLeagueYears: val,
+                                });
+                              }}
+                              data-testid={`input-milb-years-${dp.id}`}
+                            />
                           </TableCell>
                           <TableCell><Badge variant={dp.status === "available" ? "outline" : "secondary"}>{dp.status}</Badge></TableCell>
                         </TableRow>
