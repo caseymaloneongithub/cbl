@@ -530,7 +530,7 @@ function composeFullFmlName(fullName: string | null | undefined, firstName: stri
 }
 
 function qualifiesTwoWay(pitchingInningsPitched: number, hittingPlateAppearances: number): boolean {
-  return pitchingInningsPitched >= 20 && hittingPlateAppearances >= 10;
+  return pitchingInningsPitched >= 20 && hittingPlateAppearances >= 100;
 }
 
 function safeDivide(numerator: number, denominator: number): number | null {

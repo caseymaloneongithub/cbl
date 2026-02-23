@@ -101,11 +101,23 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
   }, [data?.assignments, search]);
 
   const hittersBase = useMemo(
-    () => filtered.filter((a) => a.player.isTwoWayQualified || a.player.hadHittingStats || !a.player.hadPitchingStats),
+    () => filtered.filter((a) => {
+      const ip = a.player.pitchingInningsPitched ?? 0;
+      const pa = a.player.hittingPlateAppearances ?? 0;
+      const isTwoWay = ip >= 20 && pa >= 100;
+      if (isTwoWay) return true;
+      return a.player.hadHittingStats || !a.player.hadPitchingStats;
+    }),
     [filtered],
   );
   const pitchersBase = useMemo(
-    () => filtered.filter((a) => a.player.isTwoWayQualified || a.player.hadPitchingStats),
+    () => filtered.filter((a) => {
+      const ip = a.player.pitchingInningsPitched ?? 0;
+      const pa = a.player.hittingPlateAppearances ?? 0;
+      const isTwoWay = ip >= 20 && pa >= 100;
+      if (isTwoWay) return true;
+      return a.player.hadPitchingStats;
+    }),
     [filtered],
   );
 
