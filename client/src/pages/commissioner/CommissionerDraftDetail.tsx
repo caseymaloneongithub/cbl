@@ -392,7 +392,7 @@ export default function CommissionerDraftDetail() {
     const roundCount = Math.max(draftRounds?.length || 3, 1);
     const headers = Array.from({ length: roundCount }, (_, i) => `Round ${i + 1}`);
     const abbreviations = activeMembers
-      .map((m) => (m.user?.teamAbbreviation || "").toUpperCase().trim())
+      .map((m) => (m.teamAbbreviation || "").toUpperCase().trim())
       .filter(Boolean);
     if (abbreviations.length === 0) {
       return `${headers.join(",")}\n`;
@@ -441,12 +441,24 @@ export default function CommissionerDraftDetail() {
     const lines = csvText.trim().split("\n").map(l => l.trim()).filter(l => l.length > 0);
     if (lines.length < 2) return { error: "CSV must have a header row and at least one pick row" };
     const headers = lines[0].split(",").map(h => h.trim());
-    const abbrSet = new Set(activeMembers.map(m => (m.user?.teamAbbreviation || "").toUpperCase()).filter(Boolean));
+    const abbrSet = new Set(activeMembers.map(m => (m.teamAbbreviation || "").toUpperCase()).filter(Boolean));
+
+    let dataStartIdx = 1;
+    let startTimes: string[] | null = null;
+    if (lines.length >= 3) {
+      const firstDataCells = lines[1].split(",").map(c => c.trim());
+      const looksLikeTimes = firstDataCells.every(c => !c || /\d{4}[-/]\d{1,2}[-/]\d{1,2}|^\d{1,2}[:/]\d{2}\s*(am|pm)?$/i.test(c) || /\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/i.test(c));
+      if (looksLikeTimes && firstDataCells.some(c => c.length > 0)) {
+        startTimes = firstDataCells;
+        dataStartIdx = 2;
+      }
+    }
+
     const unknownAbbrs: string[] = [];
     const rows: string[][] = [];
     const rowLengthIssues: number[] = [];
     const blankCells: Array<{ row: number; round: string }> = [];
-    for (let i = 1; i < lines.length; i++) {
+    for (let i = dataStartIdx; i < lines.length; i++) {
       const cells = lines[i].split(",").map(c => c.trim().toUpperCase());
       rows.push(cells);
       if (cells.length !== headers.length) rowLengthIssues.push(i + 1);
@@ -457,7 +469,7 @@ export default function CommissionerDraftDetail() {
         if (c && !abbrSet.has(c) && !unknownAbbrs.includes(c)) unknownAbbrs.push(c);
       });
     }
-    return { headers, rows, unknownAbbrs, rowLengthIssues, blankCells, rounds: headers.length, picks: rows.length };
+    return { headers, rows, unknownAbbrs, rowLengthIssues, blankCells, rounds: headers.length, picks: rows.length, startTimes };
   }, [csvText, activeMembers]);
 
   const handleUploadCsv = () => {
@@ -803,12 +815,13 @@ export default function CommissionerDraftDetail() {
               <div className="text-sm text-muted-foreground space-y-1">
                 <p>Upload a CSV where column headers are round names and each row is one pick position.</p>
                 <p>Each cell must be a team abbreviation (for example: NYY, BOS, LAD).</p>
+                <p>Optionally, add a second row with start times per round (e.g., 2026-03-15 7:00 PM). Times are interpreted as Central Time.</p>
                 {activeMembers.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-2">
                     <span className="text-xs font-medium">Available abbreviations:</span>
                     {activeMembers.map(m => (
                       <Badge key={m.userId} variant="outline" className="text-xs">
-                        {m.user?.teamAbbreviation || "?"} = {m.user?.teamName || m.user?.email}
+                        {m.teamAbbreviation || "?"} = {m.teamName || m.user?.email}
                       </Badge>
                     ))}
                   </div>
@@ -845,6 +858,7 @@ export default function CommissionerDraftDetail() {
                   <div className="flex flex-wrap items-center gap-3 text-sm">
                     <span className="font-medium">{csvPreview.rounds} rounds</span>
                     <span className="text-muted-foreground">{csvPreview.picks} picks per round</span>
+                    {csvPreview.startTimes && <span className="text-green-600 dark:text-green-400">Start times detected</span>}
                   </div>
                   {csvPreview.rowLengthIssues && csvPreview.rowLengthIssues.length > 0 && (
                     <p className="text-sm text-destructive" data-testid="csv-row-length-error">
@@ -954,7 +968,7 @@ export default function CommissionerDraftDetail() {
                               <div className="flex flex-wrap gap-1">
                                 {roundEntries.map((entry, idx) => (
                                   <Badge key={`${entry.userId}-${idx}`} variant="outline" className="text-xs">
-                                    {entry.user.teamAbbreviation || entry.user.teamName || entry.user.email}
+                                    {entry.user?.teamAbbreviation || entry.user?.teamName || entry.user?.email}
                                   </Badge>
                                 ))}
                               </div>
@@ -1194,7 +1208,7 @@ export default function CommissionerDraftDetail() {
                 <SelectContent>
                   {activeMembers.map(m => (
                     <SelectItem key={m.userId} value={m.userId}>
-                      {m.user?.teamName || m.user?.teamAbbreviation || m.user?.email}
+                      {m.teamName || m.teamAbbreviation || m.user?.email}
                     </SelectItem>
                   ))}
                 </SelectContent>

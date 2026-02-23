@@ -764,7 +764,7 @@ export class DatabaseStorage implements IStorage {
             highBidder = {
               ...highBidder,
               teamName: leagueMember.teamName || highBidder.teamName,
-              teamAbbreviation: leagueMember.teamAbbreviation || highBidder.teamAbbreviation,
+              teamAbbreviation: leagueMember.teamAbbreviation ?? highBidder.teamAbbreviation,
             };
           }
         }
@@ -913,7 +913,7 @@ export class DatabaseStorage implements IStorage {
           if (member) {
             // Override user-level team info with league-specific info
             user.teamName = member.teamName || user.teamName;
-            user.teamAbbreviation = member.teamAbbreviation || user.teamAbbreviation;
+            if (member.teamAbbreviation) user.teamAbbreviation = member.teamAbbreviation;
           }
         }
         result.push({ ...bid, user });
@@ -1883,7 +1883,7 @@ export class DatabaseStorage implements IStorage {
       return {
         ...u,
         teamName: leagueInfo?.teamName || u.teamName,
-        teamAbbreviation: leagueInfo?.teamAbbreviation || u.teamAbbreviation,
+        teamAbbreviation: leagueInfo?.teamAbbreviation ?? null,
       };
     });
   }
@@ -2949,7 +2949,7 @@ export class DatabaseStorage implements IStorage {
       user: {
         ...member.user,
         teamName: member.teamName || member.user.teamName,
-        teamAbbreviation: member.teamAbbreviation || member.user.teamAbbreviation,
+        teamAbbreviation: member.teamAbbreviation,
       },
       ...(usageByUser.get(member.userId) || { salaryUsed: 0, ipUsed: 0, paUsed: 0, playerCount: 0 }),
     }));
@@ -3588,6 +3588,7 @@ export class DatabaseStorage implements IStorage {
 
   // Draft order
   async getDraftOrder(draftId: number, roundNumber?: number): Promise<(DraftOrder & { user: User })[]> {
+    const draft = await this.getDraft(draftId);
     const conditions = [eq(draftOrder.draftId, draftId)];
     if (roundNumber !== undefined) {
       conditions.push(eq(draftOrder.roundNumber, roundNumber));
@@ -3595,12 +3596,24 @@ export class DatabaseStorage implements IStorage {
     const rows = await db.select({
       order: draftOrder,
       user: users,
+      member: leagueMembers,
     })
       .from(draftOrder)
       .innerJoin(users, eq(draftOrder.userId, users.id))
+      .leftJoin(leagueMembers, and(
+        eq(leagueMembers.userId, draftOrder.userId),
+        eq(leagueMembers.leagueId, draft?.leagueId ?? 0)
+      ))
       .where(and(...conditions))
       .orderBy(draftOrder.roundNumber, draftOrder.orderIndex);
-    return rows.map(r => ({ ...r.order, user: r.user }));
+    return rows.map(r => ({
+      ...r.order,
+      user: {
+        ...r.user,
+        teamName: r.member?.teamName || r.user.teamName,
+        teamAbbreviation: r.member?.teamAbbreviation || null,
+      },
+    }));
   }
 
   async setDraftOrder(draftId: number, order: { userId: string; orderIndex: number; roundNumber: number }[]): Promise<void> {
@@ -3620,14 +3633,20 @@ export class DatabaseStorage implements IStorage {
 
   // Draft picks
   async getDraftPicks(draftId: number): Promise<DraftPickWithDetails[]> {
+    const draft = await this.getDraft(draftId);
     const rows = await db.select({
       pick: draftPicks,
       player: mlbPlayers,
       user: users,
+      member: leagueMembers,
     })
       .from(draftPicks)
       .leftJoin(mlbPlayers, eq(draftPicks.mlbPlayerId, mlbPlayers.id))
       .innerJoin(users, eq(draftPicks.userId, users.id))
+      .leftJoin(leagueMembers, and(
+        eq(leagueMembers.userId, draftPicks.userId),
+        eq(leagueMembers.leagueId, draft?.leagueId ?? 0)
+      ))
       .where(eq(draftPicks.draftId, draftId))
       .orderBy(draftPicks.overallPickNumber);
     
@@ -3638,7 +3657,8 @@ export class DatabaseStorage implements IStorage {
         id: r.user.id,
         firstName: r.user.firstName,
         lastName: r.user.lastName,
-        teamName: r.user.teamName,
+        teamName: r.member?.teamName || r.user.teamName,
+        teamAbbreviation: r.member?.teamAbbreviation || null,
       },
     }));
   }

@@ -236,7 +236,7 @@ export async function registerRoutes(
           lastName: m.user.lastName,
           profileImageUrl: m.user.profileImageUrl,
           teamName: m.teamName || m.user.teamName,
-          teamAbbreviation: m.teamAbbreviation || m.user.teamAbbreviation,
+          teamAbbreviation: m.teamAbbreviation,
           leagueRole: m.role,
           isArchived: m.isArchived,
         }));
@@ -788,8 +788,8 @@ export async function registerRoutes(
         // Create a map of team abbreviation (lowercase) to user ID
         const abbrevToUserId = new Map<string, string>();
         for (const member of leagueMembers) {
-          if (member.user.teamAbbreviation) {
-            abbrevToUserId.set(member.user.teamAbbreviation.toLowerCase().trim(), member.userId);
+          if (member.teamAbbreviation) {
+            abbrevToUserId.set(member.teamAbbreviation.toLowerCase().trim(), member.userId);
           }
         }
         
@@ -9171,17 +9171,28 @@ export async function registerRoutes(
       const members = await storage.getLeagueMembers(draft.leagueId);
       const abbrMap = new Map<string, string>();
       for (const m of members) {
-        if (m.user?.teamAbbreviation) {
-          abbrMap.set(m.user.teamAbbreviation.toUpperCase(), m.userId);
+        if (m.teamAbbreviation) {
+          abbrMap.set(m.teamAbbreviation.toUpperCase(), m.userId);
+        }
+      }
+
+      let startTimesRow: string[] | null = null;
+      let dataStartIdx = 1;
+      if (lines.length >= 2) {
+        const firstDataCells = lines[1].split(",").map(c => c.trim());
+        const looksLikeTimes = firstDataCells.every(c => !c || /\d{4}[-/]\d{1,2}[-/]\d{1,2}|^\d{1,2}[:/]\d{2}\s*(am|pm|AM|PM)?$/i.test(c) || /\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/i.test(c));
+        if (looksLikeTimes && firstDataCells.some(c => c.length > 0)) {
+          startTimesRow = firstDataCells;
+          dataStartIdx = 2;
         }
       }
 
       const orderEntries: { userId: string; orderIndex: number; roundNumber: number }[] = [];
       const unknownAbbrs: string[] = [];
 
-      for (let rowIdx = 1; rowIdx < lines.length; rowIdx++) {
+      for (let rowIdx = dataStartIdx; rowIdx < lines.length; rowIdx++) {
         const cells = lines[rowIdx].split(",").map(c => c.trim());
-        const pickIndex = rowIdx - 1;
+        const pickIndex = rowIdx - dataStartIdx;
 
         for (let colIdx = 0; colIdx < numRounds; colIdx++) {
           const abbr = (cells[colIdx] || "").toUpperCase();
@@ -9208,12 +9219,22 @@ export async function registerRoutes(
         });
       }
 
-      const roundConfigs = headers.map((name, idx) => ({
-        roundNumber: idx + 1,
-        name: name || `Round ${idx + 1}`,
-        isTeamDraft: false,
-        startTime: new Date(),
-      }));
+      const roundConfigs = headers.map((name, idx) => {
+        let startTime = new Date();
+        if (startTimesRow && startTimesRow[idx]) {
+          try {
+            startTime = parseCSTTime(startTimesRow[idx]);
+          } catch {
+            // fall back to current time if parsing fails
+          }
+        }
+        return {
+          roundNumber: idx + 1,
+          name: name || `Round ${idx + 1}`,
+          isTeamDraft: false,
+          startTime,
+        };
+      });
 
       await storage.setDraftRounds(id, roundConfigs);
       await storage.setDraftOrder(id, orderEntries);
@@ -9226,8 +9247,9 @@ export async function registerRoutes(
         message: "Draft order uploaded successfully",
         rounds: rounds.length,
         totalEntries: orderEntries.length,
-        picksPerRound: lines.length - 1,
+        picksPerRound: lines.length - dataStartIdx,
         roundConfigs: rounds,
+        startTimesDetected: !!startTimesRow,
       });
     } catch (error) {
       console.error("Error uploading draft order CSV:", error);
