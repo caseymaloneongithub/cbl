@@ -598,8 +598,6 @@ export async function fetchAllAffiliatedPlayers(
 
         const existing = playerMap.get(playerId);
         if (existing) {
-          existing.hadHittingStats = existing.hadHittingStats || isHitter;
-          existing.hadPitchingStats = existing.hadPitchingStats || isPitcher;
           const existingSportPriority = sportIds.indexOf(existing.sportId);
           const newSportPriority = sportIds.indexOf(sportId);
           if (newSportPriority <= existingSportPriority) {
@@ -634,8 +632,8 @@ export async function fetchAllAffiliatedPlayers(
           birthDate: person?.birthDate || null,
           age: person?.currentAge || null,
           isActive: person?.active !== false,
-          hadHittingStats: isHitter,
-          hadPitchingStats: isPitcher,
+          hadHittingStats: false,
+          hadPitchingStats: false,
           hittingAtBats: 0,
           hittingWalks: 0,
           hittingSingles: 0,
@@ -840,8 +838,8 @@ export async function fetchAllAffiliatedPlayers(
             ? (prevPitchingEra * prevPitchingInnings) / 9
             : 0;
 
-        existing.hadHittingStats = existing.hadHittingStats || isHitter;
-        existing.hadPitchingStats = existing.hadPitchingStats || isPitcher;
+        existing.hadHittingStats = existing.hadHittingStats || (isHitter && (existing.hittingPlateAppearances || 0) + playerHittingPlateAppearances > 0);
+        existing.hadPitchingStats = existing.hadPitchingStats || (isPitcher && existing.pitchingInningsPitched + playerPitchingInnings > 0);
         existing.pitchingInningsPitched = prevPitchingInnings + playerPitchingInnings;
         existing.hittingGamesStarted = (existing.hittingGamesStarted || 0) + playerHittingGamesStarted;
         existing.hittingPlateAppearances = (existing.hittingPlateAppearances || 0) + playerHittingPlateAppearances;
@@ -894,8 +892,8 @@ export async function fetchAllAffiliatedPlayers(
         birthDate: split.player.birthDate || null,
         age: split.player.currentAge || null,
         isActive: split.player.active !== false,
-        hadHittingStats: isHitter,
-        hadPitchingStats: isPitcher,
+        hadHittingStats: isHitter && playerHittingPlateAppearances > 0,
+        hadPitchingStats: isPitcher && playerPitchingInnings > 0,
         hittingAtBats: playerHittingAtBats,
         hittingWalks: playerHittingWalks,
         hittingSingles: playerHittingSingles,
