@@ -1,12 +1,14 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useLeague } from "@/hooks/useLeague";
 import { useToast } from "@/hooks/use-toast";
+import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import {
   Table,
   TableBody,
@@ -29,7 +31,7 @@ import {
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { User, LeagueMember } from "@shared/schema";
-import { Upload, Users, Loader2, Trash2, Crown, Download, Edit2, Archive, ArchiveRestore } from "lucide-react";
+import { Upload, Users, Loader2, Trash2, Crown, Download, Edit2, Archive, ArchiveRestore, MailPlus, Copy, XCircle } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -50,6 +52,22 @@ interface ParsedUser {
   password?: string;
 }
 
+interface TeamOwnershipInvite {
+  id: number;
+  leagueId: number;
+  teamUserId: string;
+  invitedEmail: string;
+  token: string;
+  invitedByUserId: string;
+  status: "pending" | "accepted" | "cancelled" | "expired";
+  expiresAt: string;
+  acceptedByUserId: string | null;
+  acceptedAt: string | null;
+  createdAt: string;
+  teamName?: string | null;
+  teamAbbreviation?: string | null;
+}
+
 export default function CommissionerTeams() {
   const { user } = useAuth();
   const { selectedLeagueId } = useLeague();
@@ -66,6 +84,11 @@ export default function CommissionerTeams() {
   const [editLastName, setEditLastName] = useState("");
   const [editTeamName, setEditTeamName] = useState("");
   const [editTeamAbbreviation, setEditTeamAbbreviation] = useState("");
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [inviteTargetUserId, setInviteTargetUserId] = useState("");
+  const [inviteTargetTeamName, setInviteTargetTeamName] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [latestInviteUrl, setLatestInviteUrl] = useState("");
 
   const { data: owners, isLoading: loadingOwners } = useQuery<User[]>({
     queryKey: ["/api/owners", selectedLeagueId],
@@ -83,6 +106,26 @@ export default function CommissionerTeams() {
     queryFn: async () => {
       const res = await fetch(`/api/leagues/${selectedLeagueId}/members`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch league members");
+      return res.json();
+    },
+    enabled: !!selectedLeagueId,
+  });
+
+  const { data: league } = useQuery<any>({
+    queryKey: ["/api/leagues", selectedLeagueId],
+    queryFn: async () => {
+      const res = await fetch(`/api/leagues/${selectedLeagueId}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch league");
+      return res.json();
+    },
+    enabled: !!selectedLeagueId,
+  });
+
+  const { data: teamInvites } = useQuery<TeamOwnershipInvite[]>({
+    queryKey: ["/api/leagues", selectedLeagueId, "team-invites"],
+    queryFn: async () => {
+      const res = await fetch(`/api/leagues/${selectedLeagueId}/team-invites`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch team invites");
       return res.json();
     },
     enabled: !!selectedLeagueId,
@@ -173,16 +216,49 @@ export default function CommissionerTeams() {
 
   const updateTeamDetails = useMutation({
     mutationFn: async ({ userId, details }: { userId: string; details: { email?: string; firstName?: string; lastName?: string; teamName?: string; teamAbbreviation?: string } }) => {
-      const res = await apiRequest("PATCH", `/api/users/${userId}`, details);
+      const qs = selectedLeagueId ? `?leagueId=${selectedLeagueId}` : "";
+      const res = await apiRequest("PATCH", `/api/users/${userId}${qs}`, details);
       return res.json();
     },
     onSuccess: () => {
       toast({ title: "Team Updated", description: "Team details have been saved." });
       setEditingTeam(null);
       queryClient.invalidateQueries({ queryKey: ["/api/owners", selectedLeagueId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues", selectedLeagueId, "members"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues"] });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const createTeamInvite = useMutation({
+    mutationFn: async ({ teamUserId, email }: { teamUserId: string; email: string }) => {
+      if (!selectedLeagueId) throw new Error("No league selected");
+      const res = await apiRequest("POST", `/api/leagues/${selectedLeagueId}/team-invites`, { teamUserId, email });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Invite Created", description: "Share the invite link with the incoming owner." });
+      setLatestInviteUrl(data.inviteUrl || "");
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues", selectedLeagueId, "team-invites"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Invite Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const cancelTeamInvite = useMutation({
+    mutationFn: async (inviteId: number) => {
+      if (!selectedLeagueId) throw new Error("No league selected");
+      await apiRequest("DELETE", `/api/leagues/${selectedLeagueId}/team-invites/${inviteId}`);
+    },
+    onSuccess: () => {
+      toast({ title: "Invite Cancelled" });
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues", selectedLeagueId, "team-invites"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Cancel Failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -264,6 +340,19 @@ export default function CommissionerTeams() {
     setUploadedCredentials([]);
   }, [uploadedCredentials, toast]);
 
+  const onboardingProgress = useMemo(() => {
+    const status = String(league?.rosterOnboardingStatus || "pending");
+    const processed = Number(league?.rosterOnboardingLastProcessed || 0);
+    const unresolved = Number(league?.rosterOnboardingLastUnresolved || 0);
+    const errors = Number(league?.rosterOnboardingLastErrors || 0);
+    const remaining = Math.max(0, unresolved + errors);
+    const resolved = Math.max(0, processed - remaining);
+    const isComplete = status === "completed";
+    const isPending = status === "pending" && processed === 0;
+    const percent = isComplete ? 100 : (processed > 0 ? Math.round((resolved / processed) * 100) : 0);
+    return { status, processed, unresolved, errors, remaining, resolved, percent, isComplete, isPending };
+  }, [league]);
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="mb-8">
@@ -277,6 +366,74 @@ export default function CommissionerTeams() {
       </div>
 
       <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Initial Roster Reconciliation</CardTitle>
+            <CardDescription>
+              One-time onboarding: every rostered player must resolve to an MLB API ID before reconciliation is complete.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Status:</span>
+              <Badge
+                variant={onboardingProgress.isComplete ? "default" : "secondary"}
+                data-testid="badge-roster-onboarding-status"
+              >
+                {onboardingProgress.isComplete ? "Complete" : onboardingProgress.isPending ? "Not Started" : "In Progress"}
+              </Badge>
+              {onboardingProgress.remaining > 0 && (
+                <Link href="/commissioner/reconciliation">
+                  <span className="cursor-pointer text-amber-700 underline underline-offset-2" data-testid="text-roster-onboarding-unresolved">
+                    {onboardingProgress.remaining} onboarding items remain
+                  </span>
+                </Link>
+              )}
+              {onboardingProgress.unresolved > 0 && (
+                <span className="text-amber-700" data-testid="text-roster-onboarding-unresolved-breakdown">
+                  {onboardingProgress.unresolved} unresolved matches
+                </span>
+              )}
+              {onboardingProgress.errors > 0 && (
+                <span className="text-destructive" data-testid="text-roster-onboarding-errors">
+                  {onboardingProgress.errors} CSV row errors
+                </span>
+              )}
+            </div>
+            <div className="rounded-md border bg-muted/20 p-3 space-y-2" data-testid="roster-onboarding-progress">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium">Onboarding Progress</div>
+                <div className="text-sm font-semibold" data-testid="text-roster-onboarding-percent">
+                  {onboardingProgress.isPending ? "N/A" : `${onboardingProgress.percent}%`}
+                </div>
+              </div>
+              <Progress value={onboardingProgress.isPending ? 0 : onboardingProgress.percent} className="h-3" />
+              <div className="text-xs text-muted-foreground">
+                {onboardingProgress.processed > 0
+                  ? `${onboardingProgress.resolved} of ${onboardingProgress.processed} rows resolved`
+                  : "Not started. Run the initial reconciliation upload to begin tracking."}
+              </div>
+              {onboardingProgress.processed > 0 && (
+                <div className="flex items-center gap-2 text-xs">
+                  <Badge variant="outline">Resolved: {onboardingProgress.resolved}</Badge>
+                  <Badge variant="outline">Remaining: {onboardingProgress.remaining}</Badge>
+                </div>
+              )}
+            </div>
+            <div className="text-sm text-muted-foreground">
+              Workflow:
+              <span> 1) Run reconciliation upload once for initial seeding.</span>
+              <span> 2) Resolve all unmatched rows and CSV errors until status is Complete.</span>
+              <span> 3) After completion, stop re-uploading and manage moves directly on-site.</span>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Link href="/commissioner/reconciliation">
+                <Button variant="outline" data-testid="button-open-roster-reconciliation">Open MLB/MiLB Reconciliation</Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -427,6 +584,21 @@ export default function CommissionerTeams() {
                                   <Button size="sm" variant="ghost" onClick={() => { setEditingTeam(owner); setEditEmail(owner.email); setEditFirstName(owner.firstName || ""); setEditLastName(owner.lastName || ""); setEditTeamName(owner.teamName || ""); setEditTeamAbbreviation(owner.teamAbbreviation || ""); }} title="Edit team details" data-testid={`button-edit-team-${owner.id}`}>
                                     <Edit2 className="h-4 w-4" />
                                   </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => {
+                                      setInviteTargetUserId(owner.id);
+                                      setInviteTargetTeamName(owner.teamName || owner.email);
+                                      setInviteEmail("");
+                                      setLatestInviteUrl("");
+                                      setInviteDialogOpen(true);
+                                    }}
+                                    title="Invite new owner for this team"
+                                    data-testid={`button-invite-transfer-${owner.id}`}
+                                  >
+                                    <MailPlus className="h-4 w-4" />
+                                  </Button>
                                   {user?.isSuperAdmin && !owner.isSuperAdmin && (
                                     isLeagueCommissionerForUser(owner.id) ? (
                                       <Button size="sm" variant="ghost" onClick={() => setCommissioner.mutate({ userId: owner.id, isCommissioner: false })} disabled={setCommissioner.isPending} title="Revoke Commissioner for this league" data-testid={`button-revoke-commissioner-${owner.id}`}>
@@ -523,9 +695,108 @@ export default function CommissionerTeams() {
                 </TabsContent>
               </Tabs>
             )}
+            <div className="mt-6 space-y-2">
+              <h4 className="text-sm font-medium">Ownership Transfer Invites</h4>
+              {!teamInvites || teamInvites.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No invites yet.</p>
+              ) : (
+                <div className="border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Team</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Expires</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {teamInvites.slice(0, 20).map((invite) => (
+                        <TableRow key={invite.id}>
+                          <TableCell>{invite.teamName || invite.teamAbbreviation || invite.teamUserId}</TableCell>
+                          <TableCell>{invite.invitedEmail}</TableCell>
+                          <TableCell>
+                            <Badge variant={invite.status === "pending" ? "secondary" : "outline"}>{invite.status}</Badge>
+                          </TableCell>
+                          <TableCell>{new Date(invite.expiresAt).toLocaleString()}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              {invite.status === "pending" && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => cancelTeamInvite.mutate(invite.id)}
+                                  data-testid={`button-cancel-team-invite-${invite.id}`}
+                                >
+                                  <XCircle className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Invite New Team Owner</DialogTitle>
+            <DialogDescription>
+              Send an invite for <span className="font-medium">{inviteTargetTeamName}</span>. Existing users can sign in and accept. New users can register and accept.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="invite-email">Invite Email</Label>
+              <Input
+                id="invite-email"
+                type="email"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder="newowner@example.com"
+                data-testid="input-team-invite-email"
+              />
+            </div>
+            {latestInviteUrl && (
+              <div className="rounded-md border bg-muted/20 p-2 space-y-2">
+                <p className="text-xs font-medium">Invite Link</p>
+                <p className="text-xs break-all">{latestInviteUrl}</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(latestInviteUrl);
+                    toast({ title: "Invite link copied" });
+                  }}
+                  data-testid="button-copy-team-invite-link"
+                >
+                  <Copy className="h-4 w-4 mr-2" />
+                  Copy Link
+                </Button>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInviteDialogOpen(false)}>Close</Button>
+            <Button
+              onClick={() => createTeamInvite.mutate({ teamUserId: inviteTargetUserId, email: inviteEmail })}
+              disabled={createTeamInvite.isPending || !inviteTargetUserId || !inviteEmail.trim()}
+              data-testid="button-send-team-invite"
+            >
+              {createTeamInvite.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Create Invite
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!editingTeam} onOpenChange={(open) => !open && setEditingTeam(null)}>
         <DialogContent>

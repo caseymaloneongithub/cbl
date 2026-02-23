@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
-import { useParams } from "wouter";
+import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
+import { useLeague } from "@/hooks/useLeague";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,40 +19,37 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { formatAffiliatedTeamLabel } from "@/lib/teamDisplay";
 import { Clock, Search, Trophy, Users, Loader2, CheckCircle, Building2, AlertTriangle, ListOrdered, ArrowUp, ArrowDown, Plus, Trash2 } from "lucide-react";
 import type { Draft, DraftRound, DraftPlayerWithDetails, DraftPickWithDetails, DraftOrder, User, AutoDraftListWithPlayer } from "@shared/schema";
 
 interface TimingInfo {
   hasTiming: boolean;
-  currentRound: number;
-  currentPickIndex: number;
-  roundStartTime?: string;
-  pickDurationMinutes?: number;
-  pickTimings?: {
-    orderIndex: number;
-    userId: string;
-    pickStart: string;
-    pickDeadline: string;
-    isExpired: boolean;
-    isActive: boolean;
-  }[];
+  now: string;
+  currentSlot?: DraftPickWithDetails | null;
   eligiblePickerIds?: string[];
+  openSlotCount?: number;
 }
 
 const DRAFT_POLL_INTERVAL = 3000;
 
 export default function DraftBoard() {
   const { draftId } = useParams<{ draftId: string }>();
+  const [, navigate] = useLocation();
   const { user } = useAuth();
+  const { currentLeague, selectedLeagueId } = useLeague();
   const { toast } = useToast();
-  const [search, setSearch] = useState("");
+  const [playerSearch, setPlayerSearch] = useState("");
+  const [orgSearch, setOrgSearch] = useState("");
   const [pickDialogOpen, setPickDialogOpen] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState<DraftPlayerWithDetails | null>(null);
   const [rosterType, setRosterType] = useState<string>("mlb");
+  const [autoDraftRosterType, setAutoDraftRosterType] = useState<string>("mlb");
   const [teamDraftDialogOpen, setTeamDraftDialogOpen] = useState(false);
   const [selectedOrg, setSelectedOrg] = useState<string>("");
   const [teamDraftRosterType, setTeamDraftRosterType] = useState<string>("milb");
   const [countdown, setCountdown] = useState<string>("");
+  const [autoDraftSearch, setAutoDraftSearch] = useState("");
 
   const draftIdNum = draftId ? parseInt(draftId, 10) : null;
 
@@ -99,10 +97,10 @@ export default function DraftBoard() {
   });
 
   const { data: availablePlayers, isLoading: loadingPlayers } = useQuery<DraftPlayerWithDetails[]>({
-    queryKey: ["/api/drafts", draftIdNum, "players", { status: "available", search }],
+    queryKey: ["/api/drafts", draftIdNum, "players", { status: "available", search: playerSearch }],
     queryFn: async () => {
       const params = new URLSearchParams({ status: "available" });
-      if (search) params.set("search", search);
+      if (playerSearch) params.set("search", playerSearch);
       const res = await fetch(`/api/drafts/${draftIdNum}/players?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch players");
       return res.json();
@@ -122,39 +120,30 @@ export default function DraftBoard() {
     refetchInterval: DRAFT_POLL_INTERVAL,
   });
 
+  const nowMs = useMemo(() => {
+    return timingInfo?.now ? new Date(timingInfo.now).getTime() : Date.now();
+  }, [timingInfo]);
+
+  const currentSlot = useMemo(() => {
+    return timingInfo?.currentSlot || null;
+  }, [timingInfo]);
+
   const currentRoundConfig = useMemo(() => {
-    if (!draft || !draftRounds) return null;
-    return draftRounds.find(r => r.roundNumber === draft.currentRound) || null;
-  }, [draft, draftRounds]);
+    if (!currentSlot || !draftRounds) return null;
+    return draftRounds.find(r => r.roundNumber === currentSlot.round) || null;
+  }, [currentSlot, draftRounds]);
 
   const isTeamDraftRound = currentRoundConfig?.isTeamDraft === true;
 
-  const currentRoundOrder = useMemo(() => {
-    if (!draftOrderData || !draft) return [];
-    return draftOrderData
-      .filter(o => o.roundNumber === draft.currentRound)
-      .sort((a, b) => a.orderIndex - b.orderIndex);
-  }, [draftOrderData, draft]);
-
   const currentTeam = useMemo(() => {
-    if (!draft || !currentRoundOrder.length || draft.status !== "active") return null;
-    return currentRoundOrder[draft.currentPickIndex] || null;
-  }, [draft, currentRoundOrder]);
+    if (!currentSlot || !picks) return null;
+    return picks.find((p) => p.id === currentSlot.id) || null;
+  }, [currentSlot, picks]);
 
   const isMyTurn = useMemo(() => {
     if (!currentTeam || !user) return false;
     return currentTeam.userId === user.id;
   }, [currentTeam, user]);
-
-  const myPickTiming = useMemo(() => {
-    if (!timingInfo?.hasTiming || !timingInfo.pickTimings || !user) return null;
-    return timingInfo.pickTimings.find(t => t.userId === user.id) || null;
-  }, [timingInfo, user]);
-
-  const currentPickTiming = useMemo(() => {
-    if (!timingInfo?.hasTiming || !timingInfo.pickTimings || !draft) return null;
-    return timingInfo.pickTimings[draft.currentPickIndex] || null;
-  }, [timingInfo, draft]);
 
   const isEligibleByTiming = useMemo(() => {
     if (!timingInfo?.hasTiming || !user) return false;
@@ -170,11 +159,11 @@ export default function DraftBoard() {
   }, [draft, isMyTurn, user, isEligibleByTiming]);
 
   useEffect(() => {
-    if (!currentPickTiming) {
+    if (!currentSlot) {
       setCountdown("");
       return;
     }
-    const deadline = new Date(currentPickTiming.pickDeadline).getTime();
+    const deadline = new Date(currentSlot.deadlineAt).getTime();
     const updateCountdown = () => {
       const now = Date.now();
       const diff = deadline - now;
@@ -196,20 +185,40 @@ export default function DraftBoard() {
     updateCountdown();
     const interval = setInterval(updateCountdown, 1000);
     return () => clearInterval(interval);
-  }, [currentPickTiming]);
+  }, [currentSlot]);
+
+  const filledPicks = useMemo(() => {
+    return (picks || []).filter((slot) => !!slot.madeAt);
+  }, [picks]);
+
+  const myOpenSlots = useMemo(() => {
+    if (!user || !picks) return [];
+    return picks
+      .filter((slot) =>
+        slot.userId === user.id &&
+        !slot.madeAt &&
+        new Date(slot.scheduledAt).getTime() <= nowMs)
+      .sort((a, b) => a.overallPickNumber - b.overallPickNumber);
+  }, [user, picks, nowMs]);
 
   const availableOrgs = useMemo(() => {
     if (!availablePlayers) return [];
+    const claimed = new Set((picks || []).map((s) => s.selectedOrgName).filter(Boolean));
     const orgs: string[] = [];
     const seen: Record<string, boolean> = {};
     availablePlayers.forEach(dp => {
-      if (dp.player.parentOrgName && !seen[dp.player.parentOrgName]) {
+      if (dp.player.parentOrgName && !claimed.has(dp.player.parentOrgName) && !seen[dp.player.parentOrgName]) {
         seen[dp.player.parentOrgName] = true;
         orgs.push(dp.player.parentOrgName);
       }
     });
     return orgs.sort();
-  }, [availablePlayers]);
+  }, [availablePlayers, picks]);
+  const filteredOrgs = useMemo(() => {
+    const needle = orgSearch.trim().toLowerCase();
+    if (!needle) return availableOrgs;
+    return availableOrgs.filter((org) => org.toLowerCase().includes(needle));
+  }, [availableOrgs, orgSearch]);
 
   const makePick = useMutation({
     mutationFn: async ({ mlbPlayerId, rosterType }: { mlbPlayerId: number; rosterType: string }) => {
@@ -266,13 +275,30 @@ export default function DraftBoard() {
     return new Set(autoDraftList.map(item => item.mlbPlayerId));
   }, [autoDraftList]);
 
+  const autoDraftCandidatePlayers = useMemo(() => {
+    const needle = autoDraftSearch.trim().toLowerCase();
+    if (!availablePlayers?.length) return [] as DraftPlayerWithDetails[];
+    return availablePlayers
+      .filter((dp) => !autoDraftListIds.has(dp.mlbPlayerId))
+      .filter((dp) => {
+        if (!needle) return true;
+        return [
+          dp.player.fullName,
+          dp.player.primaryPosition,
+          dp.player.currentTeamName,
+          dp.player.parentOrgName,
+        ].some((value) => (value || "").toLowerCase().includes(needle));
+      })
+      .slice(0, 8);
+  }, [availablePlayers, autoDraftListIds, autoDraftSearch]);
+
   const addToAutoDraft = useMutation({
     mutationFn: async ({ mlbPlayerId, rosterType }: { mlbPlayerId: number; rosterType: string }) => {
       await apiRequest("POST", `/api/drafts/${draftIdNum}/auto-draft-list`, { mlbPlayerId, rosterType });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "auto-draft-list"] });
-      toast({ title: "Added to auto-draft list" });
+      toast({ title: "Added to auto-draft list", description: `Queued as ${autoDraftRosterType.toUpperCase()}` });
     },
     onError: (error: Error) => {
       toast({ title: "Failed to add", description: error.message, variant: "destructive" });
@@ -297,6 +323,22 @@ export default function DraftBoard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "auto-draft-list"] });
+    },
+  });
+
+  const clearAutoDraft = useMutation({
+    mutationFn: async () => {
+      if (!autoDraftList?.length) return;
+      await Promise.all(
+        autoDraftList.map((item) => apiRequest("DELETE", `/api/drafts/${draftIdNum}/auto-draft-list/${item.id}`)),
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "auto-draft-list"] });
+      toast({ title: "Auto-draft list cleared" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to clear list", description: error.message, variant: "destructive" });
     },
   });
 
@@ -351,7 +393,11 @@ export default function DraftBoard() {
           <CardContent className="p-12 text-center">
             <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <h3 className="text-lg font-medium mb-2">Draft Not Found</h3>
-            <p className="text-muted-foreground">This draft does not exist or you don't have access.</p>
+            <p className="text-muted-foreground">This draft does not exist in your current league context, or you do not have access.</p>
+            <p className="text-sm text-muted-foreground mt-2">Current league: {currentLeague?.name || "Not selected"} (ID {selectedLeagueId || "?"})</p>
+            <Button variant="outline" className="mt-4" onClick={() => navigate("/drafts")} data-testid="button-back-drafts">
+              Back to Drafts
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -393,14 +439,22 @@ export default function DraftBoard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {picks?.map((pick) => (
+                  {filledPicks.map((pick) => (
                     <TableRow key={pick.id} data-testid={`row-pick-${pick.id}`}>
-                      <TableCell className="font-mono">{pick.pickNumber}</TableCell>
+                      <TableCell className="font-mono">{pick.overallPickNumber}</TableCell>
                       <TableCell className="font-mono">{pick.round}</TableCell>
                       <TableCell className="font-medium">{pick.user.teamName || `${pick.user.firstName} ${pick.user.lastName}`}</TableCell>
-                      <TableCell className="font-medium">{pick.player.fullName}</TableCell>
-                      <TableCell>{pick.player.primaryPosition}</TableCell>
-                      <TableCell className="text-muted-foreground">{pick.player.currentTeamName || pick.player.parentOrgName}</TableCell>
+                      <TableCell className="font-medium">{pick.player?.fullName || pick.selectedOrgName || "-"}</TableCell>
+                      <TableCell>{pick.player?.primaryPosition || (pick.selectedOrgName ? "Org Claim" : "-")}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {pick.player
+                          ? formatAffiliatedTeamLabel({
+                              currentTeamName: pick.player.currentTeamName,
+                              parentOrgName: pick.player.parentOrgName,
+                              sportLevel: pick.player.sportLevel,
+                            })
+                          : (pick.selectedOrgName || "-")}
+                      </TableCell>
                       <TableCell>
                         <Badge variant={pick.rosterType === "mlb" ? "default" : "outline"}>
                           {pick.rosterType === "mlb" ? "MLB" : "MiLB"}
@@ -417,9 +471,8 @@ export default function DraftBoard() {
     );
   }
 
-  const roundName = currentRoundConfig?.name || `Round ${draft.currentRound}`;
-  const totalPicksInRound = currentRoundOrder.length;
-  const picksMade = picks?.length || 0;
+  const roundName = currentRoundConfig?.name || (currentSlot ? `Round ${currentSlot.round}` : "Draft");
+  const picksMade = filledPicks.length;
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -430,10 +483,10 @@ export default function DraftBoard() {
             {draft.status === "active" ? "Live" : draft.status}
           </Badge>
           <span className="text-muted-foreground text-sm" data-testid="text-round-info">
-            {roundName} (Round {draft.currentRound} of {draft.rounds})
+            {currentSlot ? `${roundName} (Round ${currentSlot.round} of ${draft.rounds})` : "Waiting for first slot to open"}
           </span>
           <span className="text-muted-foreground text-sm">
-            Pick {draft.currentPickIndex + 1} of {totalPicksInRound}
+            {currentSlot ? `Overall Pick ${currentSlot.overallPickNumber}` : "No active slot"}
           </span>
           {isTeamDraftRound && (
             <Badge variant="secondary" data-testid="badge-team-draft-round">
@@ -497,12 +550,12 @@ export default function DraftBoard() {
         </Card>
       )}
 
-      {draft.status === "active" && !currentTeam && currentRoundOrder.length === 0 && (
+      {draft.status === "active" && !currentTeam && (!picks || picks.length === 0) && (
         <Card className="mb-6">
           <CardContent className="py-8 text-center">
             <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-lg font-medium mb-2">Draft Order Not Set</h3>
-            <p className="text-muted-foreground">The draft order has not been configured for this round. The commissioner needs to upload the draft order.</p>
+            <h3 className="text-lg font-medium mb-2">Draft Slots Not Generated</h3>
+            <p className="text-muted-foreground">The commissioner must start the draft after configuring rounds and order.</p>
           </CardContent>
         </Card>
       )}
@@ -524,22 +577,26 @@ export default function DraftBoard() {
               <CardTitle className="text-lg">
                 {isTeamDraftRound ? "Available Organizations" : "Available Players"}
               </CardTitle>
-              <div className="relative w-64">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search players..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9"
-                  data-testid="input-search-players"
-                />
+              <div className="flex items-center gap-2">
+                <div className="relative w-64">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder={isTeamDraftRound ? "Search organizations..." : "Search players..."}
+                    value={isTeamDraftRound ? orgSearch : playerSearch}
+                    onChange={(e) => isTeamDraftRound ? setOrgSearch(e.target.value) : setPlayerSearch(e.target.value)}
+                    className="pl-9"
+                    data-testid="input-search-players"
+                  />
+                </div>
               </div>
             </CardHeader>
             <CardContent className="p-0">
               {isTeamDraftRound && draft.status === "active" ? (
                 <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-                  {availableOrgs.length === 0 ? (
-                    <div className="p-8 text-center text-muted-foreground">No available organizations remaining.</div>
+                  {filteredOrgs.length === 0 ? (
+                    <div className="p-8 text-center text-muted-foreground">
+                      {orgSearch ? "No organizations match your search." : "No available organizations remaining."}
+                    </div>
                   ) : (
                     <Table>
                       <TableHeader className="sticky top-0 z-10 bg-background">
@@ -550,7 +607,7 @@ export default function DraftBoard() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {availableOrgs.map(org => {
+                        {filteredOrgs.map(org => {
                           const orgPlayerCount = availablePlayers?.filter(p => p.player.parentOrgName === org).length || 0;
                           return (
                             <TableRow key={org} data-testid={`row-org-${org.replace(/\s/g, '-')}`}>
@@ -586,7 +643,7 @@ export default function DraftBoard() {
                 </div>
               ) : !availablePlayers?.length ? (
                 <div className="p-8 text-center text-muted-foreground">
-                  {search ? "No players match your search." : "No available players remaining."}
+                  {playerSearch ? "No players match your search." : "No available players remaining."}
                 </div>
               ) : (
                 <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
@@ -605,7 +662,13 @@ export default function DraftBoard() {
                         <TableRow key={dp.id} data-testid={`row-player-${dp.id}`}>
                           <TableCell className="font-medium">{dp.player.fullName}</TableCell>
                           <TableCell>{dp.player.primaryPosition}</TableCell>
-                          <TableCell className="text-muted-foreground">{dp.player.currentTeamName || dp.player.parentOrgName || "-"}</TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {formatAffiliatedTeamLabel({
+                              currentTeamName: dp.player.currentTeamName,
+                              parentOrgName: dp.player.parentOrgName,
+                              sportLevel: dp.player.sportLevel,
+                            })}
+                          </TableCell>
                           <TableCell>
                             <Badge variant="outline" className="text-xs">{dp.player.sportLevel}</Badge>
                           </TableCell>
@@ -623,14 +686,15 @@ export default function DraftBoard() {
                                 )}
                                 {draft?.status !== "completed" && !autoDraftListIds.has(dp.mlbPlayerId) && (
                                   <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    onClick={() => addToAutoDraft.mutate({ mlbPlayerId: dp.mlbPlayerId, rosterType: "mlb" })}
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => addToAutoDraft.mutate({ mlbPlayerId: dp.mlbPlayerId, rosterType: autoDraftRosterType })}
                                     disabled={addToAutoDraft.isPending}
                                     data-testid={`button-auto-draft-add-${dp.id}`}
-                                    title="Add to auto-draft list"
+                                    title={`Add to auto-draft list as ${autoDraftRosterType.toUpperCase()}`}
                                   >
-                                    <Plus className="h-4 w-4" />
+                                    <Plus className="h-3.5 w-3.5 mr-1" />
+                                    Queue
                                   </Button>
                                 )}
                                 {autoDraftListIds.has(dp.mlbPlayerId) && (
@@ -658,7 +722,7 @@ export default function DraftBoard() {
               <CardTitle className="text-lg">Pick History</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              {!picks?.length ? (
+              {!filledPicks.length ? (
                 <div className="p-6 text-center text-muted-foreground text-sm">No picks made yet.</div>
               ) : (
                 <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
@@ -672,17 +736,27 @@ export default function DraftBoard() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {[...picks].reverse().map((pick) => (
+                      {[...filledPicks].reverse().map((pick) => (
                         <TableRow key={pick.id} data-testid={`row-pick-${pick.id}`}>
                           <TableCell className="font-mono text-xs">
-                            {pick.round}.{pick.pickNumber}
+                            {pick.round}.{pick.roundPickIndex + 1}
                           </TableCell>
                           <TableCell className="text-sm font-medium">
                             {pick.user.teamName || `${pick.user.firstName}`}
                           </TableCell>
                           <TableCell>
-                            <div className="text-sm font-medium">{pick.player.fullName}</div>
-                            <div className="text-xs text-muted-foreground">{pick.player.primaryPosition} - {pick.player.currentTeamName || pick.player.parentOrgName}</div>
+                            <div className="text-sm font-medium">{pick.player?.fullName || pick.selectedOrgName || "-"}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {pick.player
+                                ? `${pick.player.primaryPosition} - ${formatAffiliatedTeamLabel({
+                                    currentTeamName: pick.player.currentTeamName,
+                                    parentOrgName: pick.player.parentOrgName,
+                                    sportLevel: pick.player.sportLevel,
+                                  })}`
+                                : pick.selectedOrgName
+                                  ? `Organization claim (${pick.selectedOrgPlayerIds?.length || 0} players)`
+                                  : "-"}
+                            </div>
                           </TableCell>
                           <TableCell>
                             <Badge variant={pick.rosterType === "mlb" ? "default" : "outline"} className="text-xs">
@@ -698,46 +772,53 @@ export default function DraftBoard() {
             </CardContent>
           </Card>
 
-          {currentRoundOrder.length > 0 && (
+          {draft.status !== "completed" && (
             <Card className="mt-4">
               <CardHeader className="pb-3">
-                <CardTitle className="text-lg">
-                  {roundName} Order
-                </CardTitle>
+                <CardTitle className="text-lg">Your Open Picks</CardTitle>
               </CardHeader>
-              <CardContent className="p-0">
+              <CardContent className="space-y-2">
+                <div className="text-2xl font-semibold">{myOpenSlots.length}</div>
+                <p className="text-sm text-muted-foreground">Eligible open slots (scheduled and unfilled).</p>
+                {myOpenSlots.slice(0, 3).map((slot) => (
+                  <div key={slot.id} className="text-sm text-muted-foreground">
+                    Pick {slot.overallPickNumber} due {new Date(slot.deadlineAt).toLocaleString()}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {!!picks?.length && (
+            <Card className="mt-4">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Slot Board</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0 max-h-[360px] overflow-y-auto">
                 <Table>
+                  <TableHeader className="sticky top-0 z-10 bg-background">
+                    <TableRow className="bg-muted/50">
+                      <TableHead>#</TableHead>
+                      <TableHead>Team</TableHead>
+                      <TableHead>Scheduled</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
                   <TableBody>
-                    {currentRoundOrder.map((entry, idx) => {
-                      const pickTiming = timingInfo?.hasTiming && timingInfo.pickTimings
-                        ? timingInfo.pickTimings[idx]
-                        : null;
-                      const isPicked = idx < (draft?.currentPickIndex ?? 0);
-                      return (
-                        <TableRow
-                          key={entry.id}
-                          className={currentTeam?.userId === entry.userId ? "bg-primary/10" : ""}
-                          data-testid={`row-order-${entry.id}`}
-                        >
-                          <TableCell className="font-mono text-sm">{idx + 1}</TableCell>
-                          <TableCell className="font-medium text-sm">
-                            {entry.user.teamName || `${entry.user.firstName} ${entry.user.lastName}`}
-                            {currentTeam?.userId === entry.userId && (
-                              <Badge variant="default" className="ml-2 text-xs">Current</Badge>
-                            )}
-                          </TableCell>
-                          {pickTiming && !isPicked && (
-                            <TableCell className="text-xs text-muted-foreground text-right">
-                              {new Date(pickTiming.pickDeadline) > new Date()
-                                ? `Due ${new Date(pickTiming.pickDeadline).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
-                                : pickTiming.isExpired
-                                  ? "Expired"
-                                  : ""}
-                            </TableCell>
-                          )}
-                        </TableRow>
-                      );
-                    })}
+                    {picks.map((slot) => (
+                      <TableRow key={slot.id} className={currentSlot?.id === slot.id ? "bg-primary/10" : ""}>
+                        <TableCell className="font-mono text-xs">{slot.overallPickNumber}</TableCell>
+                        <TableCell className="text-sm">{slot.user.teamName || slot.user.firstName || slot.user.lastName || slot.user.id}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{new Date(slot.scheduledAt).toLocaleString()}</TableCell>
+                        <TableCell>
+                          {slot.madeAt
+                            ? <Badge variant="secondary" className="text-xs">Filled</Badge>
+                            : (new Date(slot.scheduledAt).getTime() <= nowMs
+                              ? <Badge variant="default" className="text-xs">Open</Badge>
+                              : <Badge variant="outline" className="text-xs">Upcoming</Badge>)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
               </CardContent>
@@ -746,19 +827,97 @@ export default function DraftBoard() {
 
           {draft.status !== "completed" && (
             <Card className="mt-4">
-              <CardHeader className="pb-3 flex flex-row items-center justify-between gap-2">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <ListOrdered className="h-5 w-5" />
-                  Auto-Draft List
-                </CardTitle>
-                {autoDraftList && autoDraftList.length > 0 && (
-                  <Badge variant="secondary" data-testid="badge-auto-draft-count">{autoDraftList.length}</Badge>
-                )}
+              <CardHeader className="pb-3 space-y-3">
+                <div className="flex flex-row items-center justify-between gap-2">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <ListOrdered className="h-5 w-5" />
+                    Auto-Draft List
+                  </CardTitle>
+                  <div className="flex items-center gap-2">
+                    {autoDraftList && autoDraftList.length > 0 && (
+                      <Badge variant="secondary" data-testid="badge-auto-draft-count">{autoDraftList.length}</Badge>
+                    )}
+                    {!!autoDraftList?.length && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => clearAutoDraft.mutate()}
+                        disabled={clearAutoDraft.isPending}
+                        data-testid="button-auto-draft-clear"
+                      >
+                        {clearAutoDraft.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Set your priority order here. When you are on the clock, the system takes the highest available player in this list.
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Select value={autoDraftRosterType} onValueChange={setAutoDraftRosterType}>
+                    <SelectTrigger className="w-[160px]" data-testid="select-auto-draft-roster-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="mlb">Queue as MLB</SelectItem>
+                      <SelectItem value="milb">Queue as MiLB</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <div className="relative min-w-[220px] flex-1">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      value={autoDraftSearch}
+                      onChange={(e) => setAutoDraftSearch(e.target.value)}
+                      placeholder="Search players to queue..."
+                      className="pl-9"
+                      data-testid="input-auto-draft-search"
+                    />
+                  </div>
+                </div>
               </CardHeader>
               <CardContent className="p-0">
+                {!!autoDraftSearch && (
+                  <div className="border-t border-b p-2 space-y-1">
+                    {autoDraftCandidatePlayers.length === 0 ? (
+                      <div className="px-2 py-1 text-xs text-muted-foreground">
+                        No matching available players found.
+                      </div>
+                    ) : (
+                      autoDraftCandidatePlayers.map((dp) => (
+                        <div
+                          key={dp.id}
+                          className="flex items-center justify-between gap-2 rounded-md border px-2 py-1.5"
+                          data-testid={`row-auto-draft-candidate-${dp.id}`}
+                        >
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium truncate">{dp.player.fullName}</div>
+                            <div className="text-xs text-muted-foreground truncate">
+                              {dp.player.primaryPosition} - {formatAffiliatedTeamLabel({
+                                currentTeamName: dp.player.currentTeamName,
+                                parentOrgName: dp.player.parentOrgName,
+                                sportLevel: dp.player.sportLevel,
+                              })}
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => addToAutoDraft.mutate({ mlbPlayerId: dp.mlbPlayerId, rosterType: autoDraftRosterType })}
+                            disabled={addToAutoDraft.isPending}
+                            data-testid={`button-auto-draft-candidate-add-${dp.id}`}
+                          >
+                            <Plus className="h-3.5 w-3.5 mr-1" />
+                            Queue
+                          </Button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
                 {!autoDraftList?.length ? (
                   <div className="p-4 text-center text-muted-foreground text-sm">
-                    No players in your auto-draft list. Use the + button on available players to add them.
+                    No players in your auto-draft list yet. Search above or use Queue in the available players table.
                   </div>
                 ) : (
                   <div className="max-h-[400px] overflow-y-auto">
@@ -777,7 +936,13 @@ export default function DraftBoard() {
                             <TableCell className="font-mono text-xs text-muted-foreground">{idx + 1}</TableCell>
                             <TableCell>
                               <div className="text-sm font-medium">{item.player.fullName}</div>
-                              <div className="text-xs text-muted-foreground">{item.player.primaryPosition} - {item.player.currentTeamName || item.player.parentOrgName}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {item.player.primaryPosition} - {formatAffiliatedTeamLabel({
+                                  currentTeamName: item.player.currentTeamName,
+                                  parentOrgName: item.player.parentOrgName,
+                                  sportLevel: item.player.sportLevel,
+                                })}
+                              </div>
                             </TableCell>
                             <TableCell>
                               <Badge variant={item.rosterType === "mlb" ? "default" : "outline"} className="text-xs">
@@ -840,7 +1005,11 @@ export default function DraftBoard() {
               <div>
                 <div className="font-semibold text-lg" data-testid="text-pick-player-name">{selectedPlayer.player.fullName}</div>
                 <div className="text-muted-foreground text-sm">
-                  {selectedPlayer.player.primaryPosition} - {selectedPlayer.player.currentTeamName || selectedPlayer.player.parentOrgName}
+                  {selectedPlayer.player.primaryPosition} - {formatAffiliatedTeamLabel({
+                    currentTeamName: selectedPlayer.player.currentTeamName,
+                    parentOrgName: selectedPlayer.player.parentOrgName,
+                    sportLevel: selectedPlayer.player.sportLevel,
+                  })}
                 </div>
                 <div className="text-muted-foreground text-xs mt-1">
                   Level: {selectedPlayer.player.sportLevel}

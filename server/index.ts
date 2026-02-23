@@ -7,6 +7,7 @@ import { sendAuctionResultsSummaryEmail } from "./email";
 
 const app = express();
 const httpServer = createServer(app);
+const REQUEST_BODY_LIMIT = process.env.REQUEST_BODY_LIMIT || "100mb";
 
 declare module "http" {
   interface IncomingMessage {
@@ -16,13 +17,14 @@ declare module "http" {
 
 app.use(
   express.json({
+    limit: REQUEST_BODY_LIMIT,
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
   }),
 );
 
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({ extended: true, limit: REQUEST_BODY_LIMIT }));
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -66,10 +68,17 @@ app.use((req, res, next) => {
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+    const isPayloadTooLarge = status === 413 || err?.type === "entity.too.large";
+    const message = isPayloadTooLarge
+      ? `Request too large. Reduce CSV size or raise REQUEST_BODY_LIMIT (current: ${REQUEST_BODY_LIMIT}).`
+      : (err.message || "Internal Server Error");
 
+    console.error("[express-error]", {
+      status,
+      type: err?.type || null,
+      message: err?.message || null,
+    });
     res.status(status).json({ message });
-    throw err;
   });
 
   // importantly only setup vite in development and after

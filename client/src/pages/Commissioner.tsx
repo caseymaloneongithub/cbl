@@ -517,13 +517,16 @@ export default function Commissioner() {
 
   const updateTeamDetails = useMutation({
     mutationFn: async ({ userId, details }: { userId: string; details: { email?: string; firstName?: string; lastName?: string; teamName?: string; teamAbbreviation?: string } }) => {
-      const res = await apiRequest("PATCH", `/api/users/${userId}`, details);
+      const qs = selectedLeagueId ? `?leagueId=${selectedLeagueId}` : "";
+      const res = await apiRequest("PATCH", `/api/users/${userId}${qs}`, details);
       return res.json();
     },
     onSuccess: () => {
       toast({ title: "Team Updated", description: "Team details have been saved." });
       setEditingTeam(null);
       queryClient.invalidateQueries({ queryKey: ["/api/owners", selectedLeagueId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues", selectedLeagueId, "members"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues"] });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });

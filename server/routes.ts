@@ -3,12 +3,31 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
 import { setupAuth, isAuthenticated, hashPassword, generateRandomPassword } from "./auth";
-import { insertBidSchema, insertAutoBidSchema, autoBids } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import {
+  insertBidSchema,
+  insertAutoBidSchema,
+  autoBids,
+  teamOwnershipInvites,
+  leagueMembers,
+  leagues,
+  users,
+  rosterPlayers,
+  leagueRosterAssignments,
+  auctions,
+  auctionTeams,
+  drafts,
+  draftOrder,
+  draftPicks,
+  autoDraftLists,
+} from "@shared/schema";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { fromZonedTime } from "date-fns-tz";
 import { parse, isValid, format } from "date-fns";
+import crypto from "crypto";
 import { syncPlayerStatsFromMLB, testMLBConnection, fetchAllAffiliatedPlayers } from "./mlb-api";
+import fs from "fs/promises";
+import path from "path";
 
 const EASTERN_TIMEZONE = "America/New_York";
 const CST_TIMEZONE = "America/Chicago";
@@ -79,6 +98,10 @@ async function hasAuctionCommissionerAccess(userId: string, auctionId: number): 
   const leagueId = await storage.getLeagueIdFromAuction(auctionId);
   if (!leagueId) return false;
   return storage.isLeagueCommissioner(leagueId, userId);
+}
+
+function normalizeEmail(value: string): string {
+  return String(value || "").trim().toLowerCase();
 }
 
 function parseEasternTime(dateString: string): Date {
@@ -985,7 +1008,7 @@ export async function registerRoutes(
     }
   });
 
-  // Super admin: Sync all affiliated players from MLB API into reference database
+  // Super admin: Sync professional players from MLB API into reference database
   app.post("/api/admin/mlb-players/sync", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.originalUserId || req.session.userId!;
@@ -1000,7 +1023,7 @@ export async function registerRoutes(
         ? season
         : currentYear;
 
-      console.log(`[MLB Sync] Starting affiliated players sync for season ${syncSeason}`);
+      console.log(`[MLB Sync] Starting professional players sync for season ${syncSeason}`);
 
       const players = await fetchAllAffiliatedPlayers(syncSeason);
 
@@ -1008,7 +1031,9 @@ export async function registerRoutes(
         players.map(p => ({
           mlbId: p.mlbId,
           fullName: p.fullName,
+          fullFmlName: p.fullFmlName,
           firstName: p.firstName,
+          middleName: p.middleName,
           lastName: p.lastName,
           primaryPosition: p.primaryPosition,
           positionName: p.positionName,
@@ -1026,6 +1051,27 @@ export async function registerRoutes(
           isActive: p.isActive,
           hadHittingStats: p.hadHittingStats,
           hadPitchingStats: p.hadPitchingStats,
+          hittingAtBats: p.hittingAtBats,
+          hittingWalks: p.hittingWalks,
+          hittingSingles: p.hittingSingles,
+          hittingDoubles: p.hittingDoubles,
+          hittingTriples: p.hittingTriples,
+          hittingHomeRuns: p.hittingHomeRuns,
+          hittingAvg: p.hittingAvg,
+          hittingObp: p.hittingObp,
+          hittingSlg: p.hittingSlg,
+          hittingOps: p.hittingOps,
+          pitchingGames: p.pitchingGames,
+          pitchingGamesStarted: p.pitchingGamesStarted,
+          pitchingStrikeouts: p.pitchingStrikeouts,
+          pitchingWalks: p.pitchingWalks,
+          pitchingHits: p.pitchingHits,
+          pitchingHomeRuns: p.pitchingHomeRuns,
+          pitchingEra: p.pitchingEra,
+          pitchingInningsPitched: p.pitchingInningsPitched,
+          hittingGamesStarted: p.hittingGamesStarted,
+          hittingPlateAppearances: p.hittingPlateAppearances,
+          isTwoWayQualified: p.isTwoWayQualified,
           season: p.season,
         }))
       );
@@ -1038,7 +1084,7 @@ export async function registerRoutes(
       console.log(`[MLB Sync] Completed: ${upserted} players synced`);
 
       res.json({
-        message: `Synced ${upserted} affiliated players for ${syncSeason} season`,
+        message: `Synced ${upserted} professional players for ${syncSeason} season`,
         season: syncSeason,
         totalPlayers: upserted,
         byLevel: levelCounts,
@@ -1058,18 +1104,39 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Super Admin access required" });
       }
 
-      const levels = ["MLB", "AAA", "AA", "High-A", "Single-A", "Rookie"];
-      const total = await storage.getMlbPlayerCount();
-
-      const byLevel: Record<string, { total: number; hitters: number; pitchers: number }> = {};
-      for (const level of levels) {
-        const levelTotal = await storage.getMlbPlayerCount({ sportLevel: level });
-        const hitters = await storage.getMlbPlayerCount({ sportLevel: level, hadHittingStats: true });
-        const pitchers = await storage.getMlbPlayerCount({ sportLevel: level, hadPitchingStats: true });
-        byLevel[level] = { total: levelTotal, hitters, pitchers };
+      const season = req.query.season ? parseInt(String(req.query.season), 10) : undefined;
+      if (req.query.season && Number.isNaN(season)) {
+        return res.status(400).json({ message: "Invalid season" });
       }
 
-      res.json({ total, byLevel });
+      const levels = ["MLB", "AAA", "AA", "High-A", "Single-A", "Rookie"];
+      const total = await storage.getMlbPlayerCount({ season });
+
+      const byLevel: Record<string, { total: number; hitters: number; pitchers: number; twoWayQualified: number }> = {};
+      const twoWayQualified = await storage.getMlbPlayerCount({ isTwoWayQualified: true, season });
+      for (const level of levels) {
+        const levelTotal = await storage.getMlbPlayerCount({ sportLevel: level, season });
+        const hitters = await storage.getMlbPlayerCount({
+          sportLevel: level,
+          hadHittingStats: true,
+          isTwoWayQualified: false,
+          season,
+        });
+        const pitchers = await storage.getMlbPlayerCount({
+          sportLevel: level,
+          hadPitchingStats: true,
+          hadHittingStats: false,
+          season,
+        });
+        const levelTwoWayQualified = await storage.getMlbPlayerCount({
+          sportLevel: level,
+          isTwoWayQualified: true,
+          season,
+        });
+        byLevel[level] = { total: levelTotal, hitters, pitchers, twoWayQualified: levelTwoWayQualified };
+      }
+
+      res.json({ total, byLevel, twoWayQualified, season });
     } catch (error: any) {
       console.error("Error fetching MLB player status:", error);
       res.status(500).json({ message: "Failed to fetch MLB player status" });
@@ -1191,6 +1258,21 @@ export async function registerRoutes(
       if (!['mlb', 'milb', 'draft'].includes(rosterType)) {
         return res.status(400).json({ message: "rosterType must be 'mlb', 'milb', or 'draft'" });
       }
+      if (rosterType === "mlb") {
+        const existingMlbAssignments = await storage.getLeagueRosterAssignments(leagueId, Number(season), { rosterType: "mlb" });
+        const conflict = existingMlbAssignments.find((a) => a.mlbPlayerId === Number(mlbPlayerId));
+        if (conflict) {
+          return res.status(409).json({
+            message: "MLB player is already assigned for this league/season. Resolve in reconciliation.",
+            conflict: {
+              assignmentId: conflict.id,
+              userId: conflict.userId,
+              playerName: conflict.player?.fullName || null,
+              mlbApiId: conflict.player?.mlbId || null,
+            },
+          });
+        }
+      }
 
       const assignment = await storage.assignPlayerToRoster({
         leagueId,
@@ -1233,6 +1315,35 @@ export async function registerRoutes(
         season: a.season,
       }));
 
+      const incomingMlb = toInsert.filter((a: any) => String(a.rosterType) === "mlb");
+      if (incomingMlb.length > 0) {
+        const seenIncoming = new Set<number>();
+        for (const row of incomingMlb) {
+          const playerId = Number(row.mlbPlayerId);
+          if (seenIncoming.has(playerId)) {
+            return res.status(409).json({
+              message: "Bulk assignment contains duplicate MLB player IDs. Resolve in reconciliation.",
+              mlbPlayerId: playerId,
+            });
+          }
+          seenIncoming.add(playerId);
+        }
+
+        const seasonSet = new Set<number>(incomingMlb.map((a: any) => Number(a.season)).filter((s: number) => Number.isInteger(s)));
+        for (const scopedSeason of Array.from(seasonSet.values())) {
+          const existingMlbAssignments = await storage.getLeagueRosterAssignments(leagueId, scopedSeason, { rosterType: "mlb" });
+          const existingPlayerIds = new Set<number>(existingMlbAssignments.map((a) => Number(a.mlbPlayerId)));
+          const conflictingIncoming = incomingMlb.find((a: any) => Number(a.season) === scopedSeason && existingPlayerIds.has(Number(a.mlbPlayerId)));
+          if (conflictingIncoming) {
+            return res.status(409).json({
+              message: "One or more MLB players are already assigned for this league/season. Resolve in reconciliation.",
+              season: scopedSeason,
+              mlbPlayerId: Number(conflictingIncoming.mlbPlayerId),
+            });
+          }
+        }
+      }
+
       const count = await storage.bulkAssignPlayers(toInsert);
       res.json({ count });
     } catch (error: any) {
@@ -1261,6 +1372,160 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("Error updating roster assignment:", error);
       res.status(500).json({ message: "Failed to update roster assignment" });
+    }
+  });
+
+  // Get duplicate roster assignments for a league/season and scope (commissioner only)
+  app.get("/api/leagues/:id/roster-assignments/duplicates", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+      const season = parseInt(req.query.season as string) || 2025;
+      const rosterType = String(req.query.rosterType || "mlb").toLowerCase();
+
+      if (!await hasLeagueCommissionerAccess(userId, leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+      if (rosterType !== "mlb" && rosterType !== "milb" && rosterType !== "draft") {
+        return res.status(400).json({ message: "Invalid rosterType" });
+      }
+
+      const [assignments, members] = await Promise.all([
+        storage.getLeagueRosterAssignments(leagueId, season, { rosterType: rosterType as "mlb" | "milb" | "draft" }),
+        storage.getLeagueMembers(leagueId),
+      ]);
+      const memberByUserId = new Map(members.map((m) => [m.userId, m]));
+      const grouped = new Map<number, typeof assignments>();
+      for (const assignment of assignments) {
+        const list = grouped.get(assignment.mlbPlayerId) || [];
+        list.push(assignment);
+        grouped.set(assignment.mlbPlayerId, list);
+      }
+
+      const duplicates = Array.from(grouped.entries())
+        .filter(([, rows]) => rows.length > 1)
+        .map(([mlbPlayerId, rows]) => ({
+          mlbPlayerId,
+          mlbApiId: rows[0]?.player?.mlbId ?? null,
+          playerName: rows[0]?.player?.fullName ?? `Player ${mlbPlayerId}`,
+          assignments: rows
+            .map((row) => {
+              const member = memberByUserId.get(row.userId);
+              return {
+                assignmentId: row.id,
+                userId: row.userId,
+                teamName: member?.teamName || null,
+                teamAbbreviation: member?.teamAbbreviation || null,
+                createdAt: row.createdAt,
+              };
+            })
+            .sort((a, b) => String(a.teamName || a.teamAbbreviation || a.userId).localeCompare(String(b.teamName || b.teamAbbreviation || b.userId))),
+        }))
+        .sort((a, b) => a.playerName.localeCompare(b.playerName));
+
+      res.json({
+        leagueId,
+        season,
+        rosterType,
+        duplicatePlayerCount: duplicates.length,
+        duplicateAssignmentCount: duplicates.reduce((sum, d) => sum + d.assignments.length, 0),
+        duplicates,
+      });
+    } catch (error: any) {
+      console.error("Error loading duplicate roster assignments:", error);
+      res.status(500).json({ message: "Failed to load duplicate roster assignments" });
+    }
+  });
+
+  // Resolve duplicate roster assignments by removing selected assignment IDs (commissioner only)
+  app.post("/api/leagues/:id/roster-assignments/duplicates/resolve", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+      const season = parseInt(req.body?.season) || 2025;
+      const rosterType = String(req.body?.rosterType || "mlb").toLowerCase();
+      const removeAssignmentIds = Array.isArray(req.body?.removeAssignmentIds)
+        ? req.body.removeAssignmentIds.map((x: any) => Number(x)).filter((x: number) => Number.isInteger(x) && x > 0)
+        : [];
+
+      if (!await hasLeagueCommissionerAccess(userId, leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+      if (rosterType !== "mlb" && rosterType !== "milb" && rosterType !== "draft") {
+        return res.status(400).json({ message: "Invalid rosterType" });
+      }
+      if (removeAssignmentIds.length === 0) {
+        return res.status(400).json({ message: "removeAssignmentIds is required" });
+      }
+
+      const scopedAssignments = await storage.getLeagueRosterAssignments(leagueId, season, { rosterType: rosterType as "mlb" | "milb" | "draft" });
+      const allowedAssignmentIds = new Set(scopedAssignments.map((a) => a.id));
+      const invalidIds = removeAssignmentIds.filter((id: number) => !allowedAssignmentIds.has(id));
+      if (invalidIds.length > 0) {
+        return res.status(400).json({
+          message: `Some assignment IDs are not in this league/season ${rosterType.toUpperCase()} scope`,
+          invalidIds,
+        });
+      }
+
+      for (const assignmentId of removeAssignmentIds) {
+        await storage.removeRosterAssignment(assignmentId);
+      }
+
+      res.json({ removed: removeAssignmentIds.length });
+    } catch (error: any) {
+      console.error("Error resolving duplicate roster assignments:", error);
+      res.status(500).json({ message: "Failed to resolve duplicate roster assignments" });
+    }
+  });
+
+  // Execute a commissioner trade between two teams (atomic swap of selected roster assignments)
+  app.post("/api/leagues/:id/roster-assignments/trade", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+      if (!await hasLeagueCommissionerAccess(userId, leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const {
+        season,
+        teamAUserId,
+        teamBUserId,
+        teamAAssignmentIds,
+        teamBAssignmentIds,
+      } = req.body || {};
+
+      const tradeSeason = Number(season) || 2025;
+      if (!teamAUserId || !teamBUserId || teamAUserId === teamBUserId) {
+        return res.status(400).json({ message: "Select two different teams" });
+      }
+      if (!Array.isArray(teamAAssignmentIds) || !Array.isArray(teamBAssignmentIds)) {
+        return res.status(400).json({ message: "teamAAssignmentIds and teamBAssignmentIds are required arrays" });
+      }
+      if (teamAAssignmentIds.length === 0 && teamBAssignmentIds.length === 0) {
+        return res.status(400).json({ message: "Select at least one player to trade" });
+      }
+
+      const memberA = await storage.getLeagueMember(leagueId, teamAUserId);
+      const memberB = await storage.getLeagueMember(leagueId, teamBUserId);
+      if (!memberA || memberA.isArchived || !memberB || memberB.isArchived) {
+        return res.status(400).json({ message: "Both trade teams must be active league members" });
+      }
+
+      const result = await storage.executeRosterTrade({
+        leagueId,
+        season: tradeSeason,
+        teamAUserId,
+        teamBUserId,
+        teamAAssignmentIds: teamAAssignmentIds.map((x: any) => Number(x)).filter((x: number) => Number.isInteger(x)),
+        teamBAssignmentIds: teamBAssignmentIds.map((x: any) => Number(x)).filter((x: number) => Number.isInteger(x)),
+      });
+
+      res.json({ success: true, ...result });
+    } catch (error: any) {
+      console.error("Error executing roster trade:", error);
+      res.status(500).json({ message: error?.message || "Failed to execute trade" });
     }
   });
 
@@ -1419,6 +1684,3246 @@ export async function registerRoutes(
       res.status(500).json({ 
         message: `Failed to sync MLB stats: ${error?.message || String(error)}`
       });
+    }
+  });
+
+  // Bulk assign via CSV payload (commissioner only)
+  app.post("/api/leagues/:id/roster-assignments/upload-csv", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+      if (!await hasLeagueCommissionerAccess(userId, leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const csvData = String(req.body?.csvData || "").trim();
+      const season = Number(req.body?.season) || 2025;
+      const requestedDefaultRosterType = String(req.body?.defaultRosterType || "").trim().toLowerCase();
+      const defaultRosterType: "mlb" | "milb" | "draft" =
+        requestedDefaultRosterType === "mlb" || requestedDefaultRosterType === "milb" || requestedDefaultRosterType === "draft"
+          ? (requestedDefaultRosterType as "mlb" | "milb" | "draft")
+          : "milb";
+      const assumePageScope = req.body?.assumePageScope === true;
+      const reconciliationScope = defaultRosterType;
+      const requestedOperation = String(req.body?.operation || "").trim().toLowerCase();
+      const reconciliationOperation: "upload" | "rerun" | "apply" | "save" =
+        requestedOperation === "apply" || requestedOperation === "rerun" || requestedOperation === "upload" || requestedOperation === "save"
+          ? requestedOperation
+          : "upload";
+      const allowPartialImportDuringMatching =
+        reconciliationOperation === "upload" || reconciliationOperation === "rerun";
+      const matchingStage: "matching" | "applying" =
+        reconciliationOperation === "apply" ? "applying" : "matching";
+      const matchingMessage =
+        reconciliationOperation === "apply"
+          ? "Applying confirmed resolutions and validating rows"
+          : reconciliationOperation === "save"
+            ? "Saving confirmed reconciliation state"
+          : reconciliationOperation === "rerun"
+            ? "Re-running matching on loaded CSV"
+            : "Matching uploaded rows";
+      const processedCount = Math.max(0, csvData.split(/\r?\n/).map((l: string) => l.trim()).filter(Boolean).length - 1);
+      const progressPath = path.join(process.cwd(), "attached_assets", `roster-reconcile-progress-${reconciliationScope}.json`);
+      const persistProgress = async (payload: {
+        running: boolean;
+        processed: number;
+        totalRows: number;
+        stage: "matching" | "applying" | "awaiting_resolution" | "importing" | "completed" | "error";
+        message?: string;
+      }) => {
+        const total = Math.max(0, Number(payload.totalRows || 0));
+        const done = Math.max(0, Math.min(total || Number(payload.processed || 0), Number(payload.processed || 0)));
+        const percent = total > 0 ? Math.max(0, Math.min(100, Math.round((done / total) * 100))) : 0;
+        const body = {
+          leagueId,
+          season,
+          updatedAt: new Date().toISOString(),
+          running: payload.running,
+          processed: done,
+          totalRows: total,
+          percent,
+          stage: payload.stage,
+          message: payload.message || null,
+        };
+        try {
+          await fs.writeFile(progressPath, JSON.stringify(body, null, 2), "utf8");
+        } catch (e) {
+          console.error("Failed to persist roster reconciliation progress:", e);
+        }
+      };
+      const setOnboardingStatus = async (params: {
+        status: "pending" | "in_progress" | "completed";
+        imported: number;
+        unresolved: number;
+        errors: number;
+        completedAt: Date | null;
+      }) => {
+        await storage.updateLeague(leagueId, {
+          rosterOnboardingSeason: season,
+          rosterOnboardingStatus: params.status,
+          rosterOnboardingLastProcessed: processedCount,
+          rosterOnboardingLastImported: params.imported,
+          rosterOnboardingLastUnresolved: params.unresolved,
+          rosterOnboardingLastErrors: params.errors,
+          rosterOnboardingCompletedAt: params.completedAt,
+          rosterOnboardingUpdatedAt: new Date(),
+        });
+      };
+      const latestSnapshotPath = path.join(process.cwd(), "attached_assets", `roster-reconcile-latest-${reconciliationScope}.json`);
+      const persistLatestSnapshot = async (payload: {
+        processed: number;
+        created: number;
+        unresolvedCount: number;
+        unresolved: any[];
+        errors: string[];
+        warnings: string[];
+        csvData: string;
+        csvHash?: string;
+        persistedCuts?: Array<{ rowNum: number; cutKey: string }>;
+        resolvedRows?: Array<{ rowNum: number; mlbApiId: number; rosterType: "mlb" | "milb" | "draft"; userId: string }>;
+      }) => {
+        const body = {
+          leagueId,
+          season,
+          rosterType: reconciliationScope,
+          updatedAt: new Date().toISOString(),
+          ...payload,
+        };
+        try {
+          await fs.writeFile(latestSnapshotPath, JSON.stringify(body, null, 2), "utf8");
+        } catch (e) {
+          console.error("Failed to persist latest roster reconciliation snapshot:", e);
+        }
+      };
+      if (!csvData) {
+        return res.status(400).json({ message: "csvData is required" });
+      }
+      const csvHash = crypto.createHash("sha256").update(csvData).digest("hex");
+      const persistedCutEntries = new Map<string, { rowNum: number; cutKey: string }>();
+      // Keep saved cuts across reruns of the same loaded CSV (same hash).
+      // "upload" starts fresh unless it is intentionally the same CSV content.
+      const preservePriorReconciliationState =
+        reconciliationOperation === "apply" ||
+        reconciliationOperation === "save" ||
+        reconciliationOperation === "rerun" ||
+        reconciliationOperation === "upload";
+      if (preservePriorReconciliationState) {
+        try {
+          const previousRaw = await fs.readFile(latestSnapshotPath, "utf8");
+          const previous = JSON.parse(previousRaw || "{}");
+          if (
+            Number(previous?.leagueId) === leagueId &&
+            Number(previous?.season) === season &&
+            String(previous?.csvHash || "") === csvHash &&
+            Array.isArray(previous?.persistedCuts)
+          ) {
+            for (const c of previous.persistedCuts) {
+              const rowNum = Number(c?.rowNum);
+              const cutKey = String(c?.cutKey || "").trim();
+              if (!Number.isInteger(rowNum) || rowNum <= 0) continue;
+              const id = cutKey || `row:${rowNum}`;
+              persistedCutEntries.set(id, { rowNum, cutKey });
+            }
+          }
+        } catch {
+          // No prior snapshot to hydrate cuts from.
+        }
+      }
+      const persistedCutRows = new Set<string>(
+        Array.from(persistedCutEntries.values())
+          .map((c) => String(c.rowNum))
+          .filter(Boolean),
+      );
+      const persistedCutKeys = new Set<string>(
+        Array.from(persistedCutEntries.values())
+          .map((c) => String(c.cutKey || "").trim())
+          .filter(Boolean),
+      );
+      const toPersistedCutRowNumbers = () =>
+        Array.from(new Set(
+          Array.from(persistedCutEntries.values())
+            .map((c) => Number(c.rowNum))
+            .filter((n) => Number.isInteger(n) && n > 0),
+        ));
+
+      const lines = csvData.split(/\r?\n/).map((l: string) => l.trim()).filter(Boolean);
+      if (lines.length < 2) {
+        return res.status(400).json({ message: "CSV must include a header and at least one data row" });
+      }
+      const joinedCsv = lines.join("\n").toLowerCase();
+      const looksLikeTemplateUpload =
+        lines.length <= 6 &&
+        joinedCsv.includes("example prospect") &&
+        joinedCsv.includes("shohei ohtani");
+      if (looksLikeTemplateUpload) {
+        return res.status(400).json({
+          message: "Template/sample CSV detected. Replace example rows with your real league data before uploading.",
+        });
+      }
+      const detectDelimiter = (line: string) => {
+        const comma = (line.match(/,/g) || []).length;
+        const semicolon = (line.match(/;/g) || []).length;
+        const tab = (line.match(/\t/g) || []).length;
+        if (tab > comma && tab > semicolon) return "\t";
+        if (semicolon > comma) return ";";
+        return ",";
+      };
+      const delimiter = detectDelimiter(lines[0]);
+      const isLargeUpload = lines.length > 1200;
+      const totalRows = Math.max(0, lines.length - 1);
+      await persistProgress({ running: true, processed: 0, totalRows, stage: matchingStage, message: matchingMessage });
+
+      const normalizeHeader = (rawHeader: string) =>
+        String(rawHeader || "")
+          .replace(/^\uFEFF/, "")
+          .replace(/^"+|"+$/g, "")
+          .trim()
+          .toLowerCase();
+      const headers = lines[0].split(delimiter).map((h: string) => normalizeHeader(h));
+      const mlbIdIdx = headers.findIndex((h: string) => ["mlb_api_id", "mlb_id", "mlbid", "player_id", "id"].includes(h));
+      const nameIdx = headers.findIndex((h: string) => ["player_name", "name", "player", "full_name", "player full name"].includes(h));
+      const firstNameIdx = headers.findIndex((h: string) => ["first_name", "first name", "firstname", "first", "fname"].includes(h));
+      const lastNameIdx = headers.findIndex((h: string) => ["last_name", "last name", "lastname", "last", "lname"].includes(h));
+      const abbrIdx = headers.findIndex((h: string) => ["team_abbreviation", "team_abbrev", "abbreviation", "team", "abbr", "cbl"].includes(h));
+      const rosterTypeIdx = headers.findIndex((h: string) => ["roster_type", "roster type", "type", "scope"].includes(h));
+      const rosterTypeColumnMissing = rosterTypeIdx === -1;
+      const middleNameIdx = headers.findIndex((h: string) => ["middle_name", "middlename", "middle"].includes(h));
+      const statusIdx = headers.findIndex((h: string) => ["status", "contract_status", "contract"].includes(h));
+      const salary2026Idx = headers.findIndex((h: string) => ["2026", "salary_2026", "salary2026", "2026_salary", "2026 salary", "salary 2026"].includes(h));
+      const yearsIdx = headers.findIndex((h: string) => ["years", "year", "milb_years", "status_years", "contract_years"].includes(h));
+      const ageIdx = headers.findIndex((h: string) => ["age"].includes(h));
+      const mlbTeamIdx = headers.findIndex((h: string) => ["mlb_team", "mlb", "team_name", "current_team"].includes(h));
+      const orgIdx = headers.findIndex((h: string) => ["org", "parent_org", "organization"].includes(h));
+      const fangraphsIdx = headers.findIndex((h: string) => ["fangraphs_id", "fangraphs id", "fg_id", "fgid"].includes(h));
+      const acquiredIdx = headers.findIndex((h: string) => ["acquired", "acq", "date_acquired", "date acquired"].includes(h));
+      if (abbrIdx === -1 || (mlbIdIdx === -1 && nameIdx === -1 && (firstNameIdx === -1 || lastNameIdx === -1))) {
+        return res.status(400).json({ message: "CSV must include team abbreviation and either MLB API ID, player_name, or first_name + last_name columns" });
+      }
+      const headerWarnings: string[] = [];
+      if (rosterTypeColumnMissing) {
+        headerWarnings.push(
+          `CSV is missing roster_type column; rows without explicit roster type default to ${reconciliationScope.toUpperCase()}.`,
+        );
+      }
+      let parseErrorWarning: string | null = null;
+
+      const resolutions: Record<string, number> = req.body?.resolutions && typeof req.body.resolutions === "object"
+        ? req.body.resolutions
+        : {};
+      const duplicateTeamResolutions: Record<string, string> =
+        req.body?.duplicateTeamResolutions && typeof req.body.duplicateTeamResolutions === "object"
+          ? req.body.duplicateTeamResolutions
+          : {};
+      const cuts = new Set<string>(
+        Array.isArray(req.body?.cuts)
+          ? req.body.cuts
+              .map((v: any) => Number(v))
+              .filter((v: number) => Number.isInteger(v) && v > 0)
+              .map((v: number) => String(v))
+          : [],
+      );
+
+      const stripParentheticalName = (value: string) =>
+        String(value || "")
+          .replace(/\([^)]*\)/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+      const buildCutKey = (rowNum: number, playerName: string, teamAbbreviation: string, rosterType: "mlb" | "milb" | "draft") => {
+        const normalizedName = String(stripParentheticalName(playerName || ""))
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, " ")
+          .trim();
+        return `${rowNum}|${normalizedName}|${String(teamAbbreviation || "").toUpperCase()}|${rosterType}`;
+      };
+      const normalizeName = (value: string) =>
+        String(value || "")
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, "");
+      const normalizeNameWithSpaces = (value: string) =>
+        String(value || "")
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, " ")
+          .trim();
+      const toNameVariants = (value: string) => {
+        const raw = String(value || "").trim();
+        const stripped = stripParentheticalName(raw);
+        const variants = [raw, stripped]
+          .filter(Boolean)
+          .map((v) => normalizeName(v))
+          .filter(Boolean);
+        return Array.from(new Set(variants));
+      };
+      const mergeCandidatesByMlbId = (lists: any[][]) => {
+        const map = new Map<number, any>();
+        for (const list of lists) {
+          for (const p of list || []) {
+            const key = Number(p?.mlbId);
+            if (!Number.isInteger(key) || key <= 0) continue;
+            if (!map.has(key)) map.set(key, p);
+          }
+        }
+        return Array.from(map.values());
+      };
+      const buildResolutionRuleKey = (
+        playerName: string,
+        teamAbbreviation: string,
+        rosterType: "mlb" | "milb" | "draft",
+      ) => {
+        const normalizedName = normalizeNameWithSpaces(stripParentheticalName(playerName || ""));
+        return `${normalizedName}|${String(teamAbbreviation || "").toUpperCase()}|${rosterType}`;
+      };
+      const rulesPath = path.join(process.cwd(), "attached_assets", `roster-reconcile-rules-${reconciliationScope}.json`);
+      const persistedNameTeamRules = new Map<string, number>();
+      const persistedDuplicateTeamRules = new Map<string, string>();
+      try {
+        const rulesRaw = await fs.readFile(rulesPath, "utf8");
+        const rules = JSON.parse(rulesRaw || "{}");
+        if (
+          Number(rules?.leagueId) === leagueId &&
+          String(rules?.rosterType || "") === reconciliationScope
+        ) {
+          const nameTeamRules = rules?.nameTeamRules && typeof rules.nameTeamRules === "object"
+            ? rules.nameTeamRules
+            : {};
+          for (const [k, v] of Object.entries(nameTeamRules as Record<string, unknown>)) {
+            const key = String(k || "").trim();
+            const mlbApiId = Number(v);
+            if (!key || !Number.isInteger(mlbApiId) || mlbApiId <= 0) continue;
+            persistedNameTeamRules.set(key, mlbApiId);
+          }
+          const duplicateTeamRules = rules?.duplicateTeamRules && typeof rules.duplicateTeamRules === "object"
+            ? rules.duplicateTeamRules
+            : {};
+          for (const [k, v] of Object.entries(duplicateTeamRules as Record<string, unknown>)) {
+            const key = String(k || "").trim();
+            const userId = String(v || "").trim();
+            if (!key || !userId) continue;
+            persistedDuplicateTeamRules.set(key, userId);
+          }
+        }
+      } catch {
+        // No persisted ad-hoc rules yet.
+      }
+      const TEAM_HINT_ALIASES: Record<string, string[]> = {
+        ATH: ["athletics", "oakland", "sacramento", "a's"],
+        OAK: ["athletics", "oakland", "sacramento", "a's"],
+        ARI: ["diamondbacks", "arizona"],
+        ATL: ["braves", "atlanta"],
+        BAL: ["orioles", "baltimore"],
+        BOS: ["red sox", "boston"],
+        CHC: ["cubs", "chicago cubs"],
+        CIN: ["reds", "cincinnati"],
+        CLE: ["guardians", "cleveland", "indians"],
+        COL: ["rockies", "colorado"],
+        DET: ["tigers", "detroit"],
+        HOU: ["astros", "houston"],
+        KC: ["royals", "kansas city"],
+        TB: ["rays", "tampa bay"],
+        TBR: ["rays", "tampa bay"],
+        TBA: ["rays", "tampa bay"],
+        LAA: ["angels", "los angeles angels"],
+        LAD: ["dodgers", "los angeles dodgers"],
+        MIA: ["marlins", "miami", "florida"],
+        MIL: ["brewers", "milwaukee"],
+        MIN: ["twins", "minnesota"],
+        NYM: ["mets", "new york mets"],
+        NYY: ["yankees", "new york yankees"],
+        PHI: ["phillies", "philadelphia"],
+        PIT: ["pirates", "pittsburgh"],
+        SD: ["padres", "san diego"],
+        CHW: ["white sox", "chicago white sox"],
+        CWS: ["white sox", "chicago white sox"],
+        KCR: ["royals", "kansas city"],
+        SF: ["giants", "san francisco"],
+        SFG: ["giants", "san francisco"],
+        SDP: ["padres", "san diego"],
+        SEA: ["mariners", "seattle"],
+        STL: ["cardinals", "st louis", "saint louis"],
+        TEX: ["rangers", "texas"],
+        TOR: ["blue jays", "toronto"],
+        WSH: ["nationals", "washington", "expos"],
+        WSN: ["nationals", "washington"],
+      };
+      const expandTeamHintVariants = (raw: string | null | undefined) => {
+        const hint = String(raw || "").trim().toLowerCase();
+        if (!hint) return [] as string[];
+        const key = hint.toUpperCase();
+        const expanded = [hint, ...(TEAM_HINT_ALIASES[key] || [])];
+        return Array.from(new Set(expanded.map((v) => v.toLowerCase())));
+      };
+      const parseDobHint = (value: string): { month: number; day: number; year: number | null } | null => {
+        const m = /(\d{1,2})\/(\d{1,2})\/(\d{2,4})/.exec(String(value || ""));
+        if (!m) return null;
+        const month = Number(m[1]);
+        const day = Number(m[2]);
+        let year = Number(m[3]);
+        if (!Number.isFinite(month) || !Number.isFinite(day) || month < 1 || month > 12 || day < 1 || day > 31) return null;
+        if (!Number.isFinite(year)) return { month, day, year: null };
+        if (year < 100) year = year >= 30 ? 1900 + year : 2000 + year;
+        return { month, day, year };
+      };
+      const extractParentheticalMiddleHint = (value: string): string | null => {
+        const text = String(value || "");
+        const matches = text.match(/\(([^)]+)\)/g) || [];
+        for (const token of matches) {
+          const inner = token.replace(/[()]/g, "").trim();
+          if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(inner)) continue;
+          if (/^[a-zA-Z.'-]+$/.test(inner)) return inner;
+        }
+        return null;
+      };
+      const parseMinorLeagueStatusYears = (statusRaw: string, yearsRaw: string): { minorLeagueStatus: string | null; minorLeagueYears: number | null } => {
+        const statusToken = String(statusRaw || "").trim().toUpperCase();
+        const yearsToken = String(yearsRaw || "").trim();
+        let minorLeagueStatus: string | null = null;
+        let minorLeagueYears: number | null = null;
+
+        const slashMatch = /^([A-Z]{2,3})\s*\/\s*(\d+)$/.exec(statusToken);
+        if (slashMatch) {
+          minorLeagueStatus = slashMatch[1];
+          minorLeagueYears = Number.parseInt(slashMatch[2], 10);
+        } else if (statusToken) {
+          minorLeagueStatus = statusToken;
+        }
+
+        if (yearsToken && Number.isFinite(Number(yearsToken))) {
+          const parsed = Number(yearsToken);
+          if (Number.isInteger(parsed) && parsed >= 0) {
+            minorLeagueYears = parsed;
+          }
+        }
+
+        if (minorLeagueStatus && !["MH", "MC", "FA"].includes(minorLeagueStatus)) {
+          minorLeagueStatus = null;
+        }
+        if (minorLeagueYears != null && (!Number.isInteger(minorLeagueYears) || minorLeagueYears < 0)) {
+          minorLeagueYears = null;
+        }
+        return { minorLeagueStatus, minorLeagueYears };
+      };
+      const levenshtein = (aRaw: string, bRaw: string): number => {
+        const a = String(aRaw || "");
+        const b = String(bRaw || "");
+        const m = a.length;
+        const n = b.length;
+        if (m === 0) return n;
+        if (n === 0) return m;
+        const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+        for (let i = 0; i <= m; i++) dp[i][0] = i;
+        for (let j = 0; j <= n; j++) dp[0][j] = j;
+        for (let i = 1; i <= m; i++) {
+          for (let j = 1; j <= n; j++) {
+            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+            dp[i][j] = Math.min(
+              dp[i - 1][j] + 1,
+              dp[i][j - 1] + 1,
+              dp[i - 1][j - 1] + cost,
+            );
+          }
+        }
+        return dp[m][n];
+      };
+      const NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv", "v"]);
+      const stripSuffixTokens = (tokens: string[]) => {
+        const out = [...tokens];
+        while (out.length > 1 && NAME_SUFFIXES.has(out[out.length - 1])) {
+          out.pop();
+        }
+        return out;
+      };
+      const tokenizeNormName = (value: string) =>
+        stripSuffixTokens(normalizeNameWithSpaces(value).split(/\s+/).filter(Boolean));
+      const FIRST_NAME_NICKNAME_GROUPS: string[][] = [
+        ["alex", "alexander", "alexandre", "alexandro"],
+        ["andrew", "andy", "drew"],
+        ["anthony", "tony"],
+        ["ben", "benjamin", "benny"],
+        ["bill", "william", "billy", "will", "willy", "liam"],
+        ["cam", "cameron"],
+        ["charlie", "charles", "chuck"],
+        ["chris", "christopher", "christoper", "christofer", "topher"],
+        ["dan", "daniel", "danny"],
+        ["dave", "david", "davy"],
+        ["ed", "edward", "eddie", "ted", "teddy"],
+        ["enrique", "kike", "quique", "kiko"],
+        ["frank", "francisco", "frankie", "franky", "fran", "paco"],
+        ["greg", "gregory"],
+        ["jim", "james", "jimmy", "jamie"],
+        ["joe", "joseph", "joey"],
+        ["josh", "joshua"],
+        ["leo", "leonardo"],
+        ["mat", "matheu", "mathieu"],
+        ["matt", "matthew"],
+        ["mike", "michael", "mikey"],
+        ["nick", "nicholas", "nicolas", "nicky"],
+        ["pat", "patrick"],
+        ["ricardo", "ricky", "rico"],
+        ["rob", "robert", "roberto", "robbie", "bob", "bobby"],
+        ["sam", "samuel", "sammy"],
+        ["steve", "steven", "stephen", "stevie"],
+        ["tim", "timothy"],
+        ["vin", "vincent", "vince"],
+        ["vic", "victor"],
+        ["zac", "zachary", "zach", "zack", "zackary"],
+      ];
+      const FIRST_NAME_ALIAS_MAP: Record<string, string> = {};
+      for (const group of FIRST_NAME_NICKNAME_GROUPS) {
+        if (!Array.isArray(group) || group.length === 0) continue;
+        const canonical = String(group[0] || "").trim().toLowerCase();
+        if (!canonical) continue;
+        for (const entry of group) {
+          const alias = String(entry || "").trim().toLowerCase();
+          if (!alias) continue;
+          FIRST_NAME_ALIAS_MAP[alias] = canonical;
+        }
+      }
+      const canonicalFirstName = (first: string): string => {
+        const v = String(first || "").trim().toLowerCase();
+        if (!v) return "";
+        return FIRST_NAME_ALIAS_MAP[v] || v;
+      };
+      // Common first names need stronger evidence before auto-mapping one-letter surname variants.
+      const COMMON_FIRST_NAMES_FOR_SURNAME_TYPO_AUTOMAP = new Set([
+        "jose",
+        "juan",
+        "luis",
+        "miguel",
+        "carlos",
+        "angel",
+        "jesus",
+        "pedro",
+        "francisco",
+        "alex",
+        "david",
+        "daniel",
+        "john",
+        "joseph",
+        "michael",
+        "will",
+        "ben",
+        "chris",
+      ]);
+      const splitNormName = (value: string) => {
+        const parts = tokenizeNormName(stripParentheticalName(value));
+        return {
+          first: parts[0] || "",
+          last: parts.length ? parts[parts.length - 1] : "",
+          full: parts.join(" "),
+        };
+      };
+      const extractMiddleInitialFromName = (value: string): string | null => {
+        const parts = tokenizeNormName(stripParentheticalName(value));
+        if (parts.length < 3) return null;
+        for (const token of parts.slice(1, -1)) {
+          if (token.length === 1) return token;
+        }
+        return null;
+      };
+      const getCandidateMiddleInitial = (candidate: any): string | null => {
+        const middleFromField = normalizeName(candidate?.middleName || "");
+        if (middleFromField) return middleFromField[0];
+        const full = String(candidate?.fullFmlName || candidate?.fullFMLName || candidate?.fullName || "");
+        const parts = tokenizeNormName(full);
+        if (parts.length < 3) return null;
+        for (const token of parts.slice(1, -1)) {
+          if (token.length === 1) return token;
+        }
+        return null;
+      };
+      const normalizeConfusableCharacters = (value: string): string => {
+        let out = String(value || "");
+        // Common OCR/typing confusables in player-name data.
+        out = out
+          .replace(/rn/g, "m")
+          .replace(/vv/g, "w")
+          .replace(/cl/g, "d");
+        // Collapse vowels to a single class for near-phonetic variants (yeremi/yeremy).
+        out = out.replace(/[aeiouy]/g, "a");
+        return out;
+      };
+      const charSimilarity = (aRaw: string, bRaw: string): number => {
+        const a = String(aRaw || "");
+        const b = String(bRaw || "");
+        if (!a && !b) return 1;
+        if (!a || !b) return 0;
+        const dist = levenshtein(a, b);
+        const maxLen = Math.max(a.length, b.length);
+        if (maxLen <= 0) return 0;
+        const base = Math.max(0, 1 - dist / maxLen);
+        const aNorm = normalizeConfusableCharacters(a);
+        const bNorm = normalizeConfusableCharacters(b);
+        const normDist = levenshtein(aNorm, bNorm);
+        const normMaxLen = Math.max(aNorm.length, bNorm.length) || 1;
+        const confusableAdjusted = Math.max(0, 1 - normDist / normMaxLen);
+        // Use the stronger of raw and confusable-adjusted similarity.
+        return Math.max(base, confusableAdjusted);
+      };
+      const dedupeLatestByMlbId = (players: any[]) => {
+        const byMlbId = new Map<number, any>();
+        const sorted = [...players].sort((a, b) => Number(b?.season || 0) - Number(a?.season || 0));
+        for (const p of sorted) {
+          if (!Number.isInteger(Number(p?.mlbId))) continue;
+          const key = Number(p.mlbId);
+          if (!byMlbId.has(key)) byMlbId.set(key, p);
+        }
+        return Array.from(byMlbId.values());
+      };
+      let cachedAllPlayersForFallback: any[] | null = null;
+      const searchMlbPeople = async (name: string): Promise<any[]> => {
+        const q = String(name || "").trim();
+        if (!q) return [];
+        const split = splitNormName(q);
+        const rawTokens = normalizeNameWithSpaces(q).split(/\s+/).filter(Boolean);
+        const fallbackQueries = new Set<string>([q]);
+        // MLB people/search often fails on full extended names; retry with first+last.
+        if (split.first && split.last && split.first !== split.last) {
+          fallbackQueries.add(`${split.first} ${split.last}`);
+        }
+        if (rawTokens.length >= 2) {
+          fallbackQueries.add(`${rawTokens[0]} ${rawTokens[rawTokens.length - 1]}`);
+        }
+        const queries = Array.from(fallbackQueries).filter(Boolean);
+        try {
+          const merged: any[] = [];
+          for (const query of queries) {
+            const response = await fetch(`https://statsapi.mlb.com/api/v1/people/search?names=${encodeURIComponent(query)}`);
+            if (!response.ok) continue;
+            const payload = await response.json();
+            const people = Array.isArray(payload?.people) ? payload.people : [];
+            merged.push(...people);
+          }
+          return mergeCandidatesByMlbId([merged.map((p: any) => ({
+            mlbId: Number(p?.id),
+            fullName: String(p?.fullName || "").trim(),
+            fullFmlName: String(p?.fullFMLName || "").trim() || null,
+            nameFirstLast: String(p?.nameFirstLast || "").trim() || null,
+            firstName: p?.firstName || null,
+            middleName: p?.middleName || null,
+            lastName: p?.lastName || null,
+            age: Number.isFinite(Number(p?.currentAge)) ? Number(p.currentAge) : null,
+            currentTeamName: p?.currentTeam?.name || null,
+            parentOrgName: null,
+            sportLevel: "WEB",
+            birthDate: p?.birthDate || null,
+          })).filter((p: any) => Number.isInteger(p.mlbId) && p.mlbId > 0 && p.fullName)]);
+        } catch {
+          return [];
+        }
+      };
+      const SPORT_IDS_FOR_DIRECTORY = [11, 12, 13, 14, 16];
+      const webDirectoryCache = new Map<string, any[]>();
+      const searchMlbDirectoryBySurname = async (rawName: string, season: number): Promise<any[]> => {
+        const parts = splitNormName(rawName);
+        const surname = (parts.last || "").trim();
+        if (!surname || surname.length < 4) return [];
+        const candidates: any[] = [];
+        const seasons = [season, season - 1, season - 2, season - 3, season - 4];
+        for (const y of seasons) {
+          for (const sportId of SPORT_IDS_FOR_DIRECTORY) {
+            const key = `${sportId}-${y}`;
+            let roster = webDirectoryCache.get(key);
+            if (!roster) {
+              try {
+                const response = await fetch(`https://statsapi.mlb.com/api/v1/sports/${sportId}/players?season=${y}`);
+                if (!response.ok) {
+                  webDirectoryCache.set(key, []);
+                  continue;
+                }
+                const payload = await response.json();
+                const people = Array.isArray(payload?.people) ? payload.people : [];
+                roster = people.map((p: any) => ({
+                  mlbId: Number(p?.id),
+                  fullName: String(p?.fullName || "").trim(),
+                  fullFmlName: String(p?.fullFMLName || "").trim() || null,
+                  nameFirstLast: String(p?.nameFirstLast || "").trim() || null,
+                  firstName: p?.firstName || null,
+                  middleName: p?.middleName || null,
+                  lastName: p?.lastName || null,
+                  age: Number.isFinite(Number(p?.currentAge)) ? Number(p.currentAge) : null,
+                  currentTeamName: p?.currentTeam?.name || null,
+                  parentOrgName: null,
+                  sportLevel: "DIR",
+                  birthDate: p?.birthDate || null,
+                  season: y,
+                })).filter((p: any) => Number.isInteger(p.mlbId) && p.mlbId > 0 && p.fullName);
+                webDirectoryCache.set(key, roster || []);
+              } catch {
+                webDirectoryCache.set(key, []);
+                roster = [];
+              }
+            }
+            for (const p of roster || []) {
+              const candLast = splitNormName(p.fullName || "").last;
+              const lastDist = levenshtein(surname, candLast);
+              if (lastDist <= 1 || candLast === surname) {
+                candidates.push(p);
+              }
+            }
+          }
+        }
+        return mergeCandidatesByMlbId([candidates]).slice(0, 50);
+      };
+      const getAccentInsensitiveCandidates = async (rawName: string, limit = 15) => {
+        if (!cachedAllPlayersForFallback) {
+          cachedAllPlayersForFallback = dedupeLatestByMlbId(await storage.getMlbPlayers({}));
+        }
+        const normNeedles = toNameVariants(rawName);
+        const rowSplit = splitNormName(rawName);
+        if (normNeedles.length === 0 && !rowSplit.last) return [];
+        const scored = cachedAllPlayersForFallback
+          .map((p: any) => {
+            const normFull = normalizeName(p.fullName || "");
+            const candSplit = splitNormName(p.fullName || "");
+            let score = 0;
+            for (const normNeedle of normNeedles) {
+              if (normFull === normNeedle) score = Math.max(score, 100);
+              else if (normFull.startsWith(normNeedle) || normNeedle.startsWith(normFull)) score = Math.max(score, 70);
+              else if (normFull.includes(normNeedle) || normNeedle.includes(normFull)) score = Math.max(score, 50);
+            }
+            // Typo-tolerant fallback: preserve last-name anchor, tolerate first-name edit distance.
+            if (rowSplit.last && candSplit.last) {
+              const lastDist = levenshtein(rowSplit.last, candSplit.last);
+              if (lastDist <= 1) {
+                score = Math.max(score, 40);
+                if (rowSplit.first && candSplit.first) {
+                  const firstDist = levenshtein(rowSplit.first, candSplit.first);
+                  if (firstDist <= 1) score = Math.max(score, 78);
+                  else if (firstDist <= 2) score = Math.max(score, 68);
+                }
+                const fullDist = levenshtein(rowSplit.full, candSplit.full);
+                if (fullDist <= 2) score = Math.max(score, 74);
+                else if (fullDist <= 3) score = Math.max(score, 62);
+              }
+            }
+            return { p, score };
+          })
+          .filter((x: any) => x.score > 0)
+          .sort((a: any, b: any) => b.score - a.score);
+        return scored.slice(0, limit).map((x: any) => x.p);
+      };
+      const scoreCandidate = (candidate: any, row: any) => {
+        let score = 0;
+        const rowCompact = normalizeName(row.playerName || "");
+        let bestFirstDistForSameLast: number | null = null;
+        const candidateNameVariants = Array.from(new Set([
+          normalizeName(candidate.fullName || ""),
+          normalizeName(candidate.fullFmlName || ""),
+          normalizeName(candidate.nameFirstLast || ""),
+          normalizeName(candidate.fullFMLName || ""),
+          normalizeName(
+            [candidate.firstName, candidate.middleName, candidate.lastName]
+              .filter(Boolean)
+              .join(" "),
+          ),
+        ].filter(Boolean)));
+        const candidateNameVariantsSpaced = Array.from(new Set([
+          normalizeNameWithSpaces(candidate.fullName || ""),
+          normalizeNameWithSpaces(candidate.fullFmlName || ""),
+          normalizeNameWithSpaces(candidate.nameFirstLast || ""),
+          normalizeNameWithSpaces(candidate.fullFMLName || ""),
+          normalizeNameWithSpaces(
+            [candidate.firstName, candidate.middleName, candidate.lastName]
+              .filter(Boolean)
+              .join(" "),
+          ),
+        ].filter(Boolean)));
+        const rowNameVariants = toNameVariants(row.playerName || "");
+        for (const rowName of rowNameVariants) {
+          for (const candName of candidateNameVariants) {
+            if (candName === rowName) score = Math.max(score, 100);
+            else if (candName.startsWith(rowName) || rowName.startsWith(candName)) score = Math.max(score, 60);
+            else if (candName.includes(rowName) || rowName.includes(candName)) score = Math.max(score, 35);
+          }
+        }
+        const rowSplit = splitNormName(row.playerName || "");
+        const candidateSplit = splitNormName(
+          candidate.fullFmlName ||
+          candidate.fullFMLName ||
+          candidate.fullName ||
+          candidate.nameFirstLast ||
+          [candidate.firstName, candidate.middleName, candidate.lastName].filter(Boolean).join(" ") ||
+          [candidate.firstName, candidate.lastName].filter(Boolean).join(" ") ||
+          "",
+        );
+        // Deterministic first/last fallback across all candidate name variants.
+        // Prevents obvious near-typos from being outscored by unrelated surnames.
+        if (rowSplit.first && rowSplit.last && candidateNameVariantsSpaced.length > 0) {
+          for (const variant of candidateNameVariantsSpaced) {
+            const tokens = tokenizeNormName(variant);
+            if (tokens.length < 2) continue;
+            const pairs = [
+              { first: tokens[0], last: tokens[tokens.length - 1] },
+              { first: tokens[tokens.length - 1], last: tokens[0] },
+            ];
+            for (const pair of pairs) {
+              if (!pair.first || !pair.last) continue;
+              if (pair.last !== rowSplit.last) continue;
+              const d = levenshtein(rowSplit.first, pair.first);
+              if (bestFirstDistForSameLast == null || d < bestFirstDistForSameLast) {
+                bestFirstDistForSameLast = d;
+              }
+            }
+          }
+          if (bestFirstDistForSameLast != null) {
+            if (bestFirstDistForSameLast <= 1) score = Math.max(score, 90);
+            else if (bestFirstDistForSameLast <= 2) score = Math.max(score, 78);
+            else if (bestFirstDistForSameLast <= 3) score = Math.max(score, 52);
+          }
+        }
+        if (rowSplit.full && candidateSplit.full && rowSplit.full === candidateSplit.full) {
+          score = Math.max(score, 98);
+        }
+        // Character-based fallback for sparse/inconsistent name fields.
+        // Keeps scoring deterministic while tolerating minor typos.
+        const candidateCompact = normalizeName(
+          candidateSplit.full ||
+          candidate.fullName ||
+          candidate.nameFirstLast ||
+          [candidate.firstName, candidate.middleName, candidate.lastName].filter(Boolean).join(" "),
+        );
+        if (rowCompact && candidateCompact) {
+          const compactSimilarity = charSimilarity(rowCompact, candidateCompact);
+          if (compactSimilarity >= 0.95) score = Math.max(score, 86);
+          else if (compactSimilarity >= 0.9) score = Math.max(score, 76);
+          else if (compactSimilarity >= 0.86) score = Math.max(score, 66);
+        }
+        // Token-order bonus: first/last in expected order with same initials.
+        const rowTokens = tokenizeNormName(row.playerName || "");
+        const candTokens = tokenizeNormName(
+          candidate.fullFmlName ||
+          candidate.fullFMLName ||
+          candidate.fullName ||
+          candidate.nameFirstLast ||
+          [candidate.firstName, candidate.middleName, candidate.lastName].filter(Boolean).join(" "),
+        );
+        if (rowTokens.length >= 2 && candTokens.length >= 2) {
+          const rowFirst = rowTokens[0];
+          const rowLast = rowTokens[rowTokens.length - 1];
+          const candFirst = candTokens[0];
+          const candLast = candTokens[candTokens.length - 1];
+          if (rowLast && candLast && rowLast === candLast) {
+            if (rowFirst && candFirst && rowFirst[0] === candFirst[0]) score += 10;
+            if (rowFirst && candFirst && charSimilarity(rowFirst, candFirst) >= 0.75) score += 8;
+          }
+        }
+        if (rowSplit.last && candidateSplit.last && rowSplit.last === candidateSplit.last) {
+          const rowFirstCanon = canonicalFirstName(rowSplit.first);
+          const candFirstCanon = canonicalFirstName(candidateSplit.first);
+          if (rowFirstCanon && candFirstCanon && rowFirstCanon === candFirstCanon) {
+            score = Math.max(score, 88);
+          } else if (rowSplit.first && candidateSplit.first) {
+            const firstDist = levenshtein(rowSplit.first, candidateSplit.first);
+            if (firstDist <= 1) {
+              // Strong typo-tolerant first-name signal when surname is exact.
+              score = Math.max(score, 82);
+            } else if (firstDist <= 2) {
+              score = Math.max(score, 72);
+            } else if (firstDist <= 3) {
+              // Slightly weaker typo tolerance for sparse-name records.
+              score = Math.max(score, 62);
+            } else {
+              // Same surname but distant first names should not out-rank close typos.
+              score -= 22;
+            }
+            if (rowSplit.first[0] !== candidateSplit.first[0]) {
+              score -= 14;
+            }
+          } else if (
+            rowSplit.first &&
+            candidateSplit.first &&
+            (rowSplit.first.startsWith(candidateSplit.first) || candidateSplit.first.startsWith(rowSplit.first))
+          ) {
+            score = Math.max(score, 76);
+          } else {
+            // Missing/partial first name with exact surname is weaker than explicit near-typo matches.
+            score -= 8;
+          }
+        }
+        if (row.mlbTeamHint) {
+          const hints = expandTeamHintVariants(row.mlbTeamHint);
+          const cur = String(candidate.currentTeamName || "").toLowerCase();
+          const org = String(candidate.parentOrgName || "").toLowerCase();
+          if (hints.some((h) => cur && cur.includes(h))) score += 25;
+          if (hints.some((h) => org && org.includes(h))) score += 20;
+        }
+        if (row.orgHint) {
+          const hints = expandTeamHintVariants(row.orgHint);
+          const org = String(candidate.parentOrgName || "").toLowerCase();
+          const cur = String(candidate.currentTeamName || "").toLowerCase();
+          if (hints.some((h) => org && org.includes(h))) score += 25;
+          else if (hints.some((h) => cur && cur.includes(h))) score += 12;
+        }
+        if (row.ageHint && candidate.age) {
+          const diff = Math.abs(Number(candidate.age) - Number(row.ageHint));
+          if (diff === 0) score += 15;
+          else if (diff === 1) score += 8;
+          else if (diff === 2) score += 4;
+        }
+        if (row.middleNameHint) {
+          const candMiddle = normalizeName(candidate.middleName || "");
+          const rowMiddle = normalizeName(row.middleNameHint || "");
+          if (candMiddle && rowMiddle) {
+            if (candMiddle === rowMiddle) score += 25;
+            else if (candMiddle.startsWith(rowMiddle) || rowMiddle.startsWith(candMiddle)) score += 12;
+          }
+        }
+        if (row.middleInitialHint) {
+          const candMiddleInitial = getCandidateMiddleInitial(candidate);
+          if (candMiddleInitial) {
+            if (candMiddleInitial === row.middleInitialHint) score += 16;
+            else score -= 14;
+          }
+        }
+        if (row.dobHint && candidate.birthDate) {
+          const d = new Date(String(candidate.birthDate));
+          if (!Number.isNaN(d.getTime())) {
+            const month = d.getUTCMonth() + 1;
+            const day = d.getUTCDate();
+            const year = d.getUTCFullYear();
+            if (month === row.dobHint.month && day === row.dobHint.day) score += 35;
+            if (row.dobHint.year && year === row.dobHint.year) score += 12;
+          }
+        }
+        // Deterministic final discriminator for same-surname candidates.
+        // Near first-name typo stays high; distant first names get capped low.
+        if (bestFirstDistForSameLast != null) {
+          if (bestFirstDistForSameLast <= 1) score = Math.max(score, 90);
+          else if (bestFirstDistForSameLast === 2) score = Math.min(score, 75);
+          else if (bestFirstDistForSameLast === 3) score = Math.min(score, 35);
+          else score = Math.min(score, 8);
+        }
+        return Math.max(0, score);
+      };
+
+      const members = await storage.getLeagueMembers(leagueId);
+      const abbrevToUser = new Map<string, string>();
+      const userToAbbrev = new Map<string, string>();
+      for (const m of members) {
+        if (!m.isArchived && m.teamAbbreviation) {
+          const upperAbbr = m.teamAbbreviation.toUpperCase();
+          abbrevToUser.set(upperAbbr, m.userId);
+          userToAbbrev.set(m.userId, upperAbbr);
+        }
+      }
+      const resolveConflictSelectionUserId = (
+        rawSelection: unknown,
+        optionsByUserId: Map<string, { userId: string; teamAbbreviation: string; rowNums: number[] }>,
+      ): string => {
+        const raw = String(rawSelection || "").trim();
+        if (!raw) return "";
+        if (optionsByUserId.has(raw)) return raw;
+        const asAbbr = raw.toUpperCase();
+        for (const opt of optionsByUserId.values()) {
+          if (String(opt.teamAbbreviation || "").toUpperCase() === asAbbr) {
+            return opt.userId;
+          }
+        }
+        const mappedUserId = abbrevToUser.get(asAbbr);
+        if (mappedUserId && optionsByUserId.has(mappedUserId)) return mappedUserId;
+        return "";
+      };
+
+      if (reconciliationOperation === "save") {
+        let latestSnapshot: any = null;
+        try {
+          const previousRaw = await fs.readFile(latestSnapshotPath, "utf8");
+          latestSnapshot = JSON.parse(previousRaw || "{}");
+        } catch {
+          latestSnapshot = null;
+        }
+        const latestUnresolvedRows = Array.isArray(latestSnapshot?.unresolved) ? latestSnapshot.unresolved : [];
+        const latestErrors = Array.isArray(latestSnapshot?.errors) ? latestSnapshot.errors : [];
+        const unresolvedByRowNum = new Map<number, any>();
+        for (const row of latestUnresolvedRows) {
+          const rowNum = Number(row?.rowNum);
+          if (!Number.isInteger(rowNum) || rowNum <= 0) continue;
+          unresolvedByRowNum.set(rowNum, row);
+        }
+
+        const confirmedResolutionRows = new Map<number, number>();
+        for (const [rowKey, value] of Object.entries(resolutions)) {
+          const rowNum = Number(rowKey);
+          const mlbApiId = Number(value);
+          if (!Number.isInteger(rowNum) || rowNum <= 0) continue;
+          if (!Number.isInteger(mlbApiId) || mlbApiId <= 0) continue;
+          confirmedResolutionRows.set(rowNum, mlbApiId);
+        }
+        const confirmedCutRows = new Set<number>(
+          Array.from(cuts)
+            .map((v) => Number(v))
+            .filter((v) => Number.isInteger(v) && v > 0),
+        );
+
+        for (const rowNum of confirmedCutRows) {
+          const row = unresolvedByRowNum.get(rowNum);
+          if (!row) continue;
+          const cutKey = buildCutKey(
+            rowNum,
+            String(row.playerName || ""),
+            String(row.teamAbbreviation || ""),
+            String(row.rosterType || reconciliationScope) as "mlb" | "milb" | "draft",
+          );
+          persistedCutEntries.set(cutKey, { rowNum, cutKey });
+        }
+
+        // Persist ad-hoc mapping/team-conflict rules for future matching passes.
+        for (const [rowNum, mlbApiId] of confirmedResolutionRows.entries()) {
+          const row = unresolvedByRowNum.get(rowNum);
+          if (!row) continue;
+          const rosterTypeRaw = String(row.rosterType || reconciliationScope).toLowerCase();
+          const rosterType =
+            rosterTypeRaw === "mlb" || rosterTypeRaw === "milb" || rosterTypeRaw === "draft"
+              ? rosterTypeRaw
+              : reconciliationScope;
+          const ruleKey = buildResolutionRuleKey(
+            String(row.playerName || ""),
+            String(row.teamAbbreviation || ""),
+            rosterType as "mlb" | "milb" | "draft",
+          );
+          if (ruleKey) persistedNameTeamRules.set(ruleKey, mlbApiId);
+        }
+        for (const [conflictKeyRaw, selectedUserIdRaw] of Object.entries(duplicateTeamResolutions)) {
+          const conflictKey = String(conflictKeyRaw || "").trim();
+          const selectedUserId = String(selectedUserIdRaw || "").trim();
+          if (!conflictKey || !selectedUserId) continue;
+          persistedDuplicateTeamRules.set(conflictKey, selectedUserId);
+        }
+        try {
+          await fs.writeFile(
+            rulesPath,
+            JSON.stringify({
+              leagueId,
+              rosterType: reconciliationScope,
+              updatedAt: new Date().toISOString(),
+              nameTeamRules: Object.fromEntries(persistedNameTeamRules.entries()),
+              duplicateTeamRules: Object.fromEntries(persistedDuplicateTeamRules.entries()),
+            }, null, 2),
+            "utf8",
+          );
+        } catch (e) {
+          console.error("Failed to persist roster reconciliation ad-hoc rules:", e);
+        }
+
+        const unresolvedAfterSave = latestUnresolvedRows.filter((row: any) => {
+          const rowNum = Number(row?.rowNum);
+          if (!Number.isInteger(rowNum) || rowNum <= 0) return true;
+          if (confirmedCutRows.has(rowNum)) return false;
+          if (confirmedResolutionRows.has(rowNum)) return false;
+          const conflictKey = String(row?.duplicateConflictKey || "").trim();
+          if (conflictKey) {
+            const selectedUserId = String(duplicateTeamResolutions[conflictKey] || "").trim();
+            if (selectedUserId) return false;
+          }
+          return true;
+        });
+
+        const saveWarnings = [
+          ...headerWarnings,
+          "Confirmed reconciliation saved. Click Apply to import assignments.",
+        ];
+        await persistLatestSnapshot({
+          processed: lines.length - 1,
+          created: 0,
+          unresolvedCount: unresolvedAfterSave.length,
+          unresolved: unresolvedAfterSave,
+          errors: latestErrors,
+          warnings: saveWarnings,
+          csvData,
+          csvHash,
+          persistedCuts: Array.from(persistedCutEntries.values()),
+          resolvedRows: Array.isArray(latestSnapshot?.resolvedRows) ? latestSnapshot.resolvedRows : [],
+        });
+        await setOnboardingStatus({
+          status: "in_progress",
+          imported: 0,
+          unresolved: unresolvedAfterSave.length,
+          errors: latestErrors.length,
+          completedAt: null,
+        });
+        await persistProgress({
+          running: false,
+          processed: totalRows,
+          totalRows,
+          stage: "awaiting_resolution",
+          message: "Confirmed reconciliation saved",
+        });
+        return res.json({
+          requiresResolution: true,
+          unresolved: unresolvedAfterSave,
+          processed: lines.length - 1,
+          errors: latestErrors,
+          warnings: saveWarnings,
+          created: 0,
+          cutCount: confirmedCutRows.size,
+          persistedCutRows: toPersistedCutRowNumbers(),
+          middleNamesUpdated: 0,
+        });
+      }
+
+      const errors: string[] = [];
+      let parsedRows: Array<{
+        rowNum: number;
+        mlbApiId: number;
+        userId: string;
+        teamAbbreviation: string;
+        rosterType: "mlb" | "milb" | "draft";
+        contractStatus: string | null;
+        salary2026: number | null;
+        minorLeagueStatus: string | null;
+        minorLeagueYears: number | null;
+        playerName?: string;
+        ageHint?: number | null;
+        mlbTeamHint?: string | null;
+        orgHint?: string | null;
+        fangraphsId?: string | null;
+      }> = [];
+      let sameTeamDuplicateConflictCount = 0;
+      let sameTeamDuplicateRowCount = 0;
+      const unresolved: Array<{
+        rowNum: number;
+        playerName: string;
+        teamAbbreviation: string;
+        rosterType: "mlb" | "milb" | "draft";
+        ageHint?: number | null;
+        mlbTeamHint?: string | null;
+        orgHint?: string | null;
+        fangraphsId?: string | null;
+        resolutionHint?: string;
+        duplicateConflictKey?: string | null;
+        duplicateTeamOptions?: Array<{
+          userId: string;
+          teamAbbreviation: string;
+          rowNums: number[];
+        }>;
+        candidates: Array<{
+          mlbApiId: number;
+          fullName: string;
+          age: number | null;
+          currentTeamName: string | null;
+          parentOrgName: string | null;
+          sportLevel: string;
+          lastActiveSeason?: number | null;
+          score: number;
+        }>;
+      }> = [];
+      const middleNameUpdates = new Map<number, string>();
+      const uniqueApiIds = new Set<number>();
+      let cutCount = 0;
+      let outOfScopeRowCount = 0;
+      let processedRowsLive = 0;
+      const lastActiveSeasonCache = new Map<number, number | null>();
+      const remoteLastPlayedSeasonCache = new Map<number, number | null>();
+      const getRemoteLastPlayedSeason = async (mlbApiId: number): Promise<number | null> => {
+        if (remoteLastPlayedSeasonCache.has(mlbApiId)) {
+          return remoteLastPlayedSeasonCache.get(mlbApiId) ?? null;
+        }
+        try {
+          const [hittingRes, pitchingRes] = await Promise.all([
+            fetch(`https://statsapi.mlb.com/api/v1/people/${mlbApiId}/stats?stats=yearByYear&group=hitting`),
+            fetch(`https://statsapi.mlb.com/api/v1/people/${mlbApiId}/stats?stats=yearByYear&group=pitching`),
+          ]);
+          const parseMaxSeason = (payload: any): number | null => {
+            const splits = Array.isArray(payload?.stats?.[0]?.splits) ? payload.stats[0].splits : [];
+            let maxSeason: number | null = null;
+            for (const split of splits) {
+              const s = Number.parseInt(String(split?.season || ""), 10);
+              if (!Number.isInteger(s) || s < 1900) continue;
+              maxSeason = maxSeason == null ? s : Math.max(maxSeason, s);
+            }
+            return maxSeason;
+          };
+          const hittingPayload = hittingRes.ok ? await hittingRes.json() : null;
+          const pitchingPayload = pitchingRes.ok ? await pitchingRes.json() : null;
+          const maxHitting = parseMaxSeason(hittingPayload);
+          const maxPitching = parseMaxSeason(pitchingPayload);
+          const resolved =
+            maxHitting == null
+              ? maxPitching
+              : (maxPitching == null ? maxHitting : Math.max(maxHitting, maxPitching));
+          remoteLastPlayedSeasonCache.set(mlbApiId, resolved ?? null);
+          return resolved ?? null;
+        } catch {
+          remoteLastPlayedSeasonCache.set(mlbApiId, null);
+          return null;
+        }
+      };
+      const getLastActiveSeason = async (candidate: any): Promise<number | null> => {
+        const mlbApiId = Number(candidate?.mlbId);
+        const localSeason = Number(candidate?.season);
+        if (!Number.isInteger(mlbApiId) || mlbApiId <= 0) {
+          return Number.isInteger(localSeason) && localSeason > 1900 ? localSeason : null;
+        }
+        if (lastActiveSeasonCache.has(mlbApiId)) {
+          return lastActiveSeasonCache.get(mlbApiId) ?? null;
+        }
+
+        // Derive "last played" from all locally synced seasons for this MLB ID.
+        // Prefer seasons with actual batting/pitching activity, then fall back to any known season.
+        const result = await db.execute(sql`
+          SELECT
+            MAX(
+              CASE
+                WHEN
+                  COALESCE(hitting_plate_appearances, 0) > 0
+                  OR COALESCE(pitching_games, 0) > 0
+                  OR COALESCE(pitching_innings_pitched, 0) > 0
+                  OR COALESCE(had_hitting_stats, false) = true
+                  OR COALESCE(had_pitching_stats, false) = true
+                THEN season
+                ELSE NULL
+              END
+            )::int AS max_played_season,
+            MAX(season)::int AS max_known_season
+          FROM mlb_players
+          WHERE mlb_id = ${mlbApiId}
+        `);
+        const row = (result.rows?.[0] || {}) as any;
+        const maxPlayed = Number(row.max_played_season);
+        const maxKnown = Number(row.max_known_season);
+        let resolved =
+          (Number.isInteger(maxPlayed) && maxPlayed > 1900 ? maxPlayed : null) ??
+          (Number.isInteger(maxKnown) && maxKnown > 1900 ? maxKnown : null) ??
+          (Number.isInteger(localSeason) && localSeason > 1900 ? localSeason : null);
+        if (!isLargeUpload && (!resolved || resolved < season)) {
+          const remoteResolved = await getRemoteLastPlayedSeason(mlbApiId);
+          if (remoteResolved && remoteResolved > (resolved || 0)) {
+            resolved = remoteResolved;
+          }
+        }
+        lastActiveSeasonCache.set(mlbApiId, resolved);
+        return resolved;
+      };
+
+      for (let i = 1; i < lines.length; i++) {
+        const rowNum = i + 1;
+        processedRowsLive++;
+        if (processedRowsLive === 1 || processedRowsLive % 50 === 0 || processedRowsLive >= totalRows) {
+          await persistProgress({
+            running: true,
+            processed: processedRowsLive,
+            totalRows,
+            stage: matchingStage,
+            message: matchingMessage,
+          });
+        }
+        const cols = lines[i].split(delimiter).map((c: string) => c.trim());
+        const rawMlbId = mlbIdIdx >= 0 ? cols[mlbIdIdx] : "";
+        const firstNameRaw = firstNameIdx >= 0 ? (cols[firstNameIdx] || "").trim() : "";
+        const lastNameRaw = lastNameIdx >= 0 ? (cols[lastNameIdx] || "").trim() : "";
+        const rawName = nameIdx >= 0
+          ? (cols[nameIdx] || "").trim()
+          : [firstNameRaw, lastNameRaw].filter(Boolean).join(" ").trim();
+        const rawAbbr = (cols[abbrIdx] || "").toUpperCase();
+        const rawRosterType = (rosterTypeIdx >= 0 ? cols[rosterTypeIdx] : defaultRosterType).toLowerCase();
+        const rawMiddleName = middleNameIdx >= 0 ? (cols[middleNameIdx] || "").trim() : "";
+        const rawStatus = statusIdx >= 0 ? (cols[statusIdx] || "").trim() : "";
+        const rawSalary2026 = salary2026Idx >= 0 ? (cols[salary2026Idx] || "").trim() : "";
+        const rawYears = yearsIdx >= 0 ? (cols[yearsIdx] || "").trim() : "";
+        const rawAge = ageIdx >= 0 ? (cols[ageIdx] || "").trim() : "";
+        const rawMlbTeam = mlbTeamIdx >= 0 ? (cols[mlbTeamIdx] || "").trim() : "";
+        const rawOrg = orgIdx >= 0 ? (cols[orgIdx] || "").trim() : "";
+        const rawFangraphs = fangraphsIdx >= 0 ? (cols[fangraphsIdx] || "").trim() : "";
+        const looksLikeExtraneousCopyrightLine =
+          !rawMlbId &&
+          !rawAbbr &&
+          !!rawName &&
+          (/\(c\)/i.test(rawName) || /©/.test(rawName) || /copyright/i.test(rawName));
+                const hasCopyrightMarkerInName =
+          !!rawName && (/\(c\)/i.test(rawName) || /©/.test(rawName) || /copyright/i.test(rawName));
+        if (looksLikeExtraneousCopyrightLine) {
+          continue;
+        }
+        const dobHint = parseDobHint(rawName);
+        const middleNameHint = rawMiddleName || extractParentheticalMiddleHint(rawName) || null;
+        const normalizedMiddleNameHint = normalizeName(middleNameHint || "");
+        const middleInitialHint =
+          (normalizedMiddleNameHint ? normalizedMiddleNameHint[0] : null) ||
+          extractMiddleInitialFromName(rawName);
+        const parsedRosterType = rawRosterType === "mlb" || rawRosterType === "milb" || rawRosterType === "draft"
+          ? (rawRosterType as "mlb" | "milb" | "draft")
+          : defaultRosterType;
+        const rosterType: "mlb" | "milb" | "draft" = assumePageScope ? reconciliationScope : parsedRosterType;
+        const rowResolutionRuleKey = buildResolutionRuleKey(rawName, rawAbbr, rosterType);
+        if (!assumePageScope && rosterType !== reconciliationScope) {
+          outOfScopeRowCount++;
+          continue;
+        }
+        const rowCutKey = buildCutKey(rowNum, rawName, rawAbbr, rosterType);
+        const rowMarkedCut = cuts.has(String(rowNum)) || persistedCutRows.has(String(rowNum)) || persistedCutKeys.has(rowCutKey);
+        if (rowMarkedCut) {
+          cutCount++;
+          persistedCutEntries.set(rowCutKey, { rowNum, cutKey: rowCutKey });
+          continue;
+        }
+        const ageHint = rawAge && Number.isFinite(Number(rawAge)) ? Number(rawAge) : null;
+        const salary2026 = rawSalary2026 && Number.isFinite(Number(rawSalary2026)) ? Number(rawSalary2026) : null;
+        const contractStatus = rawStatus || null;
+        const { minorLeagueStatus, minorLeagueYears } = parseMinorLeagueStatusYears(rawStatus, rawYears);
+
+        const targetUserId = abbrevToUser.get(rawAbbr);
+        if (!targetUserId) {
+          errors.push(`Row ${rowNum}: unknown team abbreviation "${rawAbbr}"`);
+          continue;
+        }
+        let mlbApiId = Number(rawMlbId);
+        if (!Number.isInteger(mlbApiId) || mlbApiId <= 0) {
+          const resolvedId = Number(resolutions[String(rowNum)]);
+          if (Number.isInteger(resolvedId) && resolvedId > 0) {
+            mlbApiId = resolvedId;
+          } else {
+            const mappedByRule = Number(persistedNameTeamRules.get(rowResolutionRuleKey));
+            if (Number.isInteger(mappedByRule) && mappedByRule > 0) {
+              mlbApiId = mappedByRule;
+            }
+          }
+          if ((!Number.isInteger(mlbApiId) || mlbApiId <= 0) && rawName) {
+            const nameForSearch = stripParentheticalName(rawName) || rawName;
+            const searchAliases = Array.from(new Set((() => {
+              const aliases = [rawName, nameForSearch].filter(Boolean);
+              const split = splitNormName(nameForSearch || rawName);
+              const canonicalFirst = canonicalFirstName(split.first || "");
+              if (canonicalFirst && split.last && canonicalFirst !== split.first) {
+                aliases.push(`${canonicalFirst} ${split.last}`);
+              }
+              return aliases;
+            })()));
+            const seasonCandidateLists = await Promise.all(
+              searchAliases.map((alias) => storage.getMlbPlayers({ search: alias, season, limit: 30 })),
+            );
+            let candidates = mergeCandidatesByMlbId(seasonCandidateLists).slice(0, 30);
+            if (candidates.length === 0) {
+              const fallbackLists = await Promise.all(
+                searchAliases.map((alias) => storage.getMlbPlayers({ search: alias, limit: 60 })),
+              );
+              let mergedFallback = dedupeLatestByMlbId(mergeCandidatesByMlbId(fallbackLists));
+              candidates = mergedFallback.slice(0, 30);
+            }
+            if (candidates.length === 0) {
+              candidates = await getAccentInsensitiveCandidates(rawName, 15);
+            }
+            // Live MLB people search should augment (not just replace) local candidates.
+            // This captures expanded-name records where local `full_name` search misses middle names.
+            if (!isLargeUpload) {
+              const [webRaw, webStripped] = await Promise.all([
+                searchMlbPeople(rawName),
+                nameForSearch !== rawName ? searchMlbPeople(nameForSearch) : Promise.resolve([]),
+              ]);
+              candidates = mergeCandidatesByMlbId([candidates, webRaw, webStripped]).slice(0, 50);
+            }
+            // Generic deep fallback: MLB sport directories across prior years filtered by surname fuzziness.
+            if (!isLargeUpload && candidates.length === 0) {
+              candidates = await searchMlbDirectoryBySurname(rawName, season);
+            }
+            const hasDobExactCandidate = (list: any[]) => {
+              if (!dobHint) return false;
+              return list.some((cand) => {
+                if (!cand?.birthDate) return false;
+                const d = new Date(String(cand.birthDate));
+                if (Number.isNaN(d.getTime())) return false;
+                const month = d.getUTCMonth() + 1;
+                const day = d.getUTCDate();
+                const year = d.getUTCFullYear();
+                if (month !== dobHint.month || day !== dobHint.day) return false;
+                if (dobHint.year && year !== dobHint.year) return false;
+                return true;
+              });
+            };
+            // If a DOB hint is present and current candidates don't contain a DOB-exact match,
+            // augment with directory-based surname lookup before final scoring.
+            if (dobHint && !hasDobExactCandidate(candidates)) {
+              const directoryCandidates = await searchMlbDirectoryBySurname(rawName, season);
+              if (directoryCandidates.length > 0) {
+                candidates = mergeCandidatesByMlbId([candidates, directoryCandidates]).slice(0, 80);
+              }
+            }
+            const scoredCandidates = candidates
+              .map((p) => ({
+                p,
+                score: scoreCandidate(p, {
+                  playerName: rawName,
+                  ageHint,
+                  mlbTeamHint: rawMlbTeam,
+                  orgHint: rawOrg,
+                  middleNameHint,
+                  middleInitialHint,
+                  dobHint,
+                }),
+              }))
+              .sort((a, b) => b.score - a.score);
+            const ranked = scoredCandidates.slice(0, 5);
+            const top = ranked[0];
+            const second = ranked[1];
+            const searchSplit = splitNormName(nameForSearch || rawName);
+            const searchTokens = tokenizeNormName(nameForSearch || rawName);
+            const searchNorm = normalizeName(nameForSearch || rawName);
+            const topIsUniqueDisplayedExactFullNameMatch =
+              !!top &&
+              !!searchNorm &&
+              normalizeName(top.p?.fullName || "") === searchNorm &&
+              !ranked.slice(1).some((r) => normalizeName(r.p?.fullName || "") === searchNorm);
+            const getCandidateNameVariants = (candidate: any): string[] =>
+              Array.from(new Set([
+                candidate?.fullFmlName,
+                candidate?.fullFMLName,
+                candidate?.fullName,
+                candidate?.nameFirstLast,
+                [candidate?.firstName, candidate?.middleName, candidate?.lastName].filter(Boolean).join(" "),
+                [candidate?.firstName, candidate?.lastName].filter(Boolean).join(" "),
+              ]
+                .map((v) => String(v || "").trim())
+                .filter(Boolean)));
+            const getCandidateFirstLastPairs = (
+              candidate: any,
+            ): Array<{ first: string; last: string; full: string }> => {
+              const out: Array<{ first: string; last: string; full: string }> = [];
+              const seen = new Set<string>();
+              const pushPair = (firstRaw: string, lastRaw: string, fullRaw: string) => {
+                const first = String(firstRaw || "").trim();
+                const last = String(lastRaw || "").trim();
+                const full = String(fullRaw || "").trim();
+                if (!first || !last) return;
+                const key = `${first}|${last}|${full}`;
+                if (seen.has(key)) return;
+                seen.add(key);
+                out.push({ first, last, full });
+              };
+              for (const variant of getCandidateNameVariants(candidate)) {
+                const tokens = tokenizeNormName(variant);
+                if (tokens.length < 2) continue;
+                const directFirst = tokens[0] || "";
+                const directLast = tokens[tokens.length - 1] || "";
+                const reversedFirst = tokens[tokens.length - 1] || "";
+                const reversedLast = tokens[0] || "";
+                const full = tokens.join(" ").trim();
+                pushPair(directFirst, directLast, full);
+                if (reversedFirst !== directFirst || reversedLast !== directLast) {
+                  pushPair(reversedFirst, reversedLast, full);
+                }
+              }
+              if (!out.length) {
+                const fallback = splitNormName(
+                  candidate?.fullName ||
+                  candidate?.nameFirstLast ||
+                  [candidate?.firstName, candidate?.middleName, candidate?.lastName].filter(Boolean).join(" "),
+                );
+                pushPair(fallback.first, fallback.last, fallback.full);
+              }
+              return out;
+            };
+            const getCandidateBestSplit = (candidate: any) => {
+              const pairs = getCandidateFirstLastPairs(candidate);
+              if (!pairs.length) return { first: "", last: "", full: "" };
+              if (!searchSplit.first || !searchSplit.last) {
+                return pairs[0];
+              }
+              let best = pairs[0];
+              let bestScore = Number.NEGATIVE_INFINITY;
+              for (const pair of pairs) {
+                let score = 0;
+                if (pair.last === searchSplit.last) score += 90;
+                else {
+                  const lastDist = levenshtein(searchSplit.last, pair.last);
+                  if (lastDist <= 1) score += 40;
+                  else score -= Math.min(60, lastDist * 12);
+                }
+                if (pair.first === searchSplit.first) score += 60;
+                else {
+                  const firstDist = levenshtein(searchSplit.first, pair.first);
+                  if (firstDist <= 1) score += 32;
+                  else if (firstDist <= 2) score += 16;
+                  else score -= Math.min(40, firstDist * 6);
+                }
+                if (
+                  searchSplit.first &&
+                  pair.first &&
+                  canonicalFirstName(searchSplit.first) === canonicalFirstName(pair.first)
+                ) {
+                  score += 20;
+                }
+                if (searchSplit.first && pair.first && searchSplit.first[0] === pair.first[0]) {
+                  score += 8;
+                }
+                if (searchSplit.full && pair.full && searchSplit.full === pair.full) {
+                  score += 30;
+                }
+                if (score > bestScore) {
+                  best = pair;
+                  bestScore = score;
+                }
+              }
+              return best;
+            };
+            const candidateMatchesExactNormalizedName = (candidate: any): boolean => {
+              if (!candidate || !searchNorm) return false;
+              return getCandidateNameVariants(candidate)
+                .some((variant) => normalizeName(variant) === searchNorm);
+            };
+            const candidateMatchesExactFirstLast = (candidate: any): boolean => {
+              if (!candidate || !searchSplit.first || !searchSplit.last) return false;
+              return getCandidateFirstLastPairs(candidate).some((pair) => {
+                return pair.first === searchSplit.first && pair.last === searchSplit.last;
+              });
+            };
+            const candidateMatchesCanonicalFirstLast = (candidate: any): boolean => {
+              if (!candidate || !searchSplit.first || !searchSplit.last) return false;
+              const rowFirstCanonical = canonicalFirstName(searchSplit.first);
+              if (!rowFirstCanonical) return false;
+              return getCandidateFirstLastPairs(candidate).some((pair) => {
+                return (
+                  pair.last === searchSplit.last &&
+                  canonicalFirstName(pair.first) === rowFirstCanonical
+                );
+              });
+            };
+            const exactNormalizedRanked = ranked.filter((r) => {
+              return candidateMatchesExactNormalizedName(r.p);
+            });
+            const exactFirstLastRanked = ranked.filter((r) => {
+              return candidateMatchesExactFirstLast(r.p);
+            });
+            const topIsUniqueExactNormalizedMatch =
+              exactNormalizedRanked.length === 1 &&
+              !!top &&
+              Number(exactNormalizedRanked[0].p?.mlbId) === Number(top.p?.mlbId);
+            const topIsUniqueExactFirstLastMatch =
+              exactFirstLastRanked.length === 1 &&
+              !!top &&
+              Number(exactFirstLastRanked[0].p?.mlbId) === Number(top.p?.mlbId);
+            const hintVariants = expandTeamHintVariants(rawMlbTeam || rawOrg);
+            const candidateMatchesHint = (candidate: any) => {
+              if (!hintVariants.length || !candidate) return false;
+              const cur = normalizeNameWithSpaces(candidate.currentTeamName || "");
+              const org = normalizeNameWithSpaces(candidate.parentOrgName || "");
+              return hintVariants.some((h) => (cur && cur.includes(h)) || (org && org.includes(h)));
+            };
+            const candidateNearName = (candidate: any) => {
+              const candSplit = getCandidateBestSplit(candidate);
+              if (!candSplit.last || candSplit.last !== searchSplit.last) return false;
+              if (!candSplit.first || !searchSplit.first) return false;
+              return levenshtein(candSplit.first, searchSplit.first) <= 2;
+            };
+            const topSplit = top ? getCandidateBestSplit(top.p) : null;
+            const firstLastMatches = ranked.filter((r) => {
+              const candSplit = getCandidateBestSplit(r.p);
+              return candSplit.first === searchSplit.first && candSplit.last === searchSplit.last;
+            });
+            const firstLastCanonicalMatches = ranked.filter((r) => {
+              const candSplit = getCandidateBestSplit(r.p);
+              return (
+                candSplit.last === searchSplit.last &&
+                canonicalFirstName(candSplit.first) === canonicalFirstName(searchSplit.first)
+              );
+            });
+            const closeTypoMatches = ranked.filter((r) => {
+              const candSplit = getCandidateBestSplit(r.p);
+              if (!candSplit.last || candSplit.last !== searchSplit.last) return false;
+              if (!candSplit.first || !searchSplit.first) return false;
+              return levenshtein(candSplit.first, searchSplit.first) <= 2;
+            });
+            const nearSurnameTypoMatches = ranked.filter((r) => {
+              const candSplit = getCandidateBestSplit(r.p);
+              if (!candSplit.last || !searchSplit.last) return false;
+              if (levenshtein(candSplit.last, searchSplit.last) > 1) return false;
+              if (!candSplit.first || !searchSplit.first) return false;
+              const candFirstCanon = canonicalFirstName(candSplit.first);
+              const rowFirstCanon = canonicalFirstName(searchSplit.first);
+              if (candFirstCanon && rowFirstCanon && candFirstCanon === rowFirstCanon) return true;
+              return levenshtein(candSplit.first, searchSplit.first) <= 1;
+            });
+            const highCharSimilarityMatches = ranked.filter((r) => {
+              const candSplit = getCandidateBestSplit(r.p);
+              if (!candSplit.full || !searchSplit.full) return false;
+              const fullSim = charSimilarity(candSplit.full, searchSplit.full);
+              const firstSim = charSimilarity(candSplit.first, searchSplit.first);
+              const lastSim = charSimilarity(candSplit.last, searchSplit.last);
+              const firstInitialAligned = !!candSplit.first && !!searchSplit.first && candSplit.first[0] === searchSplit.first[0];
+              const lastInitialAligned = !!candSplit.last && !!searchSplit.last && candSplit.last[0] === searchSplit.last[0];
+              if (!firstInitialAligned || !lastInitialAligned) return false;
+              return fullSim >= 0.86 || (lastSim >= 0.84 && firstSim >= 0.7);
+            });
+            const hintedOneCharSurnameVariantMatches = ranked.filter((r) => {
+              const candSplit = getCandidateBestSplit(r.p);
+              if (!candidateMatchesHint(r.p)) return false;
+              if (!candSplit.first || !searchSplit.first) return false;
+              if (canonicalFirstName(candSplit.first) !== canonicalFirstName(searchSplit.first)) return false;
+              if (!candSplit.last || !searchSplit.last) return false;
+              return levenshtein(candSplit.last, searchSplit.last) <= 1;
+            });
+            const topIsUniqueFirstLastMatch =
+              !!top &&
+              firstLastMatches.length === 1 &&
+              Number(firstLastMatches[0].p?.mlbId) === Number(top.p?.mlbId);
+            const topIsUniqueCanonicalFirstLastMatch =
+              !!top &&
+              firstLastCanonicalMatches.length === 1 &&
+              Number(firstLastCanonicalMatches[0].p?.mlbId) === Number(top.p?.mlbId) &&
+              (
+                // Exact first-name matches can still auto-resolve via canonical path.
+                (topSplit?.first || "") === (searchSplit.first || "") ||
+                // Nickname-driven matches only auto-resolve when no other close options exist.
+                !ranked.slice(1).some((r) => {
+                  const candSplit = getCandidateBestSplit(r.p);
+                  if (!candSplit.first || !candSplit.last || !searchSplit.first || !searchSplit.last) return false;
+                  if (candSplit.last !== searchSplit.last) return false;
+                  const firstDist = levenshtein(candSplit.first, searchSplit.first);
+                  const sameCanonicalFirst =
+                    canonicalFirstName(candSplit.first) === canonicalFirstName(searchSplit.first);
+                  return firstDist <= 2 || sameCanonicalFirst;
+                })
+              );
+            const topIsUniqueCloseTypoMatch =
+              !!top &&
+              closeTypoMatches.length === 1 &&
+              Number(closeTypoMatches[0].p?.mlbId) === Number(top.p?.mlbId) &&
+              top.score >= 60;
+            const topIsUniqueNearSurnameTypoMatch =
+              !!top &&
+              nearSurnameTypoMatches.length === 1 &&
+              Number(nearSurnameTypoMatches[0].p?.mlbId) === Number(top.p?.mlbId) &&
+              top.score >= 60;
+            const topIsUniqueExactFirstNearSurnameNoCloseAlternative =
+              !!top &&
+              !!topSplit &&
+              !!searchSplit.first &&
+              !!searchSplit.last &&
+              topSplit.first === searchSplit.first &&
+              levenshtein(topSplit.last, searchSplit.last) <= 1 &&
+              (!second || (top.score - second.score) >= 10);
+            const topIsUniqueHighCharSimilarityMatch =
+              !!top &&
+              highCharSimilarityMatches.length === 1 &&
+              Number(highCharSimilarityMatches[0].p?.mlbId) === Number(top.p?.mlbId) &&
+              top.score >= 58;
+            const topFullCharSimilarity = top && topSplit && searchSplit
+              ? charSimilarity(topSplit.full, searchSplit.full)
+              : 0;
+            const secondSplit = second
+              ? getCandidateBestSplit(second.p)
+              : null;
+            const secondFullCharSimilarity = second && secondSplit && searchSplit
+              ? charSimilarity(secondSplit.full, searchSplit.full)
+              : 0;
+            const topIsUniqueCharDominantNoCompetition =
+              !!top &&
+              !!topSplit &&
+              !!searchSplit &&
+              canonicalFirstName(topSplit.first) === canonicalFirstName(searchSplit.first) &&
+              topFullCharSimilarity >= 0.9 &&
+              (
+                !second ||
+                secondFullCharSimilarity <= (topFullCharSimilarity - 0.08)
+              );
+            const topIsUniqueHintedOneCharSurnameVariantMatch =
+              !!top &&
+              hintedOneCharSurnameVariantMatches.length === 1 &&
+              Number(hintedOneCharSurnameVariantMatches[0].p?.mlbId) === Number(top.p?.mlbId) &&
+              top.score >= 0;
+            const compoundSurnameMatches = scoredCandidates.filter((r) => {
+              const candSplit = getCandidateBestSplit(r.p);
+              const rowFirst = canonicalFirstName(searchSplit.first);
+              const candFirst = canonicalFirstName(candSplit.first);
+              if (!rowFirst || !candFirst || rowFirst !== candFirst) return false;
+              if (searchTokens.length < 3) return false;
+              const rowSurnameParts = searchTokens.slice(1);
+              return rowSurnameParts.includes(candSplit.last);
+            });
+            const topIsUniqueCompoundSurnameMatch =
+              !!top &&
+              compoundSurnameMatches.length === 1 &&
+              Number(compoundSurnameMatches[0].p?.mlbId) === Number(top.p?.mlbId) &&
+              top.score >= 55;
+            const hintMatchedRanked = ranked.filter((r) => candidateMatchesHint(r.p));
+            const topIsUniqueHintMatched =
+              !!top &&
+              hintMatchedRanked.length === 1 &&
+              Number(hintMatchedRanked[0].p?.mlbId) === Number(top.p?.mlbId) &&
+              top.score >= 55;
+            const dobExactRanked = ranked.filter((r) => {
+              if (!dobHint || !r.p?.birthDate) return false;
+              const d = new Date(String(r.p.birthDate));
+              if (Number.isNaN(d.getTime())) return false;
+              const month = d.getUTCMonth() + 1;
+              const day = d.getUTCDate();
+              const year = d.getUTCFullYear();
+              if (month !== dobHint.month || day !== dobHint.day) return false;
+              if (dobHint.year && year !== dobHint.year) return false;
+              return true;
+            });
+            const topIsUniqueDobExactMatch =
+              !!top &&
+              dobExactRanked.length === 1 &&
+              Number(dobExactRanked[0].p?.mlbId) === Number(top.p?.mlbId);
+            const topHintMatchedNearName =
+              !!top &&
+              candidateMatchesHint(top.p) &&
+              candidateNearName(top.p) &&
+              top.score >= 20;
+            const bestHintMatched = hintMatchedRanked[0];
+            const secondHintMatched = hintMatchedRanked[1];
+            const bestHintMatchedNearName =
+              !!bestHintMatched &&
+              candidateNearName(bestHintMatched.p) &&
+              (
+                !secondHintMatched ||
+                Number(bestHintMatched.score) - Number(secondHintMatched.score) >= 8 ||
+                !candidateNearName(secondHintMatched.p)
+              );
+            const topLooksLikeSingleTypo =
+              !!top &&
+              !!topSplit &&
+              !!searchSplit.last &&
+              topSplit.last === searchSplit.last &&
+              !!searchSplit.first &&
+              !!topSplit.first &&
+              levenshtein(searchSplit.first, topSplit.first) <= 2 &&
+              (!second || (top.score - second.score) >= 12) &&
+              top.score >= 65;
+            const strippedExactTopMatch =
+              !!top &&
+              normalizeName(top.p.fullName || "") === normalizeName(nameForSearch || rawName);
+            const strippedTokenExactTopMatch =
+              !!top &&
+              topSplit?.full &&
+              searchSplit.full &&
+              topSplit.full === searchSplit.full;
+            const topMiddleInitial = top ? getCandidateMiddleInitial(top.p) : null;
+            const middleInitialConflictsTop =
+              !!middleInitialHint &&
+              !!topMiddleInitial &&
+              topMiddleInitial !== middleInitialHint;
+            const serializeCandidates = async (rows: Array<{ p: any; score: number }>) =>
+              Promise.all(
+                rows.map(async (r) => ({
+                  mlbApiId: r.p.mlbId,
+                  fullName: r.p.fullName,
+                  age: r.p.age ?? null,
+                  currentTeamName: r.p.currentTeamName ?? null,
+                  parentOrgName: r.p.parentOrgName ?? null,
+                  sportLevel: r.p.sportLevel,
+                  lastActiveSeason: await getLastActiveSeason(r.p),
+                  score: r.score,
+                })),
+              );
+            const exactNameCandidatesAll = scoredCandidates.filter(
+              (r) => candidateMatchesExactNormalizedName(r.p) || candidateMatchesExactFirstLast(r.p),
+            );
+            const exactNameCandidateIdCount = new Set(
+              exactNameCandidatesAll
+                .map((r) => Number(r.p?.mlbId))
+                .filter((id) => Number.isInteger(id) && id > 0),
+            ).size;
+            const exactNormalizedNameCandidates = exactNameCandidatesAll.filter((r) =>
+              candidateMatchesExactNormalizedName(r.p),
+            );
+            const exactNormalizedNameIdCount = new Set(
+              exactNormalizedNameCandidates
+                .map((r) => Number(r.p?.mlbId))
+                .filter((id) => Number.isInteger(id) && id > 0),
+            ).size;
+            const exactNameTeamMatched = hintVariants.length > 0
+              ? exactNameCandidatesAll.filter((r) => candidateMatchesHint(r.p))
+              : [];
+            const exactNameTeamMatchedIdCount = new Set(
+              exactNameTeamMatched
+                .map((r) => Number(r.p?.mlbId))
+                .filter((id) => Number.isInteger(id) && id > 0),
+            ).size;
+            const canonicalFirstLastCandidates = scoredCandidates.filter((r) =>
+              candidateMatchesCanonicalFirstLast(r.p),
+            );
+            const canonicalFirstLastIdCount = new Set(
+              canonicalFirstLastCandidates
+                .map((r) => Number(r.p?.mlbId))
+                .filter((id) => Number.isInteger(id) && id > 0),
+            ).size;
+            const canonicalFirstLastTeamMatched = hintVariants.length > 0
+              ? canonicalFirstLastCandidates.filter((r) => candidateMatchesHint(r.p))
+              : [];
+            const canonicalFirstLastTeamMatchedIdCount = new Set(
+              canonicalFirstLastTeamMatched
+                .map((r) => Number(r.p?.mlbId))
+                .filter((id) => Number.isInteger(id) && id > 0),
+            ).size;
+            const exactAutoPick =
+              exactNormalizedNameIdCount === 1
+                ? exactNormalizedNameCandidates[0]?.p || null
+                : exactNameCandidateIdCount === 1
+                ? exactNameCandidatesAll[0]?.p || null
+                : exactNameCandidateIdCount > 1 && exactNameTeamMatchedIdCount === 1
+                  ? exactNameTeamMatched[0]?.p || null
+                : canonicalFirstLastIdCount === 1
+                  ? canonicalFirstLastCandidates[0]?.p || null
+                : canonicalFirstLastIdCount > 1 && canonicalFirstLastTeamMatchedIdCount === 1
+                  ? canonicalFirstLastTeamMatched[0]?.p || null
+                  : null;
+            const isNearTypoCandidate = (candidate: any): boolean => {
+              if (!candidate) return false;
+              const candSplit = getCandidateBestSplit(candidate);
+              if (!searchSplit.first || !searchSplit.last || !candSplit.first || !candSplit.last) return false;
+              const firstInitialAligned = searchSplit.first[0] === candSplit.first[0];
+              const firstDist = levenshtein(searchSplit.first, candSplit.first);
+              const lastDist = levenshtein(searchSplit.last, candSplit.last);
+              const firstConfDist = levenshtein(
+                normalizeConfusableCharacters(searchSplit.first),
+                normalizeConfusableCharacters(candSplit.first),
+              );
+              const lastConfDist = levenshtein(
+                normalizeConfusableCharacters(searchSplit.last),
+                normalizeConfusableCharacters(candSplit.last),
+              );
+              const closeLast = lastDist <= 1 || lastConfDist <= 1;
+              const closeFirst = (firstInitialAligned && firstDist <= 2) || firstConfDist <= 1;
+              return closeLast && closeFirst;
+            };
+            const typoCandidatesAll = scoredCandidates.filter((r) => isNearTypoCandidate(r.p));
+            const typoCandidatesHinted = hintVariants.length > 0
+              ? typoCandidatesAll.filter((r) => candidateMatchesHint(r.p))
+              : [];
+            const typoCandidatePool = typoCandidatesHinted.length > 0 ? typoCandidatesHinted : typoCandidatesAll;
+            const typoCandidateUniqueIdCount = new Set(
+              typoCandidatePool
+                .map((r) => Number(r.p?.mlbId))
+                .filter((id) => Number.isInteger(id) && id > 0),
+            ).size;
+            const sortedTypoPool = [...typoCandidatePool].sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+            const typoTop = sortedTypoPool[0];
+            const typoSecond = sortedTypoPool[1];
+            const typoGap = typoTop && typoSecond ? Number(typoTop.score || 0) - Number(typoSecond.score || 0) : 999;
+            const typoTopSplit = typoTop ? getCandidateBestSplit(typoTop.p) : null;
+            const typoTopLastDist =
+              typoTopSplit?.last && searchSplit.last
+                ? levenshtein(searchSplit.last, typoTopSplit.last)
+                : null;
+            const rowFirstCanonical = canonicalFirstName(searchSplit.first || "");
+            const typoBlockedForCommonFirstSurnameVariant =
+              !exactAutoPick &&
+              !!typoTop &&
+              !!rowFirstCanonical &&
+              COMMON_FIRST_NAMES_FOR_SURNAME_TYPO_AUTOMAP.has(rowFirstCanonical) &&
+              typoTopLastDist === 1 &&
+              !dobHint &&
+              !candidateMatchesHint(typoTop.p);
+            const typoBlockedForCopyrightNoise =
+              !exactAutoPick &&
+              !!typoTop &&
+              hasCopyrightMarkerInName &&
+              typoTopLastDist === 1;
+            const typoAutoPick =
+              !exactAutoPick &&
+              typoCandidateUniqueIdCount === 1 &&
+              !!typoTop &&
+              !typoBlockedForCommonFirstSurnameVariant &&
+              !typoBlockedForCopyrightNoise &&
+              (!typoSecond || typoGap >= 8)
+                ? typoTop.p
+                : null;
+            const selectedAutoPick = exactAutoPick || typoAutoPick;
+            if (selectedAutoPick?.mlbId) {
+              mlbApiId = Number(selectedAutoPick.mlbId);
+            } else {
+              const rankedCandidates = await serializeCandidates(ranked);
+              let resolutionHint = "No unique exact name match. Choose player manually.";
+              if (exactNameCandidateIdCount > 1 && exactNameTeamMatchedIdCount !== 1) {
+                resolutionHint = hintVariants.length > 0
+                  ? "Multiple players share this exact name and team hint did not produce a unique match. Choose player manually."
+                  : "Multiple players share this exact name. Add team hint or choose player manually.";
+              } else if (!ranked.length) {
+                resolutionHint = "No candidates found from name search. Enter MLB API ID manually or adjust name spelling.";
+              }
+              unresolved.push({
+                rowNum,
+                playerName: rawName,
+                teamAbbreviation: rawAbbr,
+                rosterType,
+                ageHint,
+                mlbTeamHint: rawMlbTeam || null,
+                orgHint: rawOrg || null,
+                fangraphsId: rawFangraphs || null,
+                resolutionHint,
+                candidates: rankedCandidates,
+              });
+              continue;
+            }
+            if (selectedAutoPick) {
+              const rowGate = splitNormName(nameForSearch || rawName);
+              const candGate = getCandidateBestSplit(selectedAutoPick);
+              const rowFirstCanon = canonicalFirstName(rowGate.first);
+              const candFirstCanon = canonicalFirstName(candGate.first);
+              const firstDist =
+                rowGate.first && candGate.first ? levenshtein(rowGate.first, candGate.first) : null;
+              const lastDist =
+                rowGate.last && candGate.last ? levenshtein(rowGate.last, candGate.last) : null;
+              const firstInitialMismatch =
+                !!rowGate.first && !!candGate.first && rowGate.first[0] !== candGate.first[0];
+              const distantFirstNameMismatch =
+                firstDist != null &&
+                firstDist >= 4 &&
+                rowFirstCanon !== candFirstCanon &&
+                firstInitialMismatch;
+              const surnameNotClose = lastDist != null && lastDist > 1;
+              const exactNameGatePass =
+                candidateMatchesExactNormalizedName(selectedAutoPick) ||
+                candidateMatchesExactFirstLast(selectedAutoPick);
+              const uniqueExactNameCandidate =
+                ranked.length === 1 && exactNameGatePass;
+              const unsafeAutoResolve = (exactNameGatePass || uniqueExactNameCandidate)
+                ? false
+                : (distantFirstNameMismatch || surnameNotClose);
+              if (!unsafeAutoResolve) {
+                mlbApiId = selectedAutoPick.mlbId;
+              } else {
+                const rankedCandidates = await serializeCandidates(ranked);
+                unresolved.push({
+                  rowNum,
+                  playerName: rawName,
+                  teamAbbreviation: rawAbbr,
+                  rosterType,
+                  ageHint,
+                  mlbTeamHint: rawMlbTeam || null,
+                  orgHint: rawOrg || null,
+                  fangraphsId: rawFangraphs || null,
+                  resolutionHint:
+                    "Blocked auto-match: strong first-name mismatch with candidate. Choose player manually.",
+                  candidates: rankedCandidates,
+                });
+                continue;
+              }
+            }
+          } else if (!Number.isInteger(mlbApiId) || mlbApiId <= 0) {
+            unresolved.push({
+              rowNum,
+              playerName: rawName || "(missing name)",
+              teamAbbreviation: rawAbbr,
+              rosterType,
+              ageHint,
+              mlbTeamHint: rawMlbTeam || null,
+              orgHint: rawOrg || null,
+              fangraphsId: rawFangraphs || null,
+              resolutionHint: "Missing MLB API ID and player name. Provide player_name (or first_name + last_name) or enter MLB API ID manually.",
+              candidates: [],
+            });
+            continue;
+          }
+        }
+
+        parsedRows.push({
+          rowNum,
+          mlbApiId,
+          userId: targetUserId,
+          teamAbbreviation: rawAbbr,
+          rosterType,
+          contractStatus,
+          salary2026,
+          minorLeagueStatus,
+          minorLeagueYears,
+          playerName: rawName || undefined,
+          ageHint,
+          mlbTeamHint: rawMlbTeam || null,
+          orgHint: rawOrg || null,
+          fangraphsId: rawFangraphs || null,
+        });
+        uniqueApiIds.add(mlbApiId);
+        if (rawMiddleName) {
+          middleNameUpdates.set(mlbApiId, rawMiddleName);
+        }
+      }
+      // Duplicate MLB IDs in the same upload require commissioner team selection.
+      // Example: same player listed on two teams; commissioner must choose winner.
+      {
+        const byMlbApiId = new Map<number, typeof parsedRows>();
+        for (const row of parsedRows) {
+          const group = byMlbApiId.get(row.mlbApiId) || [];
+          group.push(row);
+          byMlbApiId.set(row.mlbApiId, group);
+        }
+        const dedupedRows: typeof parsedRows = [];
+        const duplicateConflictContext = new Map<string, {
+          optionsByUserId: Map<string, { userId: string; teamAbbreviation: string; rowNums: number[] }>;
+          options: Array<{ userId: string; teamAbbreviation: string; rowNums: number[] }>;
+          selectedUserId: string;
+        }>();
+        const emittedSelectedConflict = new Set<string>();
+        for (const row of parsedRows) {
+          const group = byMlbApiId.get(row.mlbApiId) || [];
+          if (group.length <= 1) {
+            dedupedRows.push(row);
+            continue;
+          }
+          const conflictKey = `dup:${row.mlbApiId}`;
+          let context = duplicateConflictContext.get(conflictKey);
+          if (!context) {
+            const optionsByUserId = new Map<string, { userId: string; teamAbbreviation: string; rowNums: number[] }>();
+            for (const g of group) {
+              const existing = optionsByUserId.get(g.userId);
+              if (existing) {
+                existing.rowNums.push(g.rowNum);
+              } else {
+                optionsByUserId.set(g.userId, {
+                  userId: g.userId,
+                  teamAbbreviation: g.teamAbbreviation,
+                  rowNums: [g.rowNum],
+                });
+              }
+            }
+            const options = Array.from(optionsByUserId.values())
+              .map((o) => ({ ...o, rowNums: o.rowNums.sort((a, b) => a - b) }))
+              .sort((a, b) => a.teamAbbreviation.localeCompare(b.teamAbbreviation));
+            const singleTeamDuplicate = optionsByUserId.size === 1;
+            if (singleTeamDuplicate) {
+              sameTeamDuplicateConflictCount += 1;
+              sameTeamDuplicateRowCount += Math.max(0, group.length - 1);
+            }
+            const selectedUserId = resolveConflictSelectionUserId(
+              singleTeamDuplicate
+                ? Array.from(optionsByUserId.keys())[0]
+                : (duplicateTeamResolutions[conflictKey] || persistedDuplicateTeamRules.get(conflictKey)),
+              optionsByUserId,
+            );
+            context = { optionsByUserId, options, selectedUserId };
+            duplicateConflictContext.set(conflictKey, context);
+          }
+          const { optionsByUserId, options, selectedUserId } = context;
+          if (selectedUserId && optionsByUserId.has(selectedUserId)) {
+            if (!emittedSelectedConflict.has(conflictKey)) {
+              const selectedTeamAbbreviation = optionsByUserId.get(selectedUserId)?.teamAbbreviation || row.teamAbbreviation;
+              const chosenTemplate = group.find((g) => g.userId === selectedUserId) || group[0];
+              dedupedRows.push({
+                ...chosenTemplate,
+                userId: selectedUserId,
+                teamAbbreviation: selectedTeamAbbreviation,
+              });
+              emittedSelectedConflict.add(conflictKey);
+            }
+            continue;
+          }
+          unresolved.push({
+            rowNum: row.rowNum,
+            playerName: row.playerName || `MLB ID ${row.mlbApiId}`,
+            teamAbbreviation: row.teamAbbreviation,
+            rosterType: row.rosterType,
+            ageHint: row.ageHint,
+            mlbTeamHint: row.mlbTeamHint || null,
+            orgHint: row.orgHint || null,
+            fangraphsId: row.fangraphsId || null,
+            resolutionHint: "Duplicate MLB ID appears on multiple teams in this upload. Choose the team that should keep this player.",
+            duplicateConflictKey: conflictKey,
+            duplicateTeamOptions: options,
+            candidates: [],
+          });
+        }
+        parsedRows = dedupedRows;
+      }
+      const resolvedRowsSnapshot = parsedRows.map((row) => ({
+        rowNum: row.rowNum,
+        mlbApiId: row.mlbApiId,
+        rosterType: row.rosterType,
+        userId: row.userId,
+      }));
+
+      if (unresolved.length > 0 && !allowPartialImportDuringMatching) {
+        const scopeWarnings =
+          !assumePageScope && outOfScopeRowCount > 0
+            ? [`Skipped ${outOfScopeRowCount} rows outside active ${reconciliationScope.toUpperCase()} scope.`]
+            : [];
+        const duplicateCollapseWarnings =
+          sameTeamDuplicateConflictCount > 0
+            ? [
+                `${sameTeamDuplicateRowCount} duplicate row(s) for ${sameTeamDuplicateConflictCount} player(s) were auto-collapsed because all duplicate rows mapped to the same team.`,
+              ]
+            : [];
+        const unresolvedWarnings = [...headerWarnings, ...scopeWarnings, ...duplicateCollapseWarnings];
+        await persistLatestSnapshot({
+          processed: lines.length - 1,
+          created: 0,
+          unresolvedCount: unresolved.length,
+          unresolved,
+          errors,
+          warnings: unresolvedWarnings,
+          csvData,
+          csvHash,
+          persistedCuts: Array.from(persistedCutEntries.values()),
+          resolvedRows: resolvedRowsSnapshot,
+        });
+        await setOnboardingStatus({
+          status: "in_progress",
+          imported: 0,
+          unresolved: unresolved.length,
+          errors: errors.length,
+          completedAt: null,
+        });
+        await persistProgress({
+          running: false,
+          processed: totalRows,
+          totalRows,
+          stage: "awaiting_resolution",
+          message: `${unresolved.length} unresolved rows require review`,
+        });
+        return res.json({
+          requiresResolution: true,
+          unresolved,
+          processed: lines.length - 1,
+          errors,
+          warnings: unresolvedWarnings,
+          created: 0,
+          cutCount,
+          persistedCutRows: toPersistedCutRowNumbers(),
+          middleNamesUpdated: 0,
+        });
+      }
+      if (errors.length > 0) {
+        if (parsedRows.length > 0) {
+          // Allow partial import and retain parse errors for commissioner visibility.
+          parseErrorWarning = `${errors.length} rows had parse/validation errors and were skipped.`;
+        } else {
+        const scopeWarnings =
+          !assumePageScope && outOfScopeRowCount > 0
+            ? [`Skipped ${outOfScopeRowCount} rows outside active ${reconciliationScope.toUpperCase()} scope.`]
+            : [];
+        const errorWarnings = [...headerWarnings, ...scopeWarnings];
+        await persistLatestSnapshot({
+          processed: lines.length - 1,
+          created: 0,
+          unresolvedCount: 0,
+          unresolved: [],
+          errors,
+          warnings: errorWarnings,
+          csvData,
+          csvHash,
+          persistedCuts: Array.from(persistedCutEntries.values()),
+          resolvedRows: resolvedRowsSnapshot,
+        });
+        await setOnboardingStatus({
+          status: "in_progress",
+          imported: 0,
+          unresolved: 0,
+          errors: errors.length,
+          completedAt: null,
+        });
+        await persistProgress({
+          running: false,
+          processed: totalRows,
+          totalRows,
+          stage: "error",
+          message: `${errors.length} row errors`,
+        });
+        return res.json({
+          requiresResolution: true,
+          unresolved: [],
+          processed: lines.length - 1,
+          errors,
+          warnings: errorWarnings,
+          created: 0,
+          cutCount,
+          persistedCutRows: toPersistedCutRowNumbers(),
+          middleNamesUpdated: 0,
+        });
+        }
+      }
+
+      const players = await storage.getMlbPlayersByMlbIdsWithSeasonFallback(Array.from(uniqueApiIds), season);
+      const byApiId = new Map<number, number>();
+      for (const p of players) byApiId.set(p.mlbId, p.id);
+      const seededMlbIds = new Set<number>();
+      const seedMlbPlayerFromApi = async (mlbId: number): Promise<number | null> => {
+        if (seededMlbIds.has(mlbId)) {
+          const existing = await storage.getMlbPlayerByMlbId(mlbId);
+          return existing?.id ?? null;
+        }
+        try {
+          const response = await fetch(`https://statsapi.mlb.com/api/v1/people/${mlbId}`);
+          if (!response.ok) return null;
+          const payload = await response.json();
+          const person = Array.isArray(payload?.people) ? payload.people[0] : null;
+          if (!person?.id || !person?.fullName) return null;
+          await storage.upsertMlbPlayers([{
+            mlbId: Number(person.id),
+            fullName: String(person.fullName),
+            fullFmlName: String(person.fullFMLName || "").trim() || null,
+            firstName: person.firstName || null,
+            middleName: person.middleName || null,
+            lastName: person.lastName || null,
+            primaryPosition: person.primaryPosition?.abbreviation || null,
+            positionName: person.primaryPosition?.name || null,
+            positionType: person.primaryPosition?.type || null,
+            batSide: person.batSide?.code || null,
+            throwHand: person.pitchHand?.code || null,
+            currentTeamId: person.currentTeam?.id || null,
+            currentTeamName: person.currentTeam?.name || null,
+            parentOrgId: null,
+            parentOrgName: null,
+            sportId: 1,
+            sportLevel: "MLB",
+            birthDate: person.birthDate || null,
+            age: Number.isFinite(Number(person.currentAge)) ? Number(person.currentAge) : null,
+            isActive: person.active !== false,
+            hadHittingStats: false,
+            hadPitchingStats: false,
+            hittingAtBats: 0,
+            hittingWalks: 0,
+            hittingSingles: 0,
+            hittingDoubles: 0,
+            hittingTriples: 0,
+            hittingHomeRuns: 0,
+            hittingAvg: null,
+            hittingObp: null,
+            hittingSlg: null,
+            hittingOps: null,
+            pitchingGames: 0,
+            pitchingGamesStarted: 0,
+            pitchingStrikeouts: 0,
+            pitchingWalks: 0,
+            pitchingHits: 0,
+            pitchingHomeRuns: 0,
+            pitchingEra: null,
+            pitchingInningsPitched: 0,
+            hittingGamesStarted: 0,
+            hittingPlateAppearances: 0,
+            isTwoWayQualified: false,
+            season,
+          }] as any);
+          seededMlbIds.add(mlbId);
+          const seeded = await storage.getMlbPlayerByMlbId(mlbId);
+          return seeded?.id ?? null;
+        } catch {
+          return null;
+        }
+      };
+
+      const existingAssignments = await storage.getLeagueRosterAssignments(leagueId, season);
+      const alreadyAssigned = new Set<number>(existingAssignments.map((a) => a.mlbPlayerId));
+      const existingByPlayerId = new Map<number, any>(existingAssignments.map((a) => [a.mlbPlayerId, a]));
+      const seenPlayerIds = new Set<number>();
+      const warnings: string[] = [];
+      warnings.push(...headerWarnings);
+      if (parseErrorWarning) {
+        warnings.push(parseErrorWarning);
+      }
+      if (!assumePageScope && outOfScopeRowCount > 0) {
+        warnings.push(`Skipped ${outOfScopeRowCount} rows outside active ${reconciliationScope.toUpperCase()} scope.`);
+      }
+      if (sameTeamDuplicateConflictCount > 0) {
+        warnings.push(
+          `${sameTeamDuplicateRowCount} duplicate row(s) for ${sameTeamDuplicateConflictCount} player(s) were auto-collapsed because all duplicate rows mapped to the same team.`,
+        );
+      }
+      let idempotentSkipCount = 0;
+      const toInsert: Array<{
+        leagueId: number;
+        userId: string;
+        mlbPlayerId: number;
+        rosterType: "mlb" | "milb" | "draft";
+        contractStatus?: string | null;
+        salary2026?: number | null;
+        minorLeagueStatus?: string | null;
+        minorLeagueYears?: number | null;
+        season: number;
+      }> = [];
+      const toReassign: Array<{
+        assignmentId: number;
+        userId: string;
+        rosterType: "mlb" | "milb" | "draft";
+        contractStatus?: string | null;
+        salary2026?: number | null;
+        minorLeagueStatus?: string | null;
+        minorLeagueYears?: number | null;
+      }> = [];
+
+      for (const row of parsedRows) {
+        let internalPlayerId = byApiId.get(row.mlbApiId);
+        if (!internalPlayerId) {
+          const seededId = await seedMlbPlayerFromApi(row.mlbApiId);
+          if (seededId) {
+            internalPlayerId = seededId;
+            byApiId.set(row.mlbApiId, seededId);
+          }
+        }
+        if (!internalPlayerId) {
+          errors.push(`Row ${row.rowNum}: MLB API ID ${row.mlbApiId} not found for season ${season}`);
+          continue;
+        }
+        if (alreadyAssigned.has(internalPlayerId)) {
+          const existing = existingByPlayerId.get(internalPlayerId);
+          if (existing && existing.userId === row.userId && existing.rosterType === row.rosterType) {
+            idempotentSkipCount++;
+            continue;
+          }
+          if (existing) {
+            const conflictKey = `assigned:${row.mlbApiId}`;
+            const existingTeamAbbreviation =
+              String(userToAbbrev.get(existing.userId) || row.teamAbbreviation || "").toUpperCase();
+            const uploadedTeamAbbreviation = String(row.teamAbbreviation || "").toUpperCase();
+            const optionsByUserId = new Map<string, { userId: string; teamAbbreviation: string; rowNums: number[] }>();
+            optionsByUserId.set(existing.userId, {
+              userId: existing.userId,
+              teamAbbreviation: existingTeamAbbreviation,
+              rowNums: [],
+            });
+            optionsByUserId.set(row.userId, {
+              userId: row.userId,
+              teamAbbreviation: uploadedTeamAbbreviation,
+              rowNums: [row.rowNum],
+            });
+            const singleTeamConflict = optionsByUserId.size === 1;
+            const selectedUserId = resolveConflictSelectionUserId(
+              singleTeamConflict
+                ? Array.from(optionsByUserId.keys())[0]
+                : (duplicateTeamResolutions[conflictKey] || persistedDuplicateTeamRules.get(conflictKey)),
+              optionsByUserId,
+            );
+            if (selectedUserId && optionsByUserId.has(selectedUserId)) {
+              if (selectedUserId === existing.userId) {
+                const existingRosterType = String(existing.rosterType || "").toLowerCase();
+                const needsScopeUpdate = existingRosterType !== row.rosterType;
+                if (needsScopeUpdate) {
+                  toReassign.push({
+                    assignmentId: existing.id,
+                    userId: existing.userId,
+                    rosterType: row.rosterType,
+                    contractStatus: row.rosterType === "mlb" ? row.contractStatus : null,
+                    salary2026: row.rosterType === "mlb" ? row.salary2026 : null,
+                    minorLeagueStatus: row.rosterType !== "mlb" ? row.minorLeagueStatus : null,
+                    minorLeagueYears: row.rosterType !== "mlb" ? row.minorLeagueYears : null,
+                  });
+                  continue;
+                }
+                idempotentSkipCount++;
+                continue;
+              }
+              if (assumePageScope) {
+                toReassign.push({
+                  assignmentId: existing.id,
+                  userId: row.userId,
+                  rosterType: row.rosterType,
+                  contractStatus: row.rosterType === "mlb" ? row.contractStatus : null,
+                  salary2026: row.rosterType === "mlb" ? row.salary2026 : null,
+                  minorLeagueStatus: row.rosterType !== "mlb" ? row.minorLeagueStatus : null,
+                  minorLeagueYears: row.rosterType !== "mlb" ? row.minorLeagueYears : null,
+                });
+                continue;
+              }
+            }
+            unresolved.push({
+              rowNum: row.rowNum,
+              playerName: row.playerName || `MLB ID ${row.mlbApiId}`,
+              teamAbbreviation: uploadedTeamAbbreviation,
+              rosterType: row.rosterType,
+              ageHint: row.ageHint,
+              mlbTeamHint: row.mlbTeamHint || null,
+              orgHint: row.orgHint || null,
+              fangraphsId: row.fangraphsId || null,
+              resolutionHint: "Player is already assigned in this league/season. Choose which team should keep this player.",
+              duplicateConflictKey: conflictKey,
+              duplicateTeamOptions: Array.from(optionsByUserId.values()).sort((a, b) => a.teamAbbreviation.localeCompare(b.teamAbbreviation)),
+              candidates: [],
+            });
+            continue;
+          }
+          errors.push(`Row ${row.rowNum}: player ${row.mlbApiId} is already assigned in this league/season`);
+          continue;
+        }
+        if (seenPlayerIds.has(internalPlayerId)) {
+          errors.push(`Row ${row.rowNum}: duplicate player ${row.mlbApiId} in upload`);
+          continue;
+        }
+        seenPlayerIds.add(internalPlayerId);
+        toInsert.push({
+          leagueId,
+          userId: row.userId,
+          mlbPlayerId: internalPlayerId,
+          rosterType: row.rosterType,
+          contractStatus: row.rosterType === "mlb" ? row.contractStatus : null,
+          salary2026: row.rosterType === "mlb" ? row.salary2026 : null,
+          minorLeagueStatus: row.rosterType !== "mlb" ? row.minorLeagueStatus : null,
+          minorLeagueYears: row.rosterType !== "mlb" ? row.minorLeagueYears : null,
+          season,
+        });
+      }
+      if (unresolved.length > 0 && !allowPartialImportDuringMatching) {
+        const scopeWarnings =
+          !assumePageScope && outOfScopeRowCount > 0
+            ? [`Skipped ${outOfScopeRowCount} rows outside active ${reconciliationScope.toUpperCase()} scope.`]
+            : [];
+        const unresolvedWarnings = [...warnings, ...scopeWarnings];
+        await persistLatestSnapshot({
+          processed: lines.length - 1,
+          created: 0,
+          unresolvedCount: unresolved.length,
+          unresolved,
+          errors,
+          warnings: unresolvedWarnings,
+          csvData,
+          csvHash,
+          persistedCuts: Array.from(persistedCutEntries.values()),
+          resolvedRows: resolvedRowsSnapshot,
+        });
+        await setOnboardingStatus({
+          status: "in_progress",
+          imported: 0,
+          unresolved: unresolved.length,
+          errors: errors.length,
+          completedAt: null,
+        });
+        await persistProgress({
+          running: false,
+          processed: totalRows,
+          totalRows,
+          stage: "awaiting_resolution",
+          message: `${unresolved.length} unresolved rows`,
+        });
+        return res.json({
+          requiresResolution: true,
+          unresolved,
+          processed: lines.length - 1,
+          errors,
+          warnings: unresolvedWarnings,
+          created: 0,
+          cutCount,
+          persistedCutRows: toPersistedCutRowNumbers(),
+          middleNamesUpdated: 0,
+        });
+      }
+      if (errors.length > 0) {
+        if (toInsert.length > 0 || toReassign.length > 0) {
+          warnings.push(`${errors.length} rows were skipped due to row-level errors.`);
+        } else {
+        await persistLatestSnapshot({
+          processed: lines.length - 1,
+          created: 0,
+          unresolvedCount: 0,
+          unresolved: [],
+          errors,
+          warnings,
+          csvData,
+          csvHash,
+          persistedCuts: Array.from(persistedCutEntries.values()),
+          resolvedRows: resolvedRowsSnapshot,
+        });
+        await setOnboardingStatus({
+          status: "in_progress",
+          imported: 0,
+          unresolved: 0,
+          errors: errors.length,
+          completedAt: null,
+        });
+        await persistProgress({
+          running: false,
+          processed: totalRows,
+          totalRows,
+          stage: "error",
+          message: `${errors.length} row errors`,
+        });
+        return res.json({
+          requiresResolution: true,
+          unresolved: [],
+          processed: lines.length - 1,
+          errors,
+          warnings,
+          created: 0,
+          cutCount,
+          persistedCutRows: toPersistedCutRowNumbers(),
+          middleNamesUpdated: 0,
+        });
+        }
+      }
+
+      if (idempotentSkipCount > 0) {
+        warnings.push(`${idempotentSkipCount} rows were already assigned to the same team/roster and were skipped.`);
+      }
+      if (toReassign.length > 0) {
+        warnings.push(`${toReassign.length} existing assignments were updated to match this ${reconciliationScope.toUpperCase()} upload.`);
+      }
+      if (toInsert.length > 0) {
+        const league = await storage.getLeague(leagueId);
+        const counts = await storage.getRosterAssignmentCounts(leagueId, season);
+        const countMap = new Map<string, { mlb: number; milb: number }>();
+        for (const c of counts) {
+          const existing = countMap.get(c.userId) || { mlb: 0, milb: 0 };
+          if (c.rosterType === "mlb") existing.mlb = c.count;
+          if (c.rosterType === "milb") existing.milb = c.count;
+          countMap.set(c.userId, existing);
+        }
+
+        for (const row of toInsert) {
+          const teamCounts = countMap.get(row.userId) || { mlb: 0, milb: 0 };
+          if (row.rosterType === "mlb") {
+            teamCounts.mlb += 1;
+            if (league?.mlRosterLimit && teamCounts.mlb > league.mlRosterLimit) {
+              warnings.push(`Team ${row.userId} exceeds MLB roster soft limit (${teamCounts.mlb}/${league.mlRosterLimit})`);
+            }
+          } else if (row.rosterType === "milb") {
+            teamCounts.milb += 1;
+            if (league?.milbRosterLimit && teamCounts.milb > league.milbRosterLimit) {
+              warnings.push(`Team ${row.userId} exceeds MiLB roster soft limit (${teamCounts.milb}/${league.milbRosterLimit})`);
+            }
+          }
+          countMap.set(row.userId, teamCounts);
+        }
+      }
+
+      await persistProgress({
+        running: true,
+        processed: totalRows,
+        totalRows,
+        stage: "importing",
+        message: "Writing roster assignments",
+      });
+      const insertedCount = await storage.bulkAssignPlayers(toInsert as any);
+      for (const row of toReassign) {
+        await db
+          .update(leagueRosterAssignments)
+          .set({
+            userId: row.userId,
+            rosterType: row.rosterType,
+            contractStatus: row.contractStatus ?? null,
+            salary2026: row.salary2026 ?? null,
+            minorLeagueStatus: row.minorLeagueStatus ?? null,
+            minorLeagueYears: row.minorLeagueYears ?? null,
+          })
+          .where(eq(leagueRosterAssignments.id, row.assignmentId));
+      }
+      const created = insertedCount + toReassign.length;
+      const middleNamesUpdated = await storage.updateMlbPlayerMiddleNames(
+        Array.from(middleNameUpdates.entries()).map(([mlbId, middleName]) => ({ mlbId, middleName })),
+      );
+      if (unresolved.length > 0) {
+        warnings.push(`${created} matched rows imported; ${unresolved.length} rows still need reconciliation.`);
+        await persistLatestSnapshot({
+          processed: lines.length - 1,
+          created,
+          unresolvedCount: unresolved.length,
+          unresolved,
+          errors,
+          warnings,
+          csvData,
+          csvHash,
+          persistedCuts: Array.from(persistedCutEntries.values()),
+          resolvedRows: resolvedRowsSnapshot,
+        });
+        await setOnboardingStatus({
+          status: "in_progress",
+          imported: created,
+          unresolved: unresolved.length,
+          errors: errors.length,
+          completedAt: null,
+        });
+        await persistProgress({
+          running: false,
+          processed: totalRows,
+          totalRows,
+          stage: "awaiting_resolution",
+          message: `${created} imported, ${unresolved.length} unresolved`,
+        });
+        return res.json({
+          requiresResolution: true,
+          unresolved,
+          processed: lines.length - 1,
+          errors,
+          warnings,
+          created,
+          cutCount,
+          persistedCutRows: toPersistedCutRowNumbers(),
+          middleNamesUpdated,
+        });
+      }
+      await persistLatestSnapshot({
+        processed: lines.length - 1,
+        created,
+        unresolvedCount: 0,
+        unresolved: [],
+        errors,
+        warnings,
+        csvData,
+        csvHash,
+        persistedCuts: Array.from(persistedCutEntries.values()),
+        resolvedRows: resolvedRowsSnapshot,
+      });
+      await setOnboardingStatus({
+        status: "completed",
+        imported: created,
+        unresolved: 0,
+        errors: 0,
+        completedAt: new Date(),
+      });
+      await persistProgress({
+        running: false,
+        processed: totalRows,
+        totalRows,
+        stage: "completed",
+        message: `Completed: ${created} imported`,
+      });
+      await persistLatestSnapshot({
+        processed: lines.length - 1,
+        created,
+        unresolvedCount: 0,
+        unresolved: [],
+        errors,
+        warnings,
+        csvData,
+        csvHash,
+        persistedCuts: Array.from(persistedCutEntries.values()),
+        resolvedRows: resolvedRowsSnapshot,
+      });
+      res.json({
+        requiresResolution: false,
+        created,
+        cutCount,
+        persistedCutRows: toPersistedCutRowNumbers(),
+        middleNamesUpdated,
+        processed: lines.length - 1,
+        errors,
+        warnings,
+      });
+      } catch (error: any) {
+      console.error("Error uploading roster assignments CSV:", error);
+      try {
+        const leagueId = parseInt(req.params.id);
+        const csvData = String(req.body?.csvData || "").trim();
+        const requestedDefaultRosterType = String(req.body?.defaultRosterType || "").trim().toLowerCase();
+        const scope =
+          requestedDefaultRosterType === "mlb" || requestedDefaultRosterType === "milb" || requestedDefaultRosterType === "draft"
+            ? requestedDefaultRosterType
+            : "milb";
+        const totalRows = Math.max(0, csvData.split(/\r?\n/).map((l: string) => l.trim()).filter(Boolean).length - 1);
+        const progressPath = path.join(process.cwd(), "attached_assets", `roster-reconcile-progress-${scope}.json`);
+        await fs.writeFile(progressPath, JSON.stringify({
+          leagueId,
+          season: Number(req.body?.season) || 2025,
+          rosterType: scope,
+          updatedAt: new Date().toISOString(),
+          running: false,
+          processed: 0,
+          totalRows,
+          percent: 0,
+          stage: "error",
+          message: error?.message || "Failed to upload roster assignments CSV",
+        }, null, 2), "utf8");
+      } catch (e) {
+        console.error("Failed to write reconciliation error progress snapshot:", e);
+      }
+      res.status(500).json({ message: "Failed to upload roster assignments CSV" });
+    }
+  });
+
+  // Commissioner: live progress for reconciliation upload
+  app.get("/api/leagues/:id/roster-reconciliation/progress", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+      const requestedRosterType = String(req.query?.rosterType || "milb").trim().toLowerCase();
+      const rosterTypeScope =
+        requestedRosterType === "mlb" || requestedRosterType === "milb" || requestedRosterType === "draft"
+          ? requestedRosterType
+          : "milb";
+      if (!await hasLeagueCommissionerAccess(userId, leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+      const league = await storage.getLeague(leagueId);
+      const progressPath = path.join(process.cwd(), "attached_assets", `roster-reconcile-progress-${rosterTypeScope}.json`);
+      try {
+        const raw = await fs.readFile(progressPath, "utf8");
+        const payload = JSON.parse(raw || "{}");
+        if (Number(payload?.leagueId) === leagueId) {
+          const payloadUpdatedAtMs = payload?.updatedAt ? Date.parse(String(payload.updatedAt)) : NaN;
+          const isFresh = Number.isFinite(payloadUpdatedAtMs) && (Date.now() - payloadUpdatedAtMs) < 5 * 60 * 1000;
+          const staleRunning = payload?.running && !isFresh;
+          if (!staleRunning) return res.json(payload);
+        }
+      } catch {
+        // Fall through to synthesized default.
+      }
+      res.json({
+        leagueId,
+        season: Number(league?.rosterOnboardingSeason || 2025),
+        rosterType: rosterTypeScope,
+        updatedAt: new Date().toISOString(),
+        running: false,
+        processed: 0,
+        totalRows: 0,
+        percent: 0,
+        stage: "awaiting_resolution",
+        message: "Idle",
+      });
+    } catch (error) {
+      console.error("Error loading reconciliation progress:", error);
+      res.status(500).json({ message: "Failed to load reconciliation progress" });
+    }
+  });
+
+  // Load latest unresolved reconciliation rows from onboarding report (commissioner only)
+  app.get("/api/leagues/:id/roster-reconciliation/latest", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+      const requestedRosterType = String(req.query?.rosterType || "milb").trim().toLowerCase();
+      const rosterTypeScope =
+        requestedRosterType === "mlb" || requestedRosterType === "milb" || requestedRosterType === "draft"
+          ? requestedRosterType
+          : "milb";
+      if (!await hasLeagueCommissionerAccess(userId, leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const latestSnapshotPathScoped = path.join(process.cwd(), "attached_assets", `roster-reconcile-latest-${rosterTypeScope}.json`);
+      const normalizedCsvPath = path.join(process.cwd(), "attached_assets", "roster-normalized-upload.csv");
+      type SourceMeta = {
+        source: "latest_snapshot";
+        path: string;
+        raw: string;
+        updatedAtMs: number;
+      };
+      const sources: SourceMeta[] = [];
+      for (const candidate of [
+        { source: "latest_snapshot" as const, path: latestSnapshotPathScoped },
+      ]) {
+        try {
+          const [raw, stat] = await Promise.all([
+            fs.readFile(candidate.path, "utf8"),
+            fs.stat(candidate.path),
+          ]);
+          let updatedAtMs = stat.mtimeMs;
+          try {
+            const parsed = JSON.parse(raw || "{}");
+            if (parsed?.updatedAt) {
+              const parsedMs = Date.parse(String(parsed.updatedAt));
+              if (Number.isFinite(parsedMs)) updatedAtMs = parsedMs;
+            }
+          } catch {
+            // Keep stat-based timestamp.
+          }
+          sources.push({
+            source: candidate.source,
+            path: candidate.path,
+            raw,
+            updatedAtMs,
+          });
+        } catch {
+          // Ignore missing candidate and continue.
+        }
+      }
+      if (sources.length === 0) {
+        return res.status(404).json({ message: "No reconciliation report found yet" });
+      }
+      sources.sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+      const chosen = sources[0];
+      const raw = chosen.raw;
+      const source = chosen.source;
+
+      const report = JSON.parse(raw || "{}");
+      if (Number(report?.leagueId) !== leagueId) {
+        return res.status(404).json({ message: "No reconciliation report found for this league" });
+      }
+      if (String(report?.rosterType || "").toLowerCase() !== rosterTypeScope) {
+        return res.status(404).json({ message: `No ${rosterTypeScope.toUpperCase()} reconciliation report found for this league` });
+      }
+
+      let normalizedCsvData: string | null = null;
+      try {
+        normalizedCsvData = await fs.readFile(normalizedCsvPath, "utf8");
+      } catch {
+        normalizedCsvData = null;
+      }
+
+      const unresolvedSourceRows = Array.isArray(report?.unresolved)
+        ? report.unresolved
+        : Array.isArray(report?.unresolvedRows)
+          ? report.unresolvedRows
+          : [];
+      const unresolvedRows = unresolvedSourceRows
+        .map((row: any, idx: number) => ({
+            rowNum: Number(row?.rowNum) || idx + 2,
+            playerName: String(row?.playerName || row?.player_name || "").trim(),
+            teamAbbreviation: String(row?.teamAbbreviation || "").toUpperCase(),
+            rosterType: (["mlb", "milb", "draft"].includes(String(row?.rosterType || "").toLowerCase())
+              ? String(row?.rosterType || "").toLowerCase()
+              : "milb") as "mlb" | "milb" | "draft",
+            ageHint: row?.ageHint != null && Number.isFinite(Number(row.ageHint)) ? Number(row.ageHint) : null,
+            mlbTeamHint: row?.mlbHint || row?.mlbTeamHint || null,
+            orgHint: row?.orgHint || null,
+            fangraphsId: row?.fangraphsId || null,
+            resolutionHint: row?.resolutionHint || row?.hint || null,
+            duplicateConflictKey: row?.duplicateConflictKey ? String(row.duplicateConflictKey) : null,
+            duplicateTeamOptions: Array.isArray(row?.duplicateTeamOptions)
+              ? row.duplicateTeamOptions
+                  .map((o: any) => ({
+                    userId: String(o?.userId || "").trim(),
+                    teamAbbreviation: String(o?.teamAbbreviation || "").toUpperCase(),
+                    rowNums: Array.isArray(o?.rowNums)
+                      ? o.rowNums
+                          .map((n: any) => Number(n))
+                          .filter((n: number) => Number.isInteger(n) && n > 0)
+                      : [],
+                  }))
+                  .filter((o: any) => o.userId && o.teamAbbreviation)
+              : [],
+            candidates: Array.isArray(row?.topCandidates)
+              ? row.topCandidates.map((c: any) => ({
+                  mlbApiId: Number(c?.mlbId),
+                  fullName: String(c?.fullName || "").trim(),
+                  age: c?.age != null && Number.isFinite(Number(c.age)) ? Number(c.age) : null,
+                  currentTeamName: c?.currentTeam || c?.currentTeamName || null,
+                  parentOrgName: c?.org || c?.parentOrgName || null,
+                  sportLevel: String(c?.level || c?.sportLevel || ""),
+                  lastActiveSeason: c?.lastActiveSeason != null && Number.isFinite(Number(c.lastActiveSeason)) ? Number(c.lastActiveSeason) : null,
+                  score: Number.isFinite(Number(c?.score)) ? Number(c.score) : 0,
+                }))
+                  .filter((c: any) => Number.isInteger(c.mlbApiId) && c.mlbApiId > 0)
+              : Array.isArray(row?.candidates)
+                ? row.candidates.map((c: any) => ({
+                    mlbApiId: Number(c?.mlbApiId || c?.mlbId),
+                    fullName: String(c?.fullName || "").trim(),
+                    age: c?.age != null && Number.isFinite(Number(c.age)) ? Number(c.age) : null,
+                    currentTeamName: c?.currentTeamName || c?.currentTeam || null,
+                    parentOrgName: c?.parentOrgName || c?.org || null,
+                    sportLevel: String(c?.sportLevel || c?.level || ""),
+                    lastActiveSeason: c?.lastActiveSeason != null && Number.isFinite(Number(c.lastActiveSeason)) ? Number(c.lastActiveSeason) : null,
+                    score: Number.isFinite(Number(c?.score)) ? Number(c.score) : 0,
+                  }))
+                    .filter((c: any) => Number.isInteger(c.mlbApiId) && c.mlbApiId > 0)
+                : [],
+          }));
+      const persistedCutRows = Array.isArray(report?.persistedCuts)
+        ? Array.from(
+            new Set(
+              report.persistedCuts
+                .map((c: any) => Number(c?.rowNum))
+                .filter((n: number) => Number.isInteger(n) && n > 0),
+            ),
+          )
+        : [];
+
+      res.json({
+        source,
+        rosterType: rosterTypeScope,
+        processed: Number(report?.processed || report?.inputRecords || 0),
+        created: Number(report?.created || report?.inserted || 0),
+        unresolvedCount: Number(report?.unresolvedCount || report?.unresolved || unresolvedRows.length || 0),
+        errors: Array.isArray(report?.errors) ? report.errors : [],
+        csvData: report?.csvData || normalizedCsvData,
+        persistedCutRows,
+        unresolved: unresolvedRows,
+      });
+    } catch (error) {
+      console.error("Error loading latest roster reconciliation rows:", error);
+      res.status(500).json({ message: "Failed to load latest roster reconciliation rows" });
+    }
+  });
+
+  // Download reconciliation audit report for a scope (commissioner only)
+  app.get("/api/leagues/:id/roster-reconciliation/audit", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+      const requestedRosterType = String(req.query?.rosterType || "milb").trim().toLowerCase();
+      const rosterTypeScope =
+        requestedRosterType === "mlb" || requestedRosterType === "milb" || requestedRosterType === "draft"
+          ? requestedRosterType
+          : "milb";
+      const format = String(req.query?.format || "csv").trim().toLowerCase();
+
+      if (!await hasLeagueCommissionerAccess(userId, leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const latestSnapshotPathScoped = path.join(process.cwd(), "attached_assets", `roster-reconcile-latest-${rosterTypeScope}.json`);
+      const raw = await fs.readFile(latestSnapshotPathScoped, "utf8");
+      const report = JSON.parse(raw || "{}");
+      if (Number(report?.leagueId) !== leagueId) {
+        return res.status(404).json({ message: "No reconciliation report found for this league/scope" });
+      }
+      const season = Number(report?.season) || 2025;
+      const csvData = String(report?.csvData || "").trim();
+      if (!csvData) {
+        return res.status(404).json({ message: "No uploaded CSV available for this scope yet" });
+      }
+
+      const unresolvedRows = Array.isArray(report?.unresolved) ? report.unresolved : [];
+      const unresolvedRowNums = new Set<number>(
+        unresolvedRows.map((r: any) => Number(r?.rowNum)).filter((n: number) => Number.isInteger(n) && n > 0),
+      );
+      const errorMap = new Map<number, string>();
+      for (const err of Array.isArray(report?.errors) ? report.errors : []) {
+        const match = /^Row\s+(\d+):\s*(.+)$/i.exec(String(err || ""));
+        if (!match) continue;
+        errorMap.set(Number(match[1]), match[2]);
+      }
+      const cutRows = new Set<number>(
+        Array.isArray(report?.persistedCutRows)
+          ? report.persistedCutRows.map((x: any) => Number(x)).filter((n: number) => Number.isInteger(n) && n > 0)
+          : [],
+      );
+
+      const lines = csvData.split(/\r?\n/).map((l: string) => l.trim()).filter(Boolean);
+      const detectDelimiter = (line: string) => {
+        const comma = (line.match(/,/g) || []).length;
+        const semicolon = (line.match(/;/g) || []).length;
+        const tab = (line.match(/\t/g) || []).length;
+        if (tab > comma && tab > semicolon) return "\t";
+        if (semicolon > comma) return ";";
+        return ",";
+      };
+      const delimiter = detectDelimiter(lines[0] || "");
+      const normalizeHeader = (rawHeader: string) =>
+        String(rawHeader || "").replace(/^\uFEFF/, "").replace(/^"+|"+$/g, "").trim().toLowerCase();
+      const headers = (lines[0] || "").split(delimiter).map((h: string) => normalizeHeader(h));
+      const mlbIdIdx = headers.findIndex((h: string) => ["mlb_api_id", "mlb_id", "mlbid", "player_id", "id"].includes(h));
+      const nameIdx = headers.findIndex((h: string) => ["player_name", "name", "player", "full_name", "player full name"].includes(h));
+      const firstNameIdx = headers.findIndex((h: string) => ["first_name", "first name", "firstname", "first", "fname"].includes(h));
+      const lastNameIdx = headers.findIndex((h: string) => ["last_name", "last name", "lastname", "last", "lname"].includes(h));
+      const abbrIdx = headers.findIndex((h: string) => ["team_abbreviation", "team_abbrev", "abbreviation", "team", "abbr", "cbl"].includes(h));
+      const rosterTypeIdx = headers.findIndex((h: string) => ["roster_type", "roster type", "type", "scope"].includes(h));
+      const resolvedRowMap = new Map<number, number>();
+      if (Array.isArray(report?.resolvedRows)) {
+        for (const row of report.resolvedRows) {
+          const rowNum = Number(row?.rowNum);
+          const mlbApiId = Number(row?.mlbApiId);
+          if (!Number.isInteger(rowNum) || rowNum <= 0) continue;
+          if (!Number.isInteger(mlbApiId) || mlbApiId <= 0) continue;
+          resolvedRowMap.set(rowNum, mlbApiId);
+        }
+      }
+
+      const csvRows: Array<{
+        rowNum: number;
+        teamAbbreviation: string;
+        playerName: string;
+        rosterType: string;
+        inputMlbApiId: number | null;
+        resolvedMlbApiIdFromMapping: number | null;
+      }> = [];
+      const apiIds = new Set<number>();
+      for (let i = 1; i < lines.length; i++) {
+        const rowNum = i + 1;
+        const cols = lines[i].split(delimiter).map((c: string) => c.trim());
+        const mlbRaw = mlbIdIdx >= 0 ? cols[mlbIdIdx] : "";
+        const inputMlbApiId = Number.isInteger(Number(mlbRaw)) && Number(mlbRaw) > 0 ? Number(mlbRaw) : null;
+        const resolvedMlbApiId = inputMlbApiId || resolvedRowMap.get(rowNum) || null;
+        if (resolvedMlbApiId) apiIds.add(resolvedMlbApiId);
+        const firstNameRaw = firstNameIdx >= 0 ? cols[firstNameIdx] : "";
+        const lastNameRaw = lastNameIdx >= 0 ? cols[lastNameIdx] : "";
+        const playerName = nameIdx >= 0 ? (cols[nameIdx] || "") : [firstNameRaw, lastNameRaw].filter(Boolean).join(" ").trim();
+        const teamAbbreviation = (abbrIdx >= 0 ? cols[abbrIdx] : "").toUpperCase();
+        const rawRosterType = (rosterTypeIdx >= 0 ? cols[rosterTypeIdx] : rosterTypeScope).toLowerCase();
+        const rosterType = (rawRosterType === "mlb" || rawRosterType === "milb" || rawRosterType === "draft") ? rawRosterType : rosterTypeScope;
+        csvRows.push({
+          rowNum,
+          teamAbbreviation,
+          playerName,
+          rosterType,
+          inputMlbApiId,
+          resolvedMlbApiIdFromMapping: resolvedMlbApiId,
+        });
+      }
+      const rowsByResolvedMlbId = new Map<number, number[]>();
+      for (const row of csvRows) {
+        const resolvedMlbApiId = Number(row.resolvedMlbApiIdFromMapping);
+        if (!Number.isInteger(resolvedMlbApiId) || resolvedMlbApiId <= 0) continue;
+        const existing = rowsByResolvedMlbId.get(resolvedMlbApiId) || [];
+        existing.push(row.rowNum);
+        rowsByResolvedMlbId.set(resolvedMlbApiId, existing);
+      }
+      const duplicatePeersByRow = new Map<number, number[]>();
+      for (const [, rowNums] of rowsByResolvedMlbId.entries()) {
+        if (!Array.isArray(rowNums) || rowNums.length <= 1) continue;
+        for (const rowNum of rowNums) {
+          duplicatePeersByRow.set(
+            rowNum,
+            rowNums.filter((n) => n !== rowNum).sort((a, b) => a - b),
+          );
+        }
+      }
+
+      const players = await storage.getMlbPlayersByMlbIdsWithSeasonFallback(Array.from(apiIds), season);
+      const playerByMlbApiId = new Map<number, any>();
+      for (const p of players) playerByMlbApiId.set(Number(p.mlbId), p);
+      const assignments = await storage.getLeagueRosterAssignments(leagueId, season);
+      const assignmentByPlayerId = new Map<number, any>();
+      for (const a of assignments) assignmentByPlayerId.set(Number(a.mlbPlayerId), a);
+      const memberByAbbr = new Map<string, string>();
+      const abbrByUserId = new Map<string, string>();
+      const members = await storage.getLeagueMembers(leagueId);
+      for (const member of members) {
+        const abbr = String(member.teamAbbreviation || "").toUpperCase();
+        if (abbr) {
+          memberByAbbr.set(abbr, member.userId);
+          abbrByUserId.set(member.userId, abbr);
+        }
+      }
+      const normalizeAuditName = (value: string) =>
+        String(value || "")
+          .replace(/\([^)]*\)/g, " ")
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, " ")
+          .trim();
+      const assignmentsByScope = assignments.filter((a: any) => String(a.rosterType) === rosterTypeScope);
+      const assignmentsByTeam = new Map<string, any[]>();
+      for (const a of assignmentsByScope) {
+        const existing = assignmentsByTeam.get(a.userId) || [];
+        existing.push(a);
+        assignmentsByTeam.set(a.userId, existing);
+      }
+
+      const auditRows = csvRows.map((row) => {
+        if (cutRows.has(row.rowNum)) {
+          return { ...row, resolvedMlbApiId: null, status: "cut", detail: "Row marked cut." };
+        }
+        if (duplicatePeersByRow.has(row.rowNum)) {
+          const resolvedMlbApiId = row.resolvedMlbApiIdFromMapping;
+          const peers = duplicatePeersByRow.get(row.rowNum) || [];
+          const peerText =
+            peers.length === 1
+              ? `row ${peers[0]}`
+              : `rows ${peers.join(", ")}`;
+          return {
+            ...row,
+            resolvedMlbApiId: resolvedMlbApiId ?? null,
+            status: "duplicate_in_upload",
+            detail: `Duplicate of ${peerText} for the same MLB API ID in this upload.`,
+          };
+        }
+        const error = errorMap.get(row.rowNum);
+        if (error) {
+          return { ...row, resolvedMlbApiId: null, status: "error", detail: error };
+        }
+        if (unresolvedRowNums.has(row.rowNum)) {
+          return { ...row, resolvedMlbApiId: null, status: "unresolved", detail: "Needs commissioner review." };
+        }
+        const resolvedMlbApiId = row.resolvedMlbApiIdFromMapping;
+        if (resolvedMlbApiId) {
+          const player = playerByMlbApiId.get(resolvedMlbApiId);
+          const assignment = player ? assignmentByPlayerId.get(Number(player.id)) : null;
+          if (assignment) {
+            return {
+              ...row,
+              resolvedMlbApiId,
+              status: "assigned",
+              detail: `Assigned to ${assignment.rosterType.toUpperCase()} roster.`,
+            };
+          }
+          return { ...row, resolvedMlbApiId, status: "not_assigned", detail: "No assignment found yet." };
+        }
+        const teamUserId = memberByAbbr.get(row.teamAbbreviation);
+        if (teamUserId && row.playerName) {
+          const needle = normalizeAuditName(row.playerName);
+          if (needle) {
+            const candidates = (assignmentsByTeam.get(teamUserId) || []).filter((a: any) => {
+              const names = [
+                a?.player?.fullName,
+                a?.player?.fullFmlName,
+                a?.player?.fullFMLName,
+                [a?.player?.firstName, a?.player?.middleName, a?.player?.lastName].filter(Boolean).join(" "),
+              ]
+                .map((n) => normalizeAuditName(String(n || "")))
+                .filter(Boolean);
+              return names.includes(needle);
+            });
+            if (candidates.length === 1) {
+              const candidate = candidates[0];
+              const candidateMlbId = Number(candidate?.player?.mlbId);
+              if (Number.isInteger(candidateMlbId) && candidateMlbId > 0) {
+                return {
+                  ...row,
+                  resolvedMlbApiId: candidateMlbId,
+                  status: "assigned",
+                  detail: `Assigned to ${candidate.rosterType.toUpperCase()} roster (name/team fallback).`,
+                };
+              }
+            }
+            const crossTeamMatches = assignmentsByScope.filter((a: any) => {
+              const names = [
+                a?.player?.fullName,
+                a?.player?.fullFmlName,
+                a?.player?.fullFMLName,
+                [a?.player?.firstName, a?.player?.middleName, a?.player?.lastName].filter(Boolean).join(" "),
+              ]
+                .map((n) => normalizeAuditName(String(n || "")))
+                .filter(Boolean);
+              return names.includes(needle);
+            });
+            if (crossTeamMatches.length > 0) {
+              const uniqueTeams = Array.from(new Set(crossTeamMatches.map((a: any) => String(abbrByUserId.get(String(a.userId)) || a.userId))));
+              const uniqueMlbIds = Array.from(
+                new Set(
+                  crossTeamMatches
+                    .map((a: any) => Number(a?.player?.mlbId))
+                    .filter((id: number) => Number.isInteger(id) && id > 0),
+                ),
+              );
+              if (uniqueMlbIds.length === 1) {
+                const assignedTeamText = uniqueTeams.length === 1 ? uniqueTeams[0] : uniqueTeams.join(", ");
+                return {
+                  ...row,
+                  resolvedMlbApiId: uniqueMlbIds[0],
+                  status: "assigned_other_team",
+                  detail: `Matched by name to MLB API ID ${uniqueMlbIds[0]}, already assigned to team ${assignedTeamText}.`,
+                };
+              }
+              if (uniqueMlbIds.length > 1) {
+                return {
+                  ...row,
+                  resolvedMlbApiId: null,
+                  status: "assigned_other_team_ambiguous",
+                  detail: `Name matches players already assigned to other teams (${uniqueTeams.join(", ")}).`,
+                };
+              }
+            }
+          }
+        }
+        return { ...row, resolvedMlbApiId: null, status: "no_mlb_id", detail: "No MLB API ID on row." };
+      });
+
+      if (format === "json") {
+        return res.json({
+          leagueId,
+          season,
+          rosterType: rosterTypeScope,
+          generatedAt: new Date().toISOString(),
+          rowCount: auditRows.length,
+          rows: auditRows,
+        });
+      }
+
+      const csvEscape = (value: unknown) => {
+        const rawValue = String(value ?? "");
+        if (rawValue.includes(",") || rawValue.includes("\"") || rawValue.includes("\n") || rawValue.includes("\r")) {
+          return `"${rawValue.replace(/"/g, "\"\"")}"`;
+        }
+        return rawValue;
+      };
+      const header = [
+        "row_num",
+        "team_abbreviation",
+        "player_name",
+        "roster_type",
+        "input_mlb_api_id",
+        "resolved_mlb_api_id",
+        "status",
+        "detail",
+      ].join(",");
+      const linesOut = auditRows.map((row) =>
+        [
+          row.rowNum,
+          row.teamAbbreviation,
+          row.playerName,
+          row.rosterType,
+          row.inputMlbApiId ?? "",
+          row.resolvedMlbApiId ?? "",
+          row.status,
+          row.detail,
+        ].map(csvEscape).join(","),
+      );
+      const csvOut = [header, ...linesOut].join("\n");
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename=\"reconciliation-audit-${rosterTypeScope}-${season}.csv\"`);
+      return res.status(200).send(csvOut);
+    } catch (error: any) {
+      console.error("Error generating reconciliation audit report:", error);
+      return res.status(500).json({ message: "Failed to generate reconciliation audit report" });
+    }
+  });
+
+  // Commissioner: reset reconciliation state for a specific scope (mlb/milb/draft)
+  app.post("/api/leagues/:id/roster-reconciliation/reset", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+      const requestedRosterType = String(req.body?.rosterType || req.query?.rosterType || "milb").trim().toLowerCase();
+      const rosterTypeScope =
+        requestedRosterType === "mlb" || requestedRosterType === "milb" || requestedRosterType === "draft"
+          ? requestedRosterType
+          : "milb";
+      const season = Number(req.body?.season) || 2025;
+
+      if (!await hasLeagueCommissionerAccess(userId, leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const progressPath = path.join(process.cwd(), "attached_assets", `roster-reconcile-progress-${rosterTypeScope}.json`);
+      const latestSnapshotPath = path.join(process.cwd(), "attached_assets", `roster-reconcile-latest-${rosterTypeScope}.json`);
+      const rulesPath = path.join(process.cwd(), "attached_assets", `roster-reconcile-rules-${rosterTypeScope}.json`);
+
+      const resetProgress = {
+        leagueId,
+        season,
+        rosterType: rosterTypeScope,
+        updatedAt: new Date().toISOString(),
+        running: false,
+        processed: 0,
+        totalRows: 0,
+        percent: 0,
+        stage: "awaiting_resolution",
+        message: "Reset",
+      };
+      const resetLatest = {
+        leagueId,
+        season,
+        rosterType: rosterTypeScope,
+        updatedAt: new Date().toISOString(),
+        processed: 0,
+        created: 0,
+        unresolvedCount: 0,
+        unresolved: [],
+        errors: [],
+        warnings: [`${rosterTypeScope.toUpperCase()} reconciliation state was reset.`],
+        csvData: "",
+        persistedCuts: [],
+      };
+      const resetRules = {
+        leagueId,
+        rosterType: rosterTypeScope,
+        updatedAt: new Date().toISOString(),
+        nameTeamRules: {},
+        duplicateTeamRules: {},
+      };
+
+      await Promise.all([
+        fs.writeFile(progressPath, JSON.stringify(resetProgress, null, 2), "utf8"),
+        fs.writeFile(latestSnapshotPath, JSON.stringify(resetLatest, null, 2), "utf8"),
+        fs.writeFile(rulesPath, JSON.stringify(resetRules, null, 2), "utf8"),
+      ]);
+
+      return res.json({ success: true, rosterType: rosterTypeScope });
+    } catch (error: any) {
+      console.error("Error resetting reconciliation scope state:", error);
+      return res.status(500).json({ message: "Failed to reset reconciliation scope state" });
+    }
+  });
+
+  // Owner/Commissioner: DFA a won free agent to free roster capacity
+  app.post("/api/free-agents/:id/dfa", isAuthenticated, async (req: any, res) => {
+    try {
+      const sessionUserId = req.session.originalUserId || req.session.userId!;
+      const agentId = parseInt(req.params.id);
+      const agent = await storage.getFreeAgent(agentId);
+
+      if (!agent) {
+        return res.status(404).json({ message: "Free agent not found" });
+      }
+      if (!agent.auctionId) {
+        return res.status(400).json({ message: "Player is not associated with an auction" });
+      }
+      if (!agent.winnerId) {
+        return res.status(400).json({ message: "Player is not currently assigned to a winner" });
+      }
+
+      const isCommissioner = await hasAuctionCommissionerAccess(sessionUserId, agent.auctionId);
+      const isOwner = agent.winnerId === sessionUserId;
+      if (!isCommissioner && !isOwner) {
+        return res.status(403).json({ message: "Only the winning owner or a commissioner can DFA this player" });
+      }
+
+      const updated = await storage.dfaFreeAgent(agentId);
+      res.json({ success: true, message: `${agent.name} has been designated for assignment`, player: updated });
+    } catch (error) {
+      console.error("Error DFA-ing free agent:", error);
+      res.status(500).json({ message: "Failed to DFA player" });
     }
   });
 
@@ -2818,19 +6323,29 @@ export async function registerRoutes(
   // Commissioner/Super Admin: Update user details
   app.patch("/api/users/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const adminId = req.session.userId!;
-      const admin = await storage.getUser(adminId);
-      
-      if (!admin?.isCommissioner && !admin?.isSuperAdmin) {
-        return res.status(403).json({ message: "Commissioner access required" });
-      }
-
+      const adminId = req.session.originalUserId || req.session.userId!;
       const targetUserId = req.params.id;
+      const leagueId = req.query.leagueId ? Number(req.query.leagueId) : undefined;
       const { email, firstName, lastName, teamName, teamAbbreviation } = req.body;
 
       const targetUser = await storage.getUser(targetUserId);
       if (!targetUser) {
         return res.status(404).json({ message: "User not found" });
+      }
+
+      if (leagueId && Number.isFinite(leagueId)) {
+        if (!await hasLeagueCommissionerAccess(adminId, leagueId)) {
+          return res.status(403).json({ message: "Commissioner access required for this league" });
+        }
+        const targetMembership = await storage.getLeagueMember(leagueId, targetUserId);
+        if (!targetMembership) {
+          return res.status(404).json({ message: "Target user is not a member of this league" });
+        }
+      } else {
+        const admin = await storage.getUser(adminId);
+        if (!admin?.isCommissioner && !admin?.isSuperAdmin) {
+          return res.status(403).json({ message: "Commissioner access required" });
+        }
       }
 
       // If changing email, check it's not already taken
@@ -2841,14 +6356,28 @@ export async function registerRoutes(
         }
       }
 
+      // User identity fields are global; league team identity fields are league-scoped.
       const updatedUser = await storage.updateUserDetails(targetUserId, {
         email,
         firstName,
         lastName,
-        teamName,
-        teamAbbreviation,
+        teamName: leagueId ? undefined : teamName,
+        teamAbbreviation: leagueId ? undefined : teamAbbreviation,
       });
-      res.json(updatedUser);
+
+      let updatedMember: any = undefined;
+      if (leagueId && Number.isFinite(leagueId) && (teamName !== undefined || teamAbbreviation !== undefined)) {
+        updatedMember = await storage.updateLeagueMember(leagueId, targetUserId, {
+          teamName,
+          teamAbbreviation: teamAbbreviation?.toUpperCase().slice(0, 3),
+        } as any);
+      }
+
+      res.json({
+        ...updatedUser,
+        teamName: updatedMember?.teamName ?? updatedUser?.teamName,
+        teamAbbreviation: updatedMember?.teamAbbreviation ?? updatedUser?.teamAbbreviation,
+      });
     } catch (error) {
       console.error("Error updating user details:", error);
       res.status(500).json({ message: "Failed to update user details" });
@@ -3822,6 +7351,468 @@ export async function registerRoutes(
     }
   });
 
+  const transferLeagueTeamOwnership = async (params: {
+    leagueId: number;
+    fromUserId: string;
+    toUserId: string;
+    teamName: string | null;
+    teamAbbreviation: string | null;
+  }) => {
+    const {
+      leagueId,
+      fromUserId,
+      toUserId,
+      teamName,
+      teamAbbreviation,
+    } = params;
+
+    await db.transaction(async (tx) => {
+      const [toMembership] = await tx
+        .select()
+        .from(leagueMembers)
+        .where(and(
+          eq(leagueMembers.leagueId, leagueId),
+          eq(leagueMembers.userId, toUserId),
+        ));
+
+      const leagueAuctionRows = await tx
+        .select({ id: auctions.id })
+        .from(auctions)
+        .where(eq(auctions.leagueId, leagueId));
+      const leagueAuctionIds = leagueAuctionRows.map((a) => a.id);
+
+      const leagueDraftRows = await tx
+        .select({ id: drafts.id })
+        .from(drafts)
+        .where(eq(drafts.leagueId, leagueId));
+      const leagueDraftIds = leagueDraftRows.map((d) => d.id);
+
+      // Roster data moves with the team identity.
+      await tx
+        .update(rosterPlayers)
+        .set({ userId: toUserId, updatedAt: new Date() })
+        .where(and(
+          eq(rosterPlayers.leagueId, leagueId),
+          eq(rosterPlayers.userId, fromUserId),
+        ));
+
+      await tx
+        .update(leagueRosterAssignments)
+        .set({ userId: toUserId })
+        .where(and(
+          eq(leagueRosterAssignments.leagueId, leagueId),
+          eq(leagueRosterAssignments.userId, fromUserId),
+        ));
+
+      if (leagueAuctionIds.length > 0) {
+        const existingToAuctionTeams = await tx
+          .select({ auctionId: auctionTeams.auctionId })
+          .from(auctionTeams)
+          .where(and(
+            inArray(auctionTeams.auctionId, leagueAuctionIds),
+            eq(auctionTeams.userId, toUserId),
+          ));
+        const toAuctionSet = new Set(existingToAuctionTeams.map((r) => r.auctionId));
+        const transferAuctionIds = leagueAuctionIds.filter((id) => !toAuctionSet.has(id));
+        const deleteAuctionIds = leagueAuctionIds.filter((id) => toAuctionSet.has(id));
+
+        if (transferAuctionIds.length > 0) {
+          await tx
+            .update(auctionTeams)
+            .set({ userId: toUserId, updatedAt: new Date() })
+            .where(and(
+              inArray(auctionTeams.auctionId, transferAuctionIds),
+              eq(auctionTeams.userId, fromUserId),
+            ));
+        }
+
+        if (deleteAuctionIds.length > 0) {
+          await tx
+            .delete(auctionTeams)
+            .where(and(
+              inArray(auctionTeams.auctionId, deleteAuctionIds),
+              eq(auctionTeams.userId, fromUserId),
+            ));
+        }
+      }
+
+      if (leagueDraftIds.length > 0) {
+        await tx
+          .update(draftOrder)
+          .set({ userId: toUserId })
+          .where(and(
+            inArray(draftOrder.draftId, leagueDraftIds),
+            eq(draftOrder.userId, fromUserId),
+          ));
+
+        await tx
+          .update(draftPicks)
+          .set({ userId: toUserId })
+          .where(and(
+            inArray(draftPicks.draftId, leagueDraftIds),
+            eq(draftPicks.userId, fromUserId),
+          ));
+
+        await tx
+          .update(autoDraftLists)
+          .set({ userId: toUserId })
+          .where(and(
+            inArray(autoDraftLists.draftId, leagueDraftIds),
+            eq(autoDraftLists.userId, fromUserId),
+          ));
+      }
+
+      await tx
+        .update(leagueMembers)
+        .set({
+          teamName: null,
+          teamAbbreviation: null,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(leagueMembers.leagueId, leagueId),
+          eq(leagueMembers.userId, fromUserId),
+        ));
+
+      if (toMembership) {
+        await tx
+          .update(leagueMembers)
+          .set({
+            role: "owner",
+            teamName,
+            teamAbbreviation: teamAbbreviation || null,
+            isArchived: false,
+            updatedAt: new Date(),
+          })
+          .where(and(
+            eq(leagueMembers.leagueId, leagueId),
+            eq(leagueMembers.userId, toUserId),
+          ));
+      } else {
+        await tx.insert(leagueMembers).values({
+          leagueId,
+          userId: toUserId,
+          role: "owner",
+          teamName,
+          teamAbbreviation: teamAbbreviation || null,
+          isArchived: false,
+        } as any);
+      }
+    });
+  };
+
+  // Commissioner: invite an email to assume ownership of a league team.
+  app.post("/api/leagues/:id/team-invites", isAuthenticated, async (req: any, res) => {
+    try {
+      const leagueId = parseInt(req.params.id, 10);
+      if (isNaN(leagueId)) return res.status(400).json({ message: "Invalid league ID" });
+
+      const sessionUserId = req.session.originalUserId || req.session.userId!;
+      if (!await hasLeagueCommissionerAccess(sessionUserId, leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const teamUserId = String(req.body?.teamUserId || "").trim();
+      const invitedEmail = normalizeEmail(req.body?.email || "");
+      if (!teamUserId) return res.status(400).json({ message: "teamUserId is required" });
+      if (!invitedEmail) return res.status(400).json({ message: "email is required" });
+
+      const [teamMember] = await db
+        .select()
+        .from(leagueMembers)
+        .where(and(
+          eq(leagueMembers.leagueId, leagueId),
+          eq(leagueMembers.userId, teamUserId),
+          eq(leagueMembers.isArchived, false),
+        ));
+      if (!teamMember) {
+        return res.status(404).json({ message: "Team owner not found in this league" });
+      }
+      if (!teamMember.teamName && !teamMember.teamAbbreviation) {
+        return res.status(400).json({ message: "Selected member does not have a team identity to transfer" });
+      }
+
+      const token = crypto.randomBytes(32).toString("hex");
+      const expiresDays = Number(req.body?.expiresDays) > 0 ? Number(req.body.expiresDays) : 7;
+      const expiresAt = new Date(Date.now() + expiresDays * 24 * 60 * 60 * 1000);
+
+      const [invite] = await db.insert(teamOwnershipInvites).values({
+        leagueId,
+        teamUserId,
+        invitedEmail,
+        token,
+        invitedByUserId: sessionUserId,
+        status: "pending",
+        expiresAt,
+      } as any).returning();
+
+      const protocol = req.headers["x-forwarded-proto"] || "http";
+      const host = req.headers.host || "localhost:5000";
+      const inviteUrl = `${protocol}://${host}/team-invite?token=${token}`;
+
+      res.status(201).json({
+        invite,
+        inviteUrl,
+      });
+    } catch (error) {
+      console.error("Error creating team ownership invite:", error);
+      res.status(500).json({ message: "Failed to create invite" });
+    }
+  });
+
+  app.get("/api/leagues/:id/team-invites", isAuthenticated, async (req: any, res) => {
+    try {
+      const leagueId = parseInt(req.params.id, 10);
+      if (isNaN(leagueId)) return res.status(400).json({ message: "Invalid league ID" });
+
+      const sessionUserId = req.session.originalUserId || req.session.userId!;
+      if (!await hasLeagueCommissionerAccess(sessionUserId, leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      await db
+        .update(teamOwnershipInvites)
+        .set({ status: "expired" })
+        .where(and(
+          eq(teamOwnershipInvites.leagueId, leagueId),
+          eq(teamOwnershipInvites.status, "pending"),
+          sql`${teamOwnershipInvites.expiresAt} < now()`,
+        ));
+
+      const rows = await db
+        .select({
+          invite: teamOwnershipInvites,
+          member: leagueMembers,
+        })
+        .from(teamOwnershipInvites)
+        .leftJoin(leagueMembers, and(
+          eq(leagueMembers.leagueId, teamOwnershipInvites.leagueId),
+          eq(leagueMembers.userId, teamOwnershipInvites.teamUserId),
+        ))
+        .where(eq(teamOwnershipInvites.leagueId, leagueId))
+        .orderBy(sql`${teamOwnershipInvites.createdAt} desc`);
+
+      res.json(rows.map((r) => ({
+        ...r.invite,
+        teamName: r.member?.teamName || null,
+        teamAbbreviation: r.member?.teamAbbreviation || null,
+      })));
+    } catch (error) {
+      console.error("Error listing team ownership invites:", error);
+      res.status(500).json({ message: "Failed to fetch invites" });
+    }
+  });
+
+  app.delete("/api/leagues/:id/team-invites/:inviteId", isAuthenticated, async (req: any, res) => {
+    try {
+      const leagueId = parseInt(req.params.id, 10);
+      const inviteId = parseInt(req.params.inviteId, 10);
+      if (isNaN(leagueId) || isNaN(inviteId)) {
+        return res.status(400).json({ message: "Invalid request" });
+      }
+
+      const sessionUserId = req.session.originalUserId || req.session.userId!;
+      if (!await hasLeagueCommissionerAccess(sessionUserId, leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const [updated] = await db
+        .update(teamOwnershipInvites)
+        .set({ status: "cancelled" })
+        .where(and(
+          eq(teamOwnershipInvites.id, inviteId),
+          eq(teamOwnershipInvites.leagueId, leagueId),
+          eq(teamOwnershipInvites.status, "pending"),
+        ))
+        .returning();
+
+      if (!updated) return res.status(404).json({ message: "Pending invite not found" });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error cancelling team invite:", error);
+      res.status(500).json({ message: "Failed to cancel invite" });
+    }
+  });
+
+  // Public: inspect invite token before login/accept.
+  app.get("/api/team-invites/:token", async (req: any, res) => {
+    try {
+      const token = String(req.params.token || "").trim();
+      if (!token) return res.status(400).json({ message: "Invalid token" });
+
+      const [invite] = await db
+        .select()
+        .from(teamOwnershipInvites)
+        .where(eq(teamOwnershipInvites.token, token));
+      if (!invite) return res.status(404).json({ message: "Invite not found" });
+
+      if (invite.status !== "pending") {
+        return res.json({ invite, valid: false, reason: `Invite is ${invite.status}` });
+      }
+      if (new Date(invite.expiresAt) < new Date()) {
+        await db.update(teamOwnershipInvites).set({ status: "expired" }).where(eq(teamOwnershipInvites.id, invite.id));
+        return res.json({ invite: { ...invite, status: "expired" }, valid: false, reason: "Invite has expired" });
+      }
+
+      const [league] = await db.select().from(leagues).where(eq(leagues.id, invite.leagueId));
+      const [teamMember] = await db
+        .select()
+        .from(leagueMembers)
+        .where(and(
+          eq(leagueMembers.leagueId, invite.leagueId),
+          eq(leagueMembers.userId, invite.teamUserId),
+        ));
+      const invitedUser = await storage.getUserByEmail(invite.invitedEmail);
+
+      res.json({
+        valid: true,
+        invite,
+        leagueName: league?.name || null,
+        teamName: teamMember?.teamName || null,
+        teamAbbreviation: teamMember?.teamAbbreviation || null,
+        invitedEmail: invite.invitedEmail,
+        hasExistingAccount: !!invitedUser,
+      });
+    } catch (error) {
+      console.error("Error validating team invite token:", error);
+      res.status(500).json({ message: "Failed to validate invite" });
+    }
+  });
+
+  // Existing user acceptance (must be logged in as invite email)
+  app.post("/api/team-invites/:token/accept", isAuthenticated, async (req: any, res) => {
+    try {
+      const token = String(req.params.token || "").trim();
+      const sessionUserId = req.session.originalUserId || req.session.userId!;
+      const sessionUser = await storage.getUser(sessionUserId);
+      if (!sessionUser) return res.status(401).json({ message: "Unauthorized" });
+
+      const [invite] = await db.select().from(teamOwnershipInvites).where(eq(teamOwnershipInvites.token, token));
+      if (!invite) return res.status(404).json({ message: "Invite not found" });
+      if (invite.status !== "pending") return res.status(400).json({ message: `Invite is ${invite.status}` });
+      if (new Date(invite.expiresAt) < new Date()) {
+        await db.update(teamOwnershipInvites).set({ status: "expired" }).where(eq(teamOwnershipInvites.id, invite.id));
+        return res.status(400).json({ message: "Invite has expired" });
+      }
+      if (normalizeEmail(sessionUser.email) !== normalizeEmail(invite.invitedEmail)) {
+        return res.status(403).json({ message: `You must sign in as ${invite.invitedEmail} to accept this invite` });
+      }
+
+      const [teamMember] = await db
+        .select()
+        .from(leagueMembers)
+        .where(and(
+          eq(leagueMembers.leagueId, invite.leagueId),
+          eq(leagueMembers.userId, invite.teamUserId),
+        ));
+      if (!teamMember) return res.status(404).json({ message: "Source team is no longer available" });
+
+      await transferLeagueTeamOwnership({
+        leagueId: invite.leagueId,
+        fromUserId: invite.teamUserId,
+        toUserId: sessionUser.id,
+        teamName: teamMember.teamName || null,
+        teamAbbreviation: teamMember.teamAbbreviation || null,
+      });
+
+      await db
+        .update(teamOwnershipInvites)
+        .set({
+          status: "accepted",
+          acceptedByUserId: sessionUser.id,
+          acceptedAt: new Date(),
+        })
+        .where(eq(teamOwnershipInvites.id, invite.id));
+
+      res.json({ message: "Team ownership transferred successfully" });
+    } catch (error) {
+      console.error("Error accepting team invite:", error);
+      res.status(500).json({ message: "Failed to accept invite" });
+    }
+  });
+
+  // New user registration + acceptance in one step
+  app.post("/api/team-invites/:token/register", async (req: any, res) => {
+    try {
+      const token = String(req.params.token || "").trim();
+      const firstName = String(req.body?.firstName || "").trim() || null;
+      const lastName = String(req.body?.lastName || "").trim() || null;
+      const password = String(req.body?.password || "");
+      if (!password || password.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters" });
+      }
+
+      const [invite] = await db.select().from(teamOwnershipInvites).where(eq(teamOwnershipInvites.token, token));
+      if (!invite) return res.status(404).json({ message: "Invite not found" });
+      if (invite.status !== "pending") return res.status(400).json({ message: `Invite is ${invite.status}` });
+      if (new Date(invite.expiresAt) < new Date()) {
+        await db.update(teamOwnershipInvites).set({ status: "expired" }).where(eq(teamOwnershipInvites.id, invite.id));
+        return res.status(400).json({ message: "Invite has expired" });
+      }
+
+      const existing = await storage.getUserByEmail(invite.invitedEmail);
+      if (existing) {
+        return res.status(400).json({ message: "An account already exists for this email. Please sign in and accept the invite." });
+      }
+
+      const passwordHash = await hashPassword(password);
+      const createdUser = await storage.createUserWithPassword({
+        email: invite.invitedEmail,
+        passwordHash,
+        firstName: firstName || undefined,
+        lastName: lastName || undefined,
+        isCommissioner: false,
+        mustResetPassword: false,
+      });
+
+      const [teamMember] = await db
+        .select()
+        .from(leagueMembers)
+        .where(and(
+          eq(leagueMembers.leagueId, invite.leagueId),
+          eq(leagueMembers.userId, invite.teamUserId),
+        ));
+      if (!teamMember) return res.status(404).json({ message: "Source team is no longer available" });
+
+      await transferLeagueTeamOwnership({
+        leagueId: invite.leagueId,
+        fromUserId: invite.teamUserId,
+        toUserId: createdUser.id,
+        teamName: teamMember.teamName || null,
+        teamAbbreviation: teamMember.teamAbbreviation || null,
+      });
+
+      await db
+        .update(teamOwnershipInvites)
+        .set({
+          status: "accepted",
+          acceptedByUserId: createdUser.id,
+          acceptedAt: new Date(),
+        })
+        .where(eq(teamOwnershipInvites.id, invite.id));
+
+      req.session.regenerate((err: any) => {
+        if (err) return res.status(500).json({ message: "Session error" });
+        req.session.userId = createdUser.id;
+        req.session.save((saveErr: any) => {
+          if (saveErr) return res.status(500).json({ message: "Session error" });
+          res.status(201).json({
+            message: "Account created and invite accepted",
+            user: {
+              id: createdUser.id,
+              email: createdUser.email,
+              firstName: createdUser.firstName,
+              lastName: createdUser.lastName,
+            },
+          });
+        });
+      });
+    } catch (error) {
+      console.error("Error registering from team invite:", error);
+      res.status(500).json({ message: "Failed to register from invite" });
+    }
+  });
+
   // Get league members
   app.get("/api/leagues/:id/members", isAuthenticated, async (req: any, res) => {
     try {
@@ -4688,7 +8679,7 @@ export async function registerRoutes(
         season,
         rounds: rounds || 1,
         snake: snake !== undefined ? snake : true,
-        pickDurationMinutes: pickDurationMinutes || 60,
+        pickDurationMinutes: pickDurationMinutes || 30,
         teamDraftRound: teamDraftRound || null,
         status: "setup",
         createdBy: userId,
@@ -4801,6 +8792,22 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Draft order must be set before starting" });
       }
 
+      const rounds = await storage.getDraftRounds(id);
+      if (rounds.length === 0) {
+        return res.status(400).json({ message: "Draft rounds must be configured before starting" });
+      }
+      for (const round of rounds) {
+        if (!round.startTime) {
+          return res.status(400).json({ message: `Round ${round.roundNumber} must have a start time` });
+        }
+        const roundOrder = await storage.getDraftOrder(id, round.roundNumber);
+        if (roundOrder.length === 0) {
+          return res.status(400).json({ message: `Draft order must be set for round ${round.roundNumber} before starting` });
+        }
+      }
+
+      await storage.createDraftPickSlotsForAllRounds(id);
+
       const updated = await storage.updateDraft(id, {
         status: "active",
         currentRound: 1,
@@ -4894,18 +8901,44 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
-      const { mlbIds } = req.body;
+      const { mlbIds, middleNamesByMlbId, minorLeagueStatusByMlbId, minorLeagueYearsByMlbId } = req.body;
       if (!Array.isArray(mlbIds) || mlbIds.length === 0) {
         return res.status(400).json({ message: "mlbIds array is required" });
       }
 
+      const normalizeMinorLeagueStatus = (value: unknown): string | null => {
+        const token = String(value || "").trim().toUpperCase();
+        if (!token) return null;
+        if (["MH", "MC", "FA"].includes(token)) return token;
+        const slashMatch = /^([A-Z]{2,3})\s*\/\s*\d+$/.exec(token);
+        if (slashMatch && ["MH", "MC", "FA"].includes(slashMatch[1])) return slashMatch[1];
+        return null;
+      };
+      const normalizeMinorLeagueYears = (value: unknown): number | null => {
+        if (value == null || value === "") return null;
+        const parsed = Number(value);
+        if (!Number.isInteger(parsed) || parsed < 0) return null;
+        return parsed;
+      };
+      const parseStatusYearsToken = (value: unknown): { status: string | null; years: number | null } => {
+        const token = String(value || "").trim().toUpperCase();
+        const slashMatch = /^([A-Z]{2,3})\s*\/\s*(\d+)$/.exec(token);
+        if (!slashMatch) return { status: normalizeMinorLeagueStatus(token), years: null };
+        return {
+          status: normalizeMinorLeagueStatus(slashMatch[1]),
+          years: normalizeMinorLeagueYears(slashMatch[2]),
+        };
+      };
+
       const matchedIds: number[] = [];
       const notFound: number[] = [];
+      const matchedMlbIdToInternalId = new Map<number, number>();
 
       for (const mlbId of mlbIds) {
         const player = await storage.getMlbPlayerByMlbId(mlbId);
         if (player) {
           matchedIds.push(player.id);
+          matchedMlbIdToInternalId.set(Number(mlbId), player.id);
         } else {
           notFound.push(mlbId);
         }
@@ -4916,12 +8949,45 @@ export async function registerRoutes(
       const newIds = matchedIds.filter(pid => !existingMlbPlayerIds.has(pid));
       const alreadyInPool = matchedIds.length - newIds.length;
 
-      let added = 0;
-      if (newIds.length > 0) {
-        added = await storage.addDraftPlayers(id, newIds);
+      const metadataByInternalId: Record<number, { minorLeagueStatus?: string | null; minorLeagueYears?: number | null }> = {};
+      if (
+        (minorLeagueStatusByMlbId && typeof minorLeagueStatusByMlbId === "object") ||
+        (minorLeagueYearsByMlbId && typeof minorLeagueYearsByMlbId === "object")
+      ) {
+        for (const [mlbIdKey, internalId] of matchedMlbIdToInternalId.entries()) {
+          const rawStatus = (minorLeagueStatusByMlbId as Record<string, unknown> | undefined)?.[String(mlbIdKey)];
+          const rawYears = (minorLeagueYearsByMlbId as Record<string, unknown> | undefined)?.[String(mlbIdKey)];
+          const parsedFromStatus = parseStatusYearsToken(rawStatus);
+          const explicitStatus = normalizeMinorLeagueStatus(rawStatus);
+          const explicitYears = normalizeMinorLeagueYears(rawYears);
+          const normalizedStatus = explicitStatus ?? parsedFromStatus.status;
+          const normalizedYears = explicitYears ?? parsedFromStatus.years;
+          if (normalizedStatus || normalizedYears != null) {
+            metadataByInternalId[internalId] = {
+              minorLeagueStatus: normalizedStatus,
+              minorLeagueYears: normalizedYears,
+            };
+          }
+        }
       }
 
-      res.json({ added, notFound, alreadyInPool });
+      let added = 0;
+      if (newIds.length > 0) {
+        added = await storage.addDraftPlayers(id, newIds, metadataByInternalId);
+      }
+      let middleNamesUpdated = 0;
+      if (middleNamesByMlbId && typeof middleNamesByMlbId === "object") {
+        const updates: Array<{ mlbId: number; middleName: string }> = [];
+        for (const [key, value] of Object.entries(middleNamesByMlbId as Record<string, unknown>)) {
+          const mlbId = Number.parseInt(key, 10);
+          const middleName = typeof value === "string" ? value.trim() : "";
+          if (!Number.isInteger(mlbId) || mlbId <= 0 || !middleName) continue;
+          updates.push({ mlbId, middleName });
+        }
+        middleNamesUpdated = await storage.updateMlbPlayerMiddleNames(updates);
+      }
+
+      res.json({ added, notFound, alreadyInPool, middleNamesUpdated });
     } catch (error) {
       console.error("Error uploading draft players:", error);
       res.status(500).json({ message: "Failed to upload draft players" });
@@ -5001,8 +9067,10 @@ export async function registerRoutes(
       const updateData: any = {};
       if (name !== undefined) updateData.name = name;
       if (isTeamDraft !== undefined) updateData.isTeamDraft = isTeamDraft;
-      if (startTime !== undefined) updateData.startTime = new Date(startTime || Date.now());
-      if (pickDurationMinutes !== undefined) updateData.pickDurationMinutes = parseInt(pickDurationMinutes) || 60;
+      if (startTime !== undefined) {
+        updateData.startTime = startTime ? parseCSTTime(String(startTime)) : new Date();
+      }
+      if (pickDurationMinutes !== undefined) updateData.pickDurationMinutes = parseInt(pickDurationMinutes) || 30;
 
       const updated = await storage.updateDraftRound(roundId, updateData);
       res.json(updated);
@@ -5196,57 +9264,22 @@ export async function registerRoutes(
       const draft = await storage.getDraft(id);
       if (!draft) return res.status(404).json({ message: "Draft not found" });
 
-      const rounds = await storage.getDraftRounds(id);
-      const currentRoundConfig = rounds.find(r => r.roundNumber === draft.currentRound);
+      const now = new Date();
+      const slots = await storage.getDraftPicks(id);
 
-      if (!currentRoundConfig?.startTime) {
-        return res.json({ hasTiming: false, currentRound: draft.currentRound, currentPickIndex: draft.currentPickIndex });
-      }
+      const openSlots = slots
+        .filter((slot) => !slot.madeAt && new Date(slot.scheduledAt).getTime() <= now.getTime())
+        .sort((a, b) => a.overallPickNumber - b.overallPickNumber);
 
-      const roundStart = new Date(currentRoundConfig.startTime).getTime();
-      const pickDuration = (currentRoundConfig.pickDurationMinutes || 60) * 60 * 1000;
-      const now = Date.now();
-
-      const roundOrder = await storage.getDraftOrder(id, draft.currentRound);
-      const sortedRoundOrder = [...roundOrder].sort((a, b) => a.orderIndex - b.orderIndex);
-
-      const pickTimings = sortedRoundOrder.map((entry, idx) => {
-        const pickStart = roundStart + (idx * pickDuration);
-        const pickDeadline = roundStart + ((idx + 1) * pickDuration);
-        const isExpired = now >= pickDeadline;
-        const isActive = now >= pickStart && now < pickDeadline;
-        return {
-          orderIndex: idx,
-          userId: entry.userId,
-          pickStart: new Date(pickStart).toISOString(),
-          pickDeadline: new Date(pickDeadline).toISOString(),
-          isExpired,
-          isActive,
-        };
-      });
-
-      const eligiblePickerIds: string[] = [];
-      for (let i = draft.currentPickIndex; i < sortedRoundOrder.length; i++) {
-        if (i === draft.currentPickIndex) {
-          eligiblePickerIds.push(sortedRoundOrder[i].userId);
-        } else {
-          const pickStart = roundStart + (i * pickDuration);
-          if (now >= pickStart) {
-            eligiblePickerIds.push(sortedRoundOrder[i].userId);
-          } else {
-            break;
-          }
-        }
-      }
+      const currentSlot = openSlots.length > 0 ? openSlots[0] : null;
+      const eligiblePickerIds = Array.from(new Set(openSlots.map((slot) => slot.userId)));
 
       res.json({
-        hasTiming: true,
-        currentRound: draft.currentRound,
-        currentPickIndex: draft.currentPickIndex,
-        roundStartTime: currentRoundConfig.startTime,
-        pickDurationMinutes: currentRoundConfig.pickDurationMinutes,
-        pickTimings,
+        hasTiming: slots.length > 0,
+        now: now.toISOString(),
+        currentSlot,
         eligiblePickerIds,
+        openSlotCount: openSlots.length,
       });
     } catch (error) {
       console.error("Error fetching draft timing:", error);
@@ -5265,103 +9298,38 @@ export async function registerRoutes(
       const draft = await storage.getDraft(id);
       if (!draft) return res.status(404).json({ message: "Draft not found" });
       if (draft.status !== "active") return res.status(400).json({ message: "Draft is not active" });
-
-      const currentRound = draft.currentRound;
-      const currentPickIndex = draft.currentPickIndex;
-
-      const roundOrder = await storage.getDraftOrder(id, currentRound);
-      if (roundOrder.length === 0) {
-        return res.status(400).json({ message: "Draft order is not set for current round" });
-      }
-
-      const sortedRoundOrder = [...roundOrder].sort((a, b) => a.orderIndex - b.orderIndex);
-      const currentPicker = sortedRoundOrder[currentPickIndex];
-      if (!currentPicker) {
-        return res.status(500).json({ message: "Could not determine current picker" });
+      const isCommissioner = await hasLeagueCommissionerAccess(commissionerUserId, draft.leagueId);
+      const targetUserId = isCommissioner && req.body?.userId ? String(req.body.userId) : userId;
+      const now = new Date();
+      const slot = await storage.getOldestEligibleOpenSlotForUser(id, targetUserId, now);
+      if (!slot) {
+        return res.status(403).json({ message: "No eligible open pick slot for this user" });
       }
 
       const rounds = await storage.getDraftRounds(id);
-      const currentRoundConfig = rounds.find(r => r.roundNumber === currentRound);
-
-      const isCommissioner = await hasLeagueCommissionerAccess(commissionerUserId, draft.leagueId);
-      let pickingUserId = currentPicker.userId;
-      let isAllowedToPick = isCommissioner;
-
-      if (!isAllowedToPick) {
-        const userPickIndex = sortedRoundOrder.findIndex(o => o.userId === userId);
-        if (userPickIndex >= 0) {
-          if (userPickIndex === currentPickIndex) {
-            isAllowedToPick = true;
-          } else if (userPickIndex > currentPickIndex && currentRoundConfig?.startTime) {
-            const roundStart = new Date(currentRoundConfig.startTime).getTime();
-            const pickDuration = (currentRoundConfig.pickDurationMinutes || 60) * 60 * 1000;
-            const now = Date.now();
-            const userPickStart = roundStart + (userPickIndex * pickDuration);
-            if (now >= userPickStart) {
-              isAllowedToPick = true;
-              pickingUserId = userId;
-            }
-          }
-        }
-      }
-
-      if (!isAllowedToPick) {
-        return res.status(403).json({ message: "It is not your turn to pick" });
-      }
+      const currentRoundConfig = rounds.find((r) => r.roundNumber === slot.round);
       const isTeamDraftRound = currentRoundConfig?.isTeamDraft === true;
+      let pickResponse: any;
 
       if (isTeamDraftRound) {
-        const { parentOrgName, rosterType } = req.body;
-        if (!parentOrgName) {
-          return res.status(400).json({ message: "parentOrgName is required for team draft rounds" });
+        const selectedOrgName = req.body?.selectedOrgName || req.body?.parentOrgName;
+        const selectedOrgId = req.body?.selectedOrgId ? parseInt(req.body.selectedOrgId) : null;
+        const rosterType = (req.body?.rosterType || "milb") as "mlb" | "milb";
+        if (!selectedOrgName) {
+          return res.status(400).json({ message: "selectedOrgName is required for team draft rounds" });
         }
-        const effectiveRosterType = rosterType || "milb";
-
-        const orgPlayers = await storage.getDraftPlayersByParentOrg(id, parentOrgName);
-        if (orgPlayers.length === 0) {
-          return res.status(400).json({ message: `No available players found for organization: ${parentOrgName}` });
-        }
-
-        let pickCount = await storage.getDraftPickCount(id);
-        const createdPicks = [];
-
-        for (const dp of orgPlayers) {
-          pickCount++;
-          const pick = await storage.createDraftPick({
-            draftId: id,
-            round: currentRound,
-            pickNumber: pickCount,
-            userId: pickingUserId,
-            mlbPlayerId: dp.mlbPlayerId,
-            rosterType: effectiveRosterType,
-          });
-          await storage.updateDraftPlayerStatus(id, dp.mlbPlayerId, "drafted");
-          await storage.assignPlayerToRoster({
-            leagueId: draft.leagueId,
-            userId: pickingUserId,
-            mlbPlayerId: dp.mlbPlayerId,
-            rosterType: effectiveRosterType,
-            season: draft.season,
-          });
-          createdPicks.push(pick);
+        if (rosterType !== "mlb" && rosterType !== "milb") {
+          return res.status(400).json({ message: "rosterType must be 'mlb' or 'milb'" });
         }
 
-        let nextPickIndex = currentPickIndex + 1;
-        let nextRound = currentRound;
-
-        if (nextPickIndex >= sortedRoundOrder.length) {
-          nextPickIndex = 0;
-          nextRound = currentRound + 1;
-        }
-
-        if (nextRound > draft.rounds) {
-          await storage.updateDraft(id, { status: "completed", currentPickIndex, currentRound });
-        } else {
-          await storage.updateDraft(id, { currentPickIndex: nextPickIndex, currentRound: nextRound });
-          setTimeout(() => processAutoDraft(id, storage), 500);
-        }
-
-        res.status(201).json({ teamDraft: true, orgName: parentOrgName, playersDrafted: createdPicks.length, picks: createdPicks });
+        const result = await storage.fillSlotWithOrg(slot.id, targetUserId, selectedOrgName, selectedOrgId, rosterType, now);
+        pickResponse = {
+          teamDraft: true,
+          slot: result.slot,
+          orgName: selectedOrgName,
+          playersDrafted: result.draftedPlayerIds.length,
+          draftedMlbPlayerIds: result.draftedPlayerIds,
+        };
       } else {
         const { mlbPlayerId, rosterType } = req.body;
         if (!mlbPlayerId || !rosterType) {
@@ -5371,51 +9339,35 @@ export async function registerRoutes(
           return res.status(400).json({ message: "rosterType must be 'mlb' or 'milb'" });
         }
 
-        const availPlayers = await storage.getDraftPlayers(id, { status: "available" });
-        const playerInPool = availPlayers.find(dp => dp.mlbPlayerId === mlbPlayerId);
-        if (!playerInPool) {
-          return res.status(400).json({ message: "Player is not available in the draft pool" });
-        }
-
-        const pickCount = await storage.getDraftPickCount(id);
-        const pickNumber = pickCount + 1;
-
-        const pick = await storage.createDraftPick({
-          draftId: id,
-          round: currentRound,
-          pickNumber,
-          userId: pickingUserId,
-          mlbPlayerId,
+        pickResponse = await storage.fillSlotWithPlayer(
+          slot.id,
+          targetUserId,
+          parseInt(mlbPlayerId),
           rosterType,
-        });
-        await storage.updateDraftPlayerStatus(id, mlbPlayerId, "drafted");
-        await storage.assignPlayerToRoster({
-          leagueId: draft.leagueId,
-          userId: pickingUserId,
-          mlbPlayerId,
-          rosterType,
-          season: draft.season,
-        });
-
-        let nextPickIndex = currentPickIndex + 1;
-        let nextRound = currentRound;
-
-        if (nextPickIndex >= sortedRoundOrder.length) {
-          nextPickIndex = 0;
-          nextRound = currentRound + 1;
-        }
-
-        if (nextRound > draft.rounds) {
-          await storage.updateDraft(id, { status: "completed", currentPickIndex, currentRound });
-        } else {
-          await storage.updateDraft(id, { currentPickIndex: nextPickIndex, currentRound: nextRound });
-          setTimeout(() => processAutoDraft(id, storage), 500);
-        }
-
-        res.status(201).json(pick);
+          now,
+        );
       }
+
+      const allSlots = await storage.getDraftPicks(id);
+      if (allSlots.length > 0 && allSlots.every((s) => !!s.madeAt)) {
+        await storage.updateDraft(id, { status: "completed" });
+      } else {
+        setTimeout(() => processAutoDraft(id, storage), 500);
+      }
+
+      res.status(201).json(pickResponse);
     } catch (error) {
       console.error("Error making draft pick:", error);
+      const message = error instanceof Error ? error.message : "Failed to make draft pick";
+      if (
+        message.includes("not found") ||
+        message.includes("already") ||
+        message.includes("available") ||
+        message.includes("open slot") ||
+        message.includes("not open yet")
+      ) {
+        return res.status(400).json({ message });
+      }
       res.status(500).json({ message: "Failed to make draft pick" });
     }
   });
@@ -5434,61 +9386,72 @@ export async function registerRoutes(
       const isCommissioner = await hasLeagueCommissionerAccess(commissionerUserId, draft.leagueId);
       if (!isCommissioner) return res.status(403).json({ message: "Commissioner access required" });
 
-      const { userId: targetUserId, mlbPlayerId, rosterType } = req.body;
-      if (!targetUserId || !mlbPlayerId || !rosterType) {
-        return res.status(400).json({ message: "userId, mlbPlayerId, and rosterType are required" });
+      const targetUserId = String(req.body?.userId || "");
+      if (!targetUserId) {
+        return res.status(400).json({ message: "userId is required" });
+      }
+
+      const now = new Date();
+      const slot = await storage.getOldestEligibleOpenSlotForUser(id, targetUserId, now);
+      if (!slot) return res.status(400).json({ message: "No eligible open slot for target user" });
+
+      const rounds = await storage.getDraftRounds(id);
+      const slotRound = rounds.find((r) => r.roundNumber === slot.round);
+      const isTeamDraftRound = slotRound?.isTeamDraft === true;
+
+      if (isTeamDraftRound) {
+        const selectedOrgName = req.body?.selectedOrgName || req.body?.parentOrgName;
+        const selectedOrgId = req.body?.selectedOrgId ? parseInt(req.body.selectedOrgId) : null;
+        const rosterType = (req.body?.rosterType || "milb") as "mlb" | "milb";
+        if (!selectedOrgName) {
+          return res.status(400).json({ message: "selectedOrgName is required for team-draft round" });
+        }
+        if (rosterType !== "mlb" && rosterType !== "milb") {
+          return res.status(400).json({ message: "rosterType must be 'mlb' or 'milb'" });
+        }
+        const result = await storage.fillSlotWithOrg(slot.id, targetUserId, selectedOrgName, selectedOrgId, rosterType, now);
+        const allSlots = await storage.getDraftPicks(id);
+        if (allSlots.length > 0 && allSlots.every((s) => !!s.madeAt)) {
+          await storage.updateDraft(id, { status: "completed" });
+        }
+        return res.status(201).json({
+          teamDraft: true,
+          slot: result.slot,
+          orgName: selectedOrgName,
+          playersDrafted: result.draftedPlayerIds.length,
+          draftedMlbPlayerIds: result.draftedPlayerIds,
+        });
+      }
+
+      const mlbPlayerId = parseInt(req.body?.mlbPlayerId);
+      const rosterType = req.body?.rosterType as "mlb" | "milb";
+      if (!mlbPlayerId || !rosterType) {
+        return res.status(400).json({ message: "mlbPlayerId and rosterType are required" });
       }
       if (rosterType !== "mlb" && rosterType !== "milb") {
         return res.status(400).json({ message: "rosterType must be 'mlb' or 'milb'" });
       }
 
-      const availPlayers = await storage.getDraftPlayers(id, { status: "available" });
-      const playerInPool = availPlayers.find(dp => dp.mlbPlayerId === mlbPlayerId);
-      if (!playerInPool) {
-        return res.status(400).json({ message: "Player is not available in the draft pool" });
-      }
-
-      const currentRound = draft.currentRound;
-      const currentPickIndex = draft.currentPickIndex;
-      const roundOrder = await storage.getDraftOrder(id, currentRound);
-      const sortedRoundOrder = [...roundOrder].sort((a, b) => a.orderIndex - b.orderIndex);
-
-      const pickCount = await storage.getDraftPickCount(id);
-      const pickNumber = pickCount + 1;
-
-      const pick = await storage.createDraftPick({
-        draftId: id,
-        round: currentRound,
-        pickNumber,
-        userId: targetUserId,
-        mlbPlayerId,
-        rosterType,
-      });
-      await storage.updateDraftPlayerStatus(id, mlbPlayerId, "drafted");
-      await storage.assignPlayerToRoster({
-        leagueId: draft.leagueId,
-        userId: targetUserId,
-        mlbPlayerId,
-        rosterType,
-        season: draft.season,
-      });
-
-      let nextPickIndex = currentPickIndex + 1;
-      let nextRound = currentRound;
-      if (nextPickIndex >= sortedRoundOrder.length) {
-        nextPickIndex = 0;
-        nextRound = currentRound + 1;
-      }
-      if (nextRound > draft.rounds) {
-        await storage.updateDraft(id, { status: "completed", currentPickIndex, currentRound });
+      const updatedSlot = await storage.fillSlotWithPlayer(slot.id, targetUserId, mlbPlayerId, rosterType, now);
+      const allSlots = await storage.getDraftPicks(id);
+      if (allSlots.length > 0 && allSlots.every((s) => !!s.madeAt)) {
+        await storage.updateDraft(id, { status: "completed" });
       } else {
-        await storage.updateDraft(id, { currentPickIndex: nextPickIndex, currentRound: nextRound });
         setTimeout(() => processAutoDraft(id, storage), 500);
       }
-
-      res.status(201).json(pick);
+      res.status(201).json(updatedSlot);
     } catch (error) {
       console.error("Error making commissioner pick:", error);
+      const message = error instanceof Error ? error.message : "Failed to make commissioner pick";
+      if (
+        message.includes("not found") ||
+        message.includes("already") ||
+        message.includes("available") ||
+        message.includes("open slot") ||
+        message.includes("not open yet")
+      ) {
+        return res.status(400).json({ message });
+      }
       res.status(500).json({ message: "Failed to make commissioner pick" });
     }
   });
@@ -5510,31 +9473,22 @@ export async function registerRoutes(
       const pick = await storage.getDraftPickById(pickId);
       if (!pick) return res.status(404).json({ message: "Pick not found" });
       if (pick.draftId !== draftId) return res.status(400).json({ message: "Pick does not belong to this draft" });
+      if (!pick.madeAt) return res.status(400).json({ message: "Slot is not filled" });
 
-      await storage.updateDraftPlayerStatus(draftId, pick.mlbPlayerId, "available");
-      await storage.removeRosterAssignmentByPlayer(draft.leagueId, pick.userId, pick.mlbPlayerId, draft.season);
-      await storage.deleteDraftPick(pickId);
+      if (pick.mlbPlayerId) {
+        await storage.updateDraftPlayerStatus(draftId, pick.mlbPlayerId, "available");
+        await storage.removeRosterAssignmentByPlayer(draft.leagueId, pick.userId, pick.mlbPlayerId, draft.season);
+      }
 
-      const lastPick = await storage.getLastDraftPick(draftId);
-      if (!lastPick) {
-        await storage.updateDraft(draftId, { currentRound: 1, currentPickIndex: 0, status: "active" });
-      } else {
-        const roundOrder = await storage.getDraftOrder(draftId, lastPick.round);
-        const sortedOrder = [...roundOrder].sort((a, b) => a.orderIndex - b.orderIndex);
-        const lastPickerIndex = sortedOrder.findIndex(o => o.userId === lastPick.userId);
-
-        let nextPickIndex = lastPickerIndex + 1;
-        let nextRound = lastPick.round;
-        if (nextPickIndex >= sortedOrder.length) {
-          nextPickIndex = 0;
-          nextRound = lastPick.round + 1;
-        }
-        if (nextRound > draft.rounds) {
-          await storage.updateDraft(draftId, { status: "completed", currentPickIndex: lastPickerIndex, currentRound: lastPick.round });
-        } else {
-          await storage.updateDraft(draftId, { currentPickIndex: nextPickIndex, currentRound: nextRound });
+      if (Array.isArray(pick.selectedOrgPlayerIds) && pick.selectedOrgPlayerIds.length > 0) {
+        for (const mlbPlayerId of pick.selectedOrgPlayerIds) {
+          await storage.updateDraftPlayerStatus(draftId, mlbPlayerId, "available");
+          await storage.removeRosterAssignmentByPlayer(draft.leagueId, pick.userId, mlbPlayerId, draft.season);
         }
       }
+
+      await storage.clearDraftSlot(pickId);
+      await storage.updateDraft(draftId, { status: "active" });
 
       res.json({ message: "Pick nullified successfully" });
     } catch (error) {
@@ -5662,62 +9616,34 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
     const draft = await storage.getDraft(draftId);
     if (!draft || draft.status !== "active") return false;
 
-    const currentRound = draft.currentRound;
-    if (currentRound > draft.rounds) return false;
-
-    const roundOrder = await storage.getDraftOrder(draftId, currentRound);
-    if (roundOrder.length === 0) return false;
-
-    const sortedRoundOrder = [...roundOrder].sort((a: any, b: any) => a.orderIndex - b.orderIndex);
-    const currentPicker = sortedRoundOrder[draft.currentPickIndex];
-    if (!currentPicker) return false;
-
+    const now = new Date();
+    const slots = await storage.getDraftPicks(draftId);
     const rounds = await storage.getDraftRounds(draftId);
-    const currentRoundConfig = rounds.find((r: any) => r.roundNumber === currentRound);
+    const slot = slots
+      .filter((s: any) => !s.madeAt && new Date(s.scheduledAt).getTime() <= now.getTime())
+      .sort((a: any, b: any) => a.overallPickNumber - b.overallPickNumber)
+      .find((s: any) => {
+        const roundConfig = rounds.find((r: any) => r.roundNumber === s.round);
+        return !roundConfig?.isTeamDraft;
+      });
 
-    if (currentRoundConfig?.isTeamDraft) return false;
+    if (!slot) return false;
 
-    const topPick = await storage.getTopAvailableAutoDraftPick(draftId, currentPicker.userId);
+    const topPick = await storage.getTopAvailableAutoDraftPick(draftId, slot.userId);
     if (!topPick) return false;
 
-    const pickCount = await storage.getDraftPickCount(draftId);
-    const pickNumber = pickCount + 1;
-
-    await storage.createDraftPick({
-      draftId,
-      round: currentRound,
-      pickNumber,
-      userId: currentPicker.userId,
-      mlbPlayerId: topPick.mlbPlayerId,
-      rosterType: topPick.rosterType,
-    });
-    await storage.updateDraftPlayerStatus(draftId, topPick.mlbPlayerId, "drafted");
-    await storage.assignPlayerToRoster({
-      leagueId: draft.leagueId,
-      userId: currentPicker.userId,
-      mlbPlayerId: topPick.mlbPlayerId,
-      rosterType: topPick.rosterType,
-      season: draft.season,
-    });
+    await storage.fillSlotWithPlayer(slot.id, slot.userId, topPick.mlbPlayerId, topPick.rosterType, now);
 
     await storage.clearAutoDraftItem(draftId, topPick.mlbPlayerId);
 
-    let nextPickIndex = draft.currentPickIndex + 1;
-    let nextRound = currentRound;
-
-    if (nextPickIndex >= sortedRoundOrder.length) {
-      nextPickIndex = 0;
-      nextRound = currentRound + 1;
-    }
-
-    if (nextRound > draft.rounds) {
-      await storage.updateDraft(draftId, { status: "completed", currentPickIndex: draft.currentPickIndex, currentRound });
+    const updatedSlots = await storage.getDraftPicks(draftId);
+    if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt)) {
+      await storage.updateDraft(draftId, { status: "completed" });
     } else {
-      await storage.updateDraft(draftId, { currentPickIndex: nextPickIndex, currentRound: nextRound });
       setTimeout(() => processAutoDraft(draftId, storage), 500);
     }
 
-    console.log(`[AutoDraft] Auto-drafted player ${topPick.mlbPlayerId} for user ${currentPicker.userId} in draft ${draftId}`);
+    console.log(`[AutoDraft] Auto-drafted player ${topPick.mlbPlayerId} for user ${slot.userId} in draft ${draftId}`);
     return true;
   } catch (error) {
     console.error("[AutoDraft] Error processing auto-draft:", error);
@@ -6098,3 +10024,4 @@ async function deployBundleItemAsAutoBid(
 
 // Export functions for use in background jobs
 export { processAllAutoBidsUntilStable, deployBundleItemAsAutoBid };
+

@@ -12,6 +12,7 @@ import { useLeague } from "@/hooks/useLeague";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/Landing";
 import ResetPassword from "@/pages/ResetPassword";
+import TeamInvite from "@/pages/TeamInvite";
 import Home from "@/pages/Home";
 import MyBids from "@/pages/MyBids";
 import Results from "@/pages/Results";
@@ -21,6 +22,8 @@ import CommissionerAuction from "@/pages/CommissionerAuction";
 import CommissionerFreeAgency from "@/pages/commissioner/CommissionerFreeAgency";
 import CommissionerTeams from "@/pages/commissioner/CommissionerTeams";
 import CommissionerRosters from "@/pages/commissioner/CommissionerRosters";
+import CommissionerReconciliation from "@/pages/commissioner/CommissionerReconciliation";
+import { CommissionerMlbReconciliation, CommissionerMilbReconciliation } from "@/pages/commissioner/CommissionerReconciliationScope";
 import CommissionerSettings from "@/pages/commissioner/CommissionerSettings";
 import CommissionerDraft from "@/pages/commissioner/CommissionerDraft";
 import CommissionerDraftDetail from "@/pages/commissioner/CommissionerDraftDetail";
@@ -92,6 +95,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/reset-password" component={ResetPassword} />
+      <Route path="/team-invite" component={TeamInvite} />
       <Route path="/">
         {() => isAuthenticated ? <Home /> : <Landing />}
       </Route>
@@ -121,6 +125,15 @@ function Router() {
       </Route>
       <Route path="/commissioner/teams">
         {() => <CommissionerRoute component={CommissionerTeams} />}
+      </Route>
+      <Route path="/commissioner/reconciliation">
+        {() => <CommissionerRoute component={CommissionerReconciliation} />}
+      </Route>
+      <Route path="/commissioner/reconciliation/mlb">
+        {() => <CommissionerRoute component={CommissionerMlbReconciliation} />}
+      </Route>
+      <Route path="/commissioner/reconciliation/milb">
+        {() => <CommissionerRoute component={CommissionerMilbReconciliation} />}
       </Route>
       <Route path="/commissioner/rosters/mlb">
         {() => <CommissionerRoute component={() => <CommissionerRosters level="mlb" />} />}

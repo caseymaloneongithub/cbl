@@ -1,0 +1,18 @@
+ALTER TABLE mlb_players
+  ADD COLUMN IF NOT EXISTS hitting_at_bats integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS hitting_walks integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS hitting_singles integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS hitting_doubles integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS hitting_triples integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS hitting_home_runs integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS hitting_avg real,
+  ADD COLUMN IF NOT EXISTS hitting_obp real,
+  ADD COLUMN IF NOT EXISTS hitting_slg real,
+  ADD COLUMN IF NOT EXISTS hitting_ops real,
+  ADD COLUMN IF NOT EXISTS pitching_games integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS pitching_games_started integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS pitching_strikeouts integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS pitching_walks integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS pitching_hits integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS pitching_home_runs integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS pitching_era real;

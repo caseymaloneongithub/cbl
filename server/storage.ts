@@ -103,6 +103,7 @@ export interface IStorage {
   updateFreeAgentAuctionEndTime(id: number, auctionEndTime: Date): Promise<FreeAgent | undefined>;
   updateFreeAgentStats(id: number, stats: Record<string, number | null>): Promise<FreeAgent | undefined>;
   relistFreeAgent(id: number, minimumBid: number, minimumYears: number, auctionEndTime: Date): Promise<FreeAgent>;
+  dfaFreeAgent(id: number): Promise<FreeAgent | undefined>;
   deleteFreeAgent(id: number): Promise<void>;
   
   // Bids
@@ -160,6 +161,7 @@ export interface IStorage {
   canUserBidOnPlayer(userId: string, playerId: number): Promise<{
     canBid: boolean;
     reason?: string;
+    warnings?: string[];
   }>;
   
   // Password reset tokens
@@ -311,9 +313,12 @@ export interface IStorage {
   // MLB Players reference database
   upsertMlbPlayers(players: InsertMlbPlayer[]): Promise<number>;
   getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number; currentTeamName?: string; parentOrgName?: string; season?: number; sortBy?: string; sortDir?: string }): Promise<MlbPlayer[]>;
-  getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; currentTeamName?: string; parentOrgName?: string; season?: number }): Promise<number>;
+  getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; isTwoWayQualified?: boolean; currentTeamName?: string; parentOrgName?: string; season?: number }): Promise<number>;
   getMlbPlayerTeams(season?: number, sportLevel?: string): Promise<string[]>;
   getMlbPlayerByMlbId(mlbId: number): Promise<MlbPlayer | undefined>;
+  getMlbPlayersByMlbIds(mlbIds: number[], season: number): Promise<MlbPlayer[]>;
+  getMlbPlayersByMlbIdsWithSeasonFallback(mlbIds: number[], season: number): Promise<MlbPlayer[]>;
+  updateMlbPlayerMiddleNames(updates: Array<{ mlbId: number; middleName: string }>): Promise<number>;
   clearMlbPlayers(season?: number): Promise<number>;
   
   // League Roster Assignments
@@ -321,6 +326,14 @@ export interface IStorage {
   getRosterAssignmentCounts(leagueId: number, season: number): Promise<{ userId: string; rosterType: string; count: number }[]>;
   assignPlayerToRoster(assignment: InsertLeagueRosterAssignment): Promise<LeagueRosterAssignment>;
   updateRosterAssignment(id: number, updates: { rosterType?: string; userId?: string }): Promise<LeagueRosterAssignment | undefined>;
+  executeRosterTrade(params: {
+    leagueId: number;
+    season: number;
+    teamAUserId: string;
+    teamBUserId: string;
+    teamAAssignmentIds: number[];
+    teamBAssignmentIds: number[];
+  }): Promise<{ movedFromA: number; movedFromB: number }>;
   removeRosterAssignment(id: number): Promise<void>;
   removeAllRosterAssignments(leagueId: number, season: number): Promise<number>;
   getUnassignedPlayers(leagueId: number, season: number, filters?: { search?: string; sportLevel?: string; limit?: number; offset?: number }): Promise<MlbPlayer[]>;
@@ -337,7 +350,11 @@ export interface IStorage {
   // Draft players
   getDraftPlayers(draftId: number, filters?: { status?: string; search?: string }): Promise<DraftPlayerWithDetails[]>;
   getDraftPlayerCount(draftId: number, status?: string): Promise<number>;
-  addDraftPlayers(draftId: number, mlbPlayerIds: number[]): Promise<number>;
+  addDraftPlayers(
+    draftId: number,
+    mlbPlayerIds: number[],
+    metadataByMlbPlayerId?: Record<number, { minorLeagueStatus?: string | null; minorLeagueYears?: number | null }>
+  ): Promise<number>;
   clearDraftPlayers(draftId: number): Promise<number>;
   updateDraftPlayerStatus(draftId: number, mlbPlayerId: number, status: string): Promise<void>;
   
@@ -354,10 +371,11 @@ export interface IStorage {
   // Draft picks
   getDraftPicks(draftId: number): Promise<DraftPickWithDetails[]>;
   getDraftPickById(pickId: number): Promise<DraftPick | undefined>;
-  createDraftPick(pick: InsertDraftPick): Promise<DraftPick>;
-  deleteDraftPick(pickId: number): Promise<void>;
-  getDraftPickCount(draftId: number): Promise<number>;
-  getLastDraftPick(draftId: number): Promise<DraftPick | undefined>;
+  createDraftPickSlotsForAllRounds(draftId: number): Promise<number>;
+  getOldestEligibleOpenSlotForUser(draftId: number, userId: string, now: Date): Promise<DraftPick | undefined>;
+  fillSlotWithPlayer(slotId: number, userId: string, playerId: number, rosterType: "mlb" | "milb", now: Date): Promise<DraftPick>;
+  fillSlotWithOrg(slotId: number, userId: string, selectedOrgName: string, selectedOrgId: number | null, rosterType: "mlb" | "milb", now: Date): Promise<{ slot: DraftPick; draftedPlayerIds: number[] }>;
+  clearDraftSlot(slotId: number): Promise<void>;
   getDraftPlayersByParentOrg(draftId: number, parentOrgName: string): Promise<DraftPlayerWithDetails[]>;
   removeRosterAssignmentByPlayer(leagueId: number, userId: string, mlbPlayerId: number, season: number): Promise<void>;
 
@@ -659,6 +677,7 @@ export class DatabaseStorage implements IStorage {
         years: row.years,
         totalValue: row.total_value,
         isAutoBid: row.is_auto_bid,
+        isImportedInitial: row.is_imported_initial ?? false,
         createdAt: row.created_at,
       };
       highestBidMap.set(row.free_agent_id, bid);
@@ -681,7 +700,7 @@ export class DatabaseStorage implements IStorage {
     
     // Batch query 4: Get league-specific team names for bidders
     // First, get the unique auction IDs to look up their leagues
-    const auctionIds = [...new Set(agents.map(a => a.auctionId))];
+    const auctionIds = [...new Set(agents.map(a => a.auctionId).filter((id): id is number => id !== null))];
     const leagueIdsByAuction = new Map<number, number>();
     if (auctionIds.length > 0) {
       const auctionsResult = await db
@@ -689,7 +708,9 @@ export class DatabaseStorage implements IStorage {
         .from(auctions)
         .where(inArray(auctions.id, auctionIds));
       for (const a of auctionsResult) {
-        leagueIdsByAuction.set(a.id, a.leagueId);
+        if (a.leagueId !== null) {
+          leagueIdsByAuction.set(a.id, a.leagueId);
+        }
       }
     }
     
@@ -727,6 +748,14 @@ export class DatabaseStorage implements IStorage {
       
       // Override with league-specific team info if available
       if (highBidder && currentBid) {
+        if (agent.auctionId === null) {
+          return {
+            ...agent,
+            currentBid,
+            highBidder,
+            bidCount: bidCountMap.get(agent.id) || 0,
+          };
+        }
         const leagueId = leagueIdsByAuction.get(agent.auctionId);
         if (leagueId) {
           const leagueMember = leagueMemberMap.get(`${currentBid.userId}-${leagueId}`);
@@ -817,6 +846,19 @@ export class DatabaseStorage implements IStorage {
         isActive: true,
         winnerId: null,
         winningBidId: null
+      })
+      .where(eq(freeAgents.id, id))
+      .returning();
+    return updated;
+  }
+
+  async dfaFreeAgent(id: number): Promise<FreeAgent | undefined> {
+    const [updated] = await db
+      .update(freeAgents)
+      .set({
+        winnerId: null,
+        winningBidId: null,
+        isActive: false,
       })
       .where(eq(freeAgents.id, id))
       .returning();
@@ -1356,6 +1398,7 @@ export class DatabaseStorage implements IStorage {
   async canUserBidOnPlayer(userId: string, playerId: number): Promise<{
     canBid: boolean;
     reason?: string;
+    warnings?: string[];
   }> {
     const user = await this.getUser(userId);
     if (!user) {
@@ -1382,7 +1425,7 @@ export class DatabaseStorage implements IStorage {
       return { canBid: false, reason: "Team not enrolled in this auction" };
     }
     
-    const rosterLimit = auctionTeam.rosterLimit;
+    const rosterLimit = 41;
     const ipLimit = auctionTeam.ipLimit;
     const paLimit = auctionTeam.paLimit;
 
@@ -1430,11 +1473,9 @@ export class DatabaseStorage implements IStorage {
       }
     }
     
-    // Check roster limit
-    if (rosterLimit !== null) {
-      if (rosterUsed >= rosterLimit) {
-        return { canBid: false, reason: `Roster limit reached (${rosterLimit} players)` };
-      }
+    // Free agency uses hard limits.
+    if (rosterUsed >= rosterLimit) {
+      return { canBid: false, reason: `Roster limit reached (${rosterLimit} players)` };
     }
     
     // Check IP limit for pitchers
@@ -1783,6 +1824,9 @@ export class DatabaseStorage implements IStorage {
       .where(eq(auctions.id, auctionId));
     
     if (!auction) {
+      return [];
+    }
+    if (auction.leagueId === null) {
       return [];
     }
     
@@ -2223,10 +2267,13 @@ export class DatabaseStorage implements IStorage {
     }> = [];
     
     for (const agent of closedAgents) {
+      if (agent.auctionId === null) {
+        continue;
+      }
       // Get auction info
       const auction = await this.getAuction(agent.auctionId);
       const auctionName = auction?.name || "Unknown Auction";
-      const auctionId = agent.auctionId!;
+      const auctionId = agent.auctionId;
       const emailNotifications = auction?.emailNotifications || "none";
       const leagueId = auction?.leagueId || null;
       
@@ -2341,11 +2388,6 @@ export class DatabaseStorage implements IStorage {
     return bidders.map(b => ({ email: b.email, firstName: b.firstName, userId: b.odataId }));
   }
 
-  private async getBid(bidId: number): Promise<Bid | undefined> {
-    const [bid] = await db.select().from(bids).where(eq(bids.id, bidId));
-    return bid;
-  }
-
   // Bid bundle operations
   async getBidBundle(id: number): Promise<BidBundleWithItems | undefined> {
     const [bundle] = await db
@@ -2412,7 +2454,12 @@ export class DatabaseStorage implements IStorage {
 
   async createBidBundle(
     bundle: InsertBidBundle, 
-    items: Omit<InsertBidBundleItem, 'bundleId'>[]
+    items: Array<{
+      freeAgentId: number;
+      priority: number;
+      amount: number;
+      years: number;
+    }>
   ): Promise<BidBundleWithItems> {
     // Create the bundle first
     const [newBundle] = await db
@@ -2421,7 +2468,7 @@ export class DatabaseStorage implements IStorage {
       .returning();
 
     // Create all bundle items with the first one as 'active'
-    const itemsToInsert = items.map((item, index) => ({
+    const itemsToInsert = items.map((item, index): InsertBidBundleItem => ({
       ...item,
       bundleId: newBundle.id,
       status: index === 0 ? 'active' : 'pending',
@@ -2463,7 +2510,12 @@ export class DatabaseStorage implements IStorage {
   async updateBidBundleWithItems(
     id: number, 
     data: Partial<InsertBidBundle>, 
-    items: Omit<InsertBidBundleItem, 'bundleId'>[]
+    items: Array<{
+      freeAgentId: number;
+      priority: number;
+      amount: number;
+      years: number;
+    }>
   ): Promise<BidBundleWithItems> {
     // Update the bundle name and reset the active item priority
     await db
@@ -2479,7 +2531,7 @@ export class DatabaseStorage implements IStorage {
     await db.delete(bidBundleItems).where(eq(bidBundleItems.bundleId, id));
 
     // Create new items with the first one as 'active'
-    const itemsToInsert = items.map((item, index) => ({
+    const itemsToInsert = items.map((item, index): InsertBidBundleItem => ({
       ...item,
       bundleId: id,
       status: index === 0 ? 'active' : 'pending',
@@ -2590,7 +2642,7 @@ export class DatabaseStorage implements IStorage {
     }
     
     // If auction hasn't started yet, still activate the item - it will be deployed when auction starts
-    if (new Date(agent.auctionStartTime) > new Date()) {
+    if (agent.auctionStartTime && new Date(agent.auctionStartTime) > new Date()) {
       console.log(`[Bundle] Item for ${agent.name}: auction hasn't started yet, activating but not deploying`);
       // Continue to activate the item - the background job will deploy it when the auction starts
     }
@@ -2698,11 +2750,20 @@ export class DatabaseStorage implements IStorage {
       .from(leagueMembers)
       .innerJoin(users, eq(leagueMembers.userId, users.id))
       .where(eq(leagueMembers.leagueId, leagueId));
-    
-    return results.map(r => ({
+
+    const members = results.map(r => ({
       ...r.member,
       user: r.user,
     }));
+
+    // Keep league team displays predictable across the app.
+    members.sort((a, b) => {
+      const aKey = (a.teamName || a.teamAbbreviation || `${a.user.firstName || ""} ${a.user.lastName || ""}`.trim() || a.user.email || a.userId).toLowerCase();
+      const bKey = (b.teamName || b.teamAbbreviation || `${b.user.firstName || ""} ${b.user.lastName || ""}`.trim() || b.user.email || b.userId).toLowerCase();
+      return aKey.localeCompare(bKey);
+    });
+
+    return members;
   }
 
   async getLeagueMember(leagueId: number, userId: string): Promise<LeagueMember | undefined> {
@@ -2976,7 +3037,11 @@ export class DatabaseStorage implements IStorage {
           target: mlbPlayers.mlbId,
           set: {
             fullName: sql`EXCLUDED.full_name`,
+            // Keep existing expanded name if current sync payload omits it.
+            fullFmlName: sql`COALESCE(NULLIF(TRIM(EXCLUDED.full_fml_name), ''), ${mlbPlayers.fullFmlName})`,
             firstName: sql`EXCLUDED.first_name`,
+            // Preserve commissioner-entered middle names across syncs.
+            middleName: sql`COALESCE(NULLIF(TRIM(${mlbPlayers.middleName}), ''), EXCLUDED.middle_name)`,
             lastName: sql`EXCLUDED.last_name`,
             primaryPosition: sql`EXCLUDED.primary_position`,
             positionName: sql`EXCLUDED.position_name`,
@@ -2994,6 +3059,27 @@ export class DatabaseStorage implements IStorage {
             isActive: sql`EXCLUDED.is_active`,
             hadHittingStats: sql`EXCLUDED.had_hitting_stats`,
             hadPitchingStats: sql`EXCLUDED.had_pitching_stats`,
+            hittingAtBats: sql`EXCLUDED.hitting_at_bats`,
+            hittingWalks: sql`EXCLUDED.hitting_walks`,
+            hittingSingles: sql`EXCLUDED.hitting_singles`,
+            hittingDoubles: sql`EXCLUDED.hitting_doubles`,
+            hittingTriples: sql`EXCLUDED.hitting_triples`,
+            hittingHomeRuns: sql`EXCLUDED.hitting_home_runs`,
+            hittingAvg: sql`EXCLUDED.hitting_avg`,
+            hittingObp: sql`EXCLUDED.hitting_obp`,
+            hittingSlg: sql`EXCLUDED.hitting_slg`,
+            hittingOps: sql`EXCLUDED.hitting_ops`,
+            pitchingGames: sql`EXCLUDED.pitching_games`,
+            pitchingGamesStarted: sql`EXCLUDED.pitching_games_started`,
+            pitchingStrikeouts: sql`EXCLUDED.pitching_strikeouts`,
+            pitchingWalks: sql`EXCLUDED.pitching_walks`,
+            pitchingHits: sql`EXCLUDED.pitching_hits`,
+            pitchingHomeRuns: sql`EXCLUDED.pitching_home_runs`,
+            pitchingEra: sql`EXCLUDED.pitching_era`,
+            pitchingInningsPitched: sql`EXCLUDED.pitching_innings_pitched`,
+            hittingGamesStarted: sql`EXCLUDED.hitting_games_started`,
+            hittingPlateAppearances: sql`EXCLUDED.hitting_plate_appearances`,
+            isTwoWayQualified: sql`EXCLUDED.is_two_way_qualified`,
             season: sql`EXCLUDED.season`,
             lastSyncedAt: new Date(),
           },
@@ -3057,7 +3143,7 @@ export class DatabaseStorage implements IStorage {
     return await query;
   }
 
-  async getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; currentTeamName?: string; parentOrgName?: string; season?: number }): Promise<number> {
+  async getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; isTwoWayQualified?: boolean; currentTeamName?: string; parentOrgName?: string; season?: number }): Promise<number> {
     const conditions = [];
     if (filters?.sportLevel) {
       if (filters.sportLevel === 'MLB') {
@@ -3076,6 +3162,9 @@ export class DatabaseStorage implements IStorage {
     }
     if (filters?.hadPitchingStats !== undefined) {
       conditions.push(eq(mlbPlayers.hadPitchingStats, filters.hadPitchingStats));
+    }
+    if (filters?.isTwoWayQualified !== undefined) {
+      conditions.push(eq(mlbPlayers.isTwoWayQualified, filters.isTwoWayQualified));
     }
     if (filters?.currentTeamName) {
       conditions.push(eq(mlbPlayers.currentTeamName, filters.currentTeamName));
@@ -3120,6 +3209,49 @@ export class DatabaseStorage implements IStorage {
   async getMlbPlayerByMlbId(mlbId: number): Promise<MlbPlayer | undefined> {
     const [player] = await db.select().from(mlbPlayers).where(eq(mlbPlayers.mlbId, mlbId));
     return player;
+  }
+
+  async getMlbPlayersByMlbIds(mlbIds: number[], season: number): Promise<MlbPlayer[]> {
+    if (mlbIds.length === 0) return [];
+    return db.select().from(mlbPlayers).where(and(
+      inArray(mlbPlayers.mlbId, mlbIds),
+      eq(mlbPlayers.season, season),
+    ));
+  }
+
+  async getMlbPlayersByMlbIdsWithSeasonFallback(mlbIds: number[], season: number): Promise<MlbPlayer[]> {
+    if (mlbIds.length === 0) return [];
+    const rows = await db
+      .select()
+      .from(mlbPlayers)
+      .where(and(
+        inArray(mlbPlayers.mlbId, mlbIds),
+        sql`${mlbPlayers.season} <= ${season}`,
+      ))
+      .orderBy(desc(mlbPlayers.season));
+
+    const picked = new Map<number, MlbPlayer>();
+    for (const row of rows) {
+      if (!picked.has(row.mlbId)) {
+        picked.set(row.mlbId, row);
+      }
+    }
+    return Array.from(picked.values());
+  }
+
+  async updateMlbPlayerMiddleNames(updates: Array<{ mlbId: number; middleName: string }>): Promise<number> {
+    if (updates.length === 0) return 0;
+    let updated = 0;
+    for (const row of updates) {
+      const normalized = row.middleName.trim();
+      if (!normalized) continue;
+      const result = await db
+        .update(mlbPlayers)
+        .set({ middleName: normalized })
+        .where(eq(mlbPlayers.mlbId, row.mlbId));
+      updated += result.rowCount || 0;
+    }
+    return updated;
   }
 
   async clearMlbPlayers(season?: number): Promise<number> {
@@ -3178,6 +3310,56 @@ export class DatabaseStorage implements IStorage {
     if (updates.userId) setObj.userId = updates.userId;
     const [result] = await db.update(leagueRosterAssignments).set(setObj).where(eq(leagueRosterAssignments.id, id)).returning();
     return result;
+  }
+
+  async executeRosterTrade(params: {
+    leagueId: number;
+    season: number;
+    teamAUserId: string;
+    teamBUserId: string;
+    teamAAssignmentIds: number[];
+    teamBAssignmentIds: number[];
+  }): Promise<{ movedFromA: number; movedFromB: number }> {
+    const allIds = Array.from(new Set([...params.teamAAssignmentIds, ...params.teamBAssignmentIds]));
+    if (allIds.length === 0) return { movedFromA: 0, movedFromB: 0 };
+
+    return await db.transaction(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(leagueRosterAssignments)
+        .where(and(
+          eq(leagueRosterAssignments.leagueId, params.leagueId),
+          eq(leagueRosterAssignments.season, params.season),
+          inArray(leagueRosterAssignments.id, allIds),
+        ));
+
+      const rowById = new Map(rows.map((r) => [r.id, r]));
+      for (const id of params.teamAAssignmentIds) {
+        const row = rowById.get(id);
+        if (!row) throw new Error(`Assignment ${id} not found in league/season`);
+        if (row.userId !== params.teamAUserId) throw new Error(`Assignment ${id} is not on Team A`);
+      }
+      for (const id of params.teamBAssignmentIds) {
+        const row = rowById.get(id);
+        if (!row) throw new Error(`Assignment ${id} not found in league/season`);
+        if (row.userId !== params.teamBUserId) throw new Error(`Assignment ${id} is not on Team B`);
+      }
+
+      for (const id of params.teamAAssignmentIds) {
+        await tx
+          .update(leagueRosterAssignments)
+          .set({ userId: params.teamBUserId })
+          .where(eq(leagueRosterAssignments.id, id));
+      }
+      for (const id of params.teamBAssignmentIds) {
+        await tx
+          .update(leagueRosterAssignments)
+          .set({ userId: params.teamAUserId })
+          .where(eq(leagueRosterAssignments.id, id));
+      }
+
+      return { movedFromA: params.teamAAssignmentIds.length, movedFromB: params.teamBAssignmentIds.length };
+    });
   }
 
   async removeRosterAssignment(id: number): Promise<void> {
@@ -3326,14 +3508,30 @@ export class DatabaseStorage implements IStorage {
     return result?.count || 0;
   }
 
-  async addDraftPlayers(draftId: number, mlbPlayerIds: number[]): Promise<number> {
+  async addDraftPlayers(
+    draftId: number,
+    mlbPlayerIds: number[],
+    metadataByMlbPlayerId?: Record<number, { minorLeagueStatus?: string | null; minorLeagueYears?: number | null }>
+  ): Promise<number> {
     if (mlbPlayerIds.length === 0) return 0;
     const existing = await db.select({ mlbPlayerId: draftPlayers.mlbPlayerId })
       .from(draftPlayers).where(eq(draftPlayers.draftId, draftId));
     const existingSet = new Set(existing.map(e => e.mlbPlayerId));
     const newIds = mlbPlayerIds.filter(id => !existingSet.has(id));
     if (newIds.length === 0) return 0;
-    const values = newIds.map(mlbPlayerId => ({ draftId, mlbPlayerId }));
+    const values = newIds.map(mlbPlayerId => {
+      const meta = metadataByMlbPlayerId?.[mlbPlayerId];
+      const normalizedStatus = String(meta?.minorLeagueStatus || "").trim().toUpperCase();
+      const minorLeagueStatus = ["MH", "MC", "FA"].includes(normalizedStatus) ? normalizedStatus : null;
+      const parsedYears = Number(meta?.minorLeagueYears);
+      const minorLeagueYears = Number.isInteger(parsedYears) && parsedYears >= 0 ? parsedYears : null;
+      return {
+        draftId,
+        mlbPlayerId,
+        minorLeagueStatus,
+        minorLeagueYears,
+      };
+    });
     const BATCH_SIZE = 100;
     let total = 0;
     for (let i = 0; i < values.length; i += BATCH_SIZE) {
@@ -3364,7 +3562,15 @@ export class DatabaseStorage implements IStorage {
   async setDraftRounds(draftId: number, rounds: { roundNumber: number; name: string; isTeamDraft: boolean; startTime?: Date }[]): Promise<void> {
     await db.delete(draftRounds).where(eq(draftRounds.draftId, draftId));
     if (rounds.length > 0) {
-      await db.insert(draftRounds).values(rounds.map(r => ({ draftId, ...r })));
+      await db.insert(draftRounds).values(
+        rounds.map(r => ({
+          draftId,
+          roundNumber: r.roundNumber,
+          name: r.name,
+          isTeamDraft: r.isTeamDraft,
+          startTime: r.startTime ?? new Date(),
+        })),
+      );
     }
   }
 
@@ -3414,14 +3620,14 @@ export class DatabaseStorage implements IStorage {
       user: users,
     })
       .from(draftPicks)
-      .innerJoin(mlbPlayers, eq(draftPicks.mlbPlayerId, mlbPlayers.id))
+      .leftJoin(mlbPlayers, eq(draftPicks.mlbPlayerId, mlbPlayers.id))
       .innerJoin(users, eq(draftPicks.userId, users.id))
       .where(eq(draftPicks.draftId, draftId))
-      .orderBy(draftPicks.pickNumber);
+      .orderBy(draftPicks.overallPickNumber);
     
     return rows.map(r => ({
       ...r.pick,
-      player: r.player,
+      player: r.player ?? null,
       user: {
         id: r.user.id,
         firstName: r.user.firstName,
@@ -3431,15 +3637,52 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
-  async createDraftPick(pick: InsertDraftPick): Promise<DraftPick> {
-    const [result] = await db.insert(draftPicks).values(pick).returning();
-    return result;
-  }
+  async createDraftPickSlotsForAllRounds(draftId: number): Promise<number> {
+    await db.delete(draftPicks).where(eq(draftPicks.draftId, draftId));
 
-  async getDraftPickCount(draftId: number): Promise<number> {
-    const [result] = await db.select({ count: sql<number>`COUNT(*)::int` })
-      .from(draftPicks).where(eq(draftPicks.draftId, draftId));
-    return result?.count || 0;
+    const rounds = await this.getDraftRounds(draftId);
+    if (rounds.length === 0) return 0;
+
+    const values: InsertDraftPick[] = [];
+    let overallPickNumber = 0;
+
+    for (const round of rounds) {
+      const order = await this.getDraftOrder(draftId, round.roundNumber);
+      if (order.length === 0) {
+        throw new Error(`Draft order missing for round ${round.roundNumber}`);
+      }
+      if (!round.startTime) {
+        throw new Error(`Round ${round.roundNumber} missing start time`);
+      }
+
+      const sorted = [...order].sort((a, b) => a.orderIndex - b.orderIndex);
+      const roundStartMs = new Date(round.startTime).getTime();
+      const pickDurationMs = (round.pickDurationMinutes || 30) * 60 * 1000;
+
+      for (const [idx, entry] of sorted.entries()) {
+        overallPickNumber += 1;
+        const scheduledAt = new Date(roundStartMs + idx * pickDurationMs);
+        const deadlineAt = new Date(roundStartMs + (idx + 1) * pickDurationMs);
+        values.push({
+          draftId,
+          round: round.roundNumber,
+          roundPickIndex: idx,
+          overallPickNumber,
+          userId: entry.userId,
+          scheduledAt,
+          deadlineAt,
+        } as InsertDraftPick);
+      }
+    }
+
+    const BATCH_SIZE = 500;
+    let inserted = 0;
+    for (let i = 0; i < values.length; i += BATCH_SIZE) {
+      const batch = values.slice(i, i + BATCH_SIZE);
+      await db.insert(draftPicks).values(batch);
+      inserted += batch.length;
+    }
+    return inserted;
   }
 
   async getDraftPickById(pickId: number): Promise<DraftPick | undefined> {
@@ -3447,16 +3690,170 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async deleteDraftPick(pickId: number): Promise<void> {
-    await db.delete(draftPicks).where(eq(draftPicks.id, pickId));
+  async getOldestEligibleOpenSlotForUser(draftId: number, userId: string, now: Date): Promise<DraftPick | undefined> {
+    const [slot] = await db.select().from(draftPicks).where(and(
+      eq(draftPicks.draftId, draftId),
+      eq(draftPicks.userId, userId),
+      isNull(draftPicks.madeAt),
+      sql`${draftPicks.scheduledAt} <= ${now}`,
+    )).orderBy(draftPicks.overallPickNumber).limit(1);
+    return slot;
   }
 
-  async getLastDraftPick(draftId: number): Promise<DraftPick | undefined> {
-    const [result] = await db.select().from(draftPicks)
-      .where(eq(draftPicks.draftId, draftId))
-      .orderBy(sql`${draftPicks.pickNumber} DESC`)
-      .limit(1);
-    return result;
+  async fillSlotWithPlayer(slotId: number, userId: string, playerId: number, rosterType: "mlb" | "milb", now: Date): Promise<DraftPick> {
+    return db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM draft_picks WHERE id = ${slotId} FOR UPDATE`);
+
+      const [slot] = await tx.select().from(draftPicks).where(eq(draftPicks.id, slotId));
+      if (!slot) throw new Error("Draft slot not found");
+      if (slot.userId !== userId) throw new Error("Slot does not belong to user");
+      if (slot.madeAt) throw new Error("Draft slot already filled");
+      if (new Date(slot.scheduledAt).getTime() > now.getTime()) throw new Error("Draft slot is not open yet");
+
+      await tx.execute(sql`SELECT id FROM draft_players WHERE draft_id = ${slot.draftId} AND mlb_player_id = ${playerId} FOR UPDATE`);
+      const [poolRow] = await tx.select().from(draftPlayers).where(and(
+        eq(draftPlayers.draftId, slot.draftId),
+        eq(draftPlayers.mlbPlayerId, playerId),
+      ));
+      if (!poolRow || poolRow.status !== "available") {
+        throw new Error("Player is not available in draft pool");
+      }
+
+      const [alreadyTaken] = await tx
+        .select({ id: draftPicks.id })
+        .from(draftPicks)
+        .where(and(
+          eq(draftPicks.draftId, slot.draftId),
+          eq(draftPicks.mlbPlayerId, playerId),
+          sql`${draftPicks.madeAt} IS NOT NULL`,
+        ))
+        .limit(1);
+      if (alreadyTaken) {
+        throw new Error("Player already drafted in this draft");
+      }
+
+      const [draft] = await tx.select().from(drafts).where(eq(drafts.id, slot.draftId));
+      if (!draft) throw new Error("Draft not found");
+
+      await tx.update(draftPlayers).set({ status: "drafted" }).where(and(
+        eq(draftPlayers.draftId, slot.draftId),
+        eq(draftPlayers.mlbPlayerId, playerId),
+      ));
+
+      await tx.insert(leagueRosterAssignments).values({
+        leagueId: draft.leagueId,
+        userId,
+        mlbPlayerId: playerId,
+        rosterType,
+        minorLeagueStatus: poolRow.minorLeagueStatus || null,
+        minorLeagueYears: poolRow.minorLeagueYears ?? null,
+        season: draft.season,
+      });
+
+      const [updatedSlot] = await tx.update(draftPicks).set({
+        mlbPlayerId: playerId,
+        rosterType,
+        selectedOrgId: null,
+        selectedOrgName: null,
+        selectedOrgPlayerIds: [],
+        madeAt: now,
+        madeByUserId: userId,
+      }).where(eq(draftPicks.id, slotId)).returning();
+
+      return updatedSlot;
+    });
+  }
+
+  async fillSlotWithOrg(slotId: number, userId: string, selectedOrgName: string, selectedOrgId: number | null, rosterType: "mlb" | "milb", now: Date): Promise<{ slot: DraftPick; draftedPlayerIds: number[] }> {
+    return db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM draft_picks WHERE id = ${slotId} FOR UPDATE`);
+      const [slot] = await tx.select().from(draftPicks).where(eq(draftPicks.id, slotId));
+      if (!slot) throw new Error("Draft slot not found");
+      if (slot.userId !== userId) throw new Error("Slot does not belong to user");
+      if (slot.madeAt) throw new Error("Draft slot already filled");
+      if (new Date(slot.scheduledAt).getTime() > now.getTime()) throw new Error("Draft slot is not open yet");
+
+      const [alreadyClaimed] = await tx
+        .select({ id: draftPicks.id })
+        .from(draftPicks)
+        .where(and(
+          eq(draftPicks.draftId, slot.draftId),
+          eq(draftPicks.selectedOrgName, selectedOrgName),
+          sql`${draftPicks.madeAt} IS NOT NULL`,
+        ))
+        .limit(1);
+      if (alreadyClaimed) {
+        throw new Error("Organization already claimed in this draft");
+      }
+
+      await tx.execute(sql`
+        SELECT dp.id
+        FROM draft_players dp
+        JOIN mlb_players mp ON mp.id = dp.mlb_player_id
+        WHERE dp.draft_id = ${slot.draftId}
+          AND dp.status = 'available'
+          AND mp.parent_org_name = ${selectedOrgName}
+        FOR UPDATE
+      `);
+
+      const orgRows = await tx.select({
+        mlbPlayerId: draftPlayers.mlbPlayerId,
+        minorLeagueStatus: draftPlayers.minorLeagueStatus,
+        minorLeagueYears: draftPlayers.minorLeagueYears,
+      }).from(draftPlayers).innerJoin(mlbPlayers, eq(draftPlayers.mlbPlayerId, mlbPlayers.id)).where(and(
+        eq(draftPlayers.draftId, slot.draftId),
+        eq(draftPlayers.status, "available"),
+        eq(mlbPlayers.parentOrgName, selectedOrgName),
+      ));
+      const draftedPlayerIds = orgRows.map((r) => r.mlbPlayerId);
+      if (draftedPlayerIds.length === 0) {
+        throw new Error(`No available players found for organization: ${selectedOrgName}`);
+      }
+
+      const [draft] = await tx.select().from(drafts).where(eq(drafts.id, slot.draftId));
+      if (!draft) throw new Error("Draft not found");
+
+      await tx.update(draftPlayers).set({ status: "drafted" }).where(and(
+        eq(draftPlayers.draftId, slot.draftId),
+        inArray(draftPlayers.mlbPlayerId, draftedPlayerIds),
+      ));
+
+      await tx.insert(leagueRosterAssignments).values(
+        orgRows.map((row) => ({
+          leagueId: draft.leagueId,
+          userId,
+          mlbPlayerId: row.mlbPlayerId,
+          rosterType,
+          minorLeagueStatus: row.minorLeagueStatus || null,
+          minorLeagueYears: row.minorLeagueYears ?? null,
+          season: draft.season,
+        })),
+      );
+
+      const [updatedSlot] = await tx.update(draftPicks).set({
+        mlbPlayerId: null,
+        rosterType,
+        selectedOrgName,
+        selectedOrgId,
+        selectedOrgPlayerIds: draftedPlayerIds,
+        madeAt: now,
+        madeByUserId: userId,
+      }).where(eq(draftPicks.id, slotId)).returning();
+
+      return { slot: updatedSlot, draftedPlayerIds };
+    });
+  }
+
+  async clearDraftSlot(slotId: number): Promise<void> {
+    await db.update(draftPicks).set({
+      mlbPlayerId: null,
+      rosterType: null,
+      selectedOrgName: null,
+      selectedOrgId: null,
+      selectedOrgPlayerIds: [],
+      madeAt: null,
+      madeByUserId: null,
+    }).where(eq(draftPicks.id, slotId));
   }
 
   async removeRosterAssignmentByPlayer(leagueId: number, userId: string, mlbPlayerId: number, season: number): Promise<void> {

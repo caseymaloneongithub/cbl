@@ -133,6 +133,7 @@ export function Header() {
     { href: "/commissioner/free-agency", label: "Auction Management" },
     { href: "/commissioner/draft", label: "Draft" },
     { href: "/commissioner/teams", label: "Teams" },
+    { href: "/commissioner/reconciliation", label: "Reconciliation" },
     { href: "/commissioner/rosters/mlb", label: "MLB Rosters" },
     { href: "/commissioner/rosters/milb", label: "MiLB Rosters" },
     { href: "/commissioner/settings", label: "League Settings" },
@@ -178,12 +179,6 @@ export function Header() {
           {isAuthenticated && (
             <nav className="hidden md:flex items-center gap-1">
               <NavDropdown
-                label="Free Agency"
-                items={freeAgencyItems}
-                location={location}
-                testId="nav-free-agency"
-              />
-              <NavDropdown
                 label="My Roster"
                 items={myRosterItems}
                 location={location}
@@ -201,9 +196,15 @@ export function Header() {
                   size="sm"
                   data-testid="nav-drafts"
                 >
-                  Drafts
+                  Draft
                 </Button>
               </Link>
+              <NavDropdown
+                label="Free Agency"
+                items={freeAgencyItems}
+                location={location}
+                testId="nav-free-agency"
+              />
               {(hasAnyCommissionerRole || user?.isSuperAdmin) && (
                 <NavDropdown
                   label="Commissioner"
@@ -267,24 +268,6 @@ export function Header() {
                         </>
                       )}
                       <div className="px-2 py-1">
-                        <span className="text-xs text-muted-foreground font-medium">Free Agency</span>
-                      </div>
-                      {freeAgencyItems.map((link) => {
-                        const isActive = link.href === location;
-                        return (
-                          <Link key={link.href} href={link.href} onClick={() => setMobileMenuOpen(false)}>
-                            <Button
-                              variant={isActive ? "secondary" : "ghost"}
-                              className="w-full justify-start"
-                              size="sm"
-                            >
-                              {link.label}
-                            </Button>
-                          </Link>
-                        );
-                      })}
-                      <div className="border-b my-2" />
-                      <div className="px-2 py-1">
                         <span className="text-xs text-muted-foreground font-medium">My Roster</span>
                       </div>
                       {myRosterItems.map((link) => {
@@ -329,9 +312,27 @@ export function Header() {
                           className="w-full justify-start"
                           size="sm"
                         >
-                          Drafts
+                          Draft
                         </Button>
                       </Link>
+                      <div className="border-b my-2" />
+                      <div className="px-2 py-1">
+                        <span className="text-xs text-muted-foreground font-medium">Free Agency</span>
+                      </div>
+                      {freeAgencyItems.map((link) => {
+                        const isActive = link.href === location;
+                        return (
+                          <Link key={link.href} href={link.href} onClick={() => setMobileMenuOpen(false)}>
+                            <Button
+                              variant={isActive ? "secondary" : "ghost"}
+                              className="w-full justify-start"
+                              size="sm"
+                            >
+                              {link.label}
+                            </Button>
+                          </Link>
+                        );
+                      })}
                       <div className="border-b my-2" />
                       {(hasAnyCommissionerRole || user?.isSuperAdmin) && (
                         <>

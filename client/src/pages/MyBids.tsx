@@ -113,6 +113,24 @@ export default function MyBids() {
     },
   });
 
+  const dfaPlayerMutation = useMutation({
+    mutationFn: async (freeAgentId: number) => {
+      const response = await apiRequest("POST", `/api/free-agents/${freeAgentId}/dfa`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/free-agents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-bids"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/results"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/budget"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/limits"] });
+      toast({ title: "Player DFA'd", description: "Roster capacity has been freed for free agency." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "DFA failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   const activeBids = myBids?.filter(b => !isAuctionClosed(b.auctionEndTime)) || [];
   const wonBids = myBids?.filter(b => isAuctionClosed(b.auctionEndTime) && b.winnerId) || [];
   const activeAutoBids = myAutoBids?.filter(ab => ab.isActive) || [];
@@ -541,6 +559,16 @@ export default function MyBids() {
                         {agent.currentBid ? formatCurrency(agent.currentBid.totalValue) : "-"}
                       </span>
                     </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => dfaPlayerMutation.mutate(agent.id)}
+                      disabled={dfaPlayerMutation.isPending}
+                      data-testid={`button-dfa-${agent.id}`}
+                    >
+                      {dfaPlayerMutation.isPending ? "Applying DFA..." : "DFA Player"}
+                    </Button>
                   </CardContent>
                 </Card>
               ))}
