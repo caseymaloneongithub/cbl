@@ -362,6 +362,7 @@ export interface IStorage {
   // Draft rounds
   getDraftRounds(draftId: number): Promise<DraftRound[]>;
   setDraftRounds(draftId: number, rounds: { roundNumber: number; name: string; isTeamDraft: boolean }[]): Promise<void>;
+  deleteDraftRound(id: number): Promise<void>;
   updateDraftRound(id: number, data: Partial<DraftRound>): Promise<DraftRound | undefined>;
 
   // Draft order
@@ -3578,6 +3579,29 @@ export class DatabaseStorage implements IStorage {
         })),
       );
     }
+  }
+
+  async deleteDraftRound(id: number): Promise<void> {
+    const [round] = await db.select().from(draftRounds).where(eq(draftRounds.id, id));
+    if (!round) return;
+    await db.delete(draftOrder).where(
+      and(eq(draftOrder.draftId, round.draftId), eq(draftOrder.roundNumber, round.roundNumber))
+    );
+    await db.delete(draftRounds).where(eq(draftRounds.id, id));
+    const remaining = await db.select().from(draftRounds)
+      .where(eq(draftRounds.draftId, round.draftId))
+      .orderBy(draftRounds.roundNumber);
+    for (let i = 0; i < remaining.length; i++) {
+      const newNum = i + 1;
+      if (remaining[i].roundNumber !== newNum) {
+        await db.update(draftOrder).set({ roundNumber: newNum })
+          .where(and(eq(draftOrder.draftId, round.draftId), eq(draftOrder.roundNumber, remaining[i].roundNumber)));
+        await db.update(draftRounds).set({ roundNumber: newNum })
+          .where(eq(draftRounds.id, remaining[i].id));
+      }
+    }
+    const totalRounds = remaining.length;
+    await db.update(drafts).set({ rounds: totalRounds }).where(eq(drafts.id, round.draftId));
   }
 
   async updateDraftRound(id: number, data: Partial<DraftRound>): Promise<DraftRound | undefined> {

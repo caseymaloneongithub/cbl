@@ -9116,6 +9116,34 @@ export async function registerRoutes(
     }
   });
 
+  // DELETE /api/drafts/:id/rounds/:roundId - Delete a draft round
+  app.delete("/api/drafts/:id/rounds/:roundId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const id = parseInt(req.params.id);
+      const roundId = parseInt(req.params.roundId);
+      if (isNaN(id) || isNaN(roundId)) return res.status(400).json({ message: "Invalid ID" });
+
+      const draft = await storage.getDraft(id);
+      if (!draft) return res.status(404).json({ message: "Draft not found" });
+      if (draft.status !== "setup") return res.status(400).json({ message: "Draft must be in setup status" });
+      if (!await hasLeagueCommissionerAccess(userId, draft.leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const rounds = await storage.getDraftRounds(id);
+      if (rounds.length <= 1) {
+        return res.status(400).json({ message: "Cannot delete the last round" });
+      }
+
+      await storage.deleteDraftRound(roundId);
+      res.json({ message: "Round deleted" });
+    } catch (error) {
+      console.error("Error deleting draft round:", error);
+      res.status(500).json({ message: "Failed to delete draft round" });
+    }
+  });
+
   // GET /api/drafts/:id/order - Get draft order (optionally filtered by round)
   app.get("/api/drafts/:id/order", isAuthenticated, async (req: any, res) => {
     try {

@@ -33,10 +33,12 @@ import {
   FileSpreadsheet, Clock, X, UserPlus, Download,
 } from "lucide-react";
 
-function RoundConfigRow({ round, roundEntries, onUpdate, formatCentralInput }: {
+function RoundConfigRow({ round, roundEntries, onUpdate, onDelete, canDelete, formatCentralInput }: {
   round: DraftRound;
   roundEntries: (DraftOrder & { user: User })[];
   onUpdate: (data: Record<string, any>) => void;
+  onDelete: () => void;
+  canDelete: boolean;
   formatCentralInput: (time: any) => string;
 }) {
   const [localName, setLocalName] = useState(round.name);
@@ -105,6 +107,18 @@ function RoundConfigRow({ round, roundEntries, onUpdate, formatCentralInput }: {
             </Badge>
           ))}
         </div>
+      </TableCell>
+      <TableCell>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-destructive hover:text-destructive"
+          disabled={!canDelete}
+          onClick={onDelete}
+          data-testid={`btn-delete-round-${round.id}`}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
       </TableCell>
     </TableRow>
   );
@@ -298,6 +312,20 @@ export default function CommissionerDraftDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "rounds"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteRound = useMutation({
+    mutationFn: async (roundId: number) => {
+      const res = await apiRequest("DELETE", `/api/drafts/${draftId}/rounds/${roundId}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "rounds"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "order"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId] });
+      toast({ title: "Round deleted" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -993,6 +1021,7 @@ export default function CommissionerDraftDetail() {
                         <TableHead className="min-w-[200px]">Start Date/Time (CT)</TableHead>
                         <TableHead className="min-w-[100px]">Pick Duration</TableHead>
                         <TableHead className="min-w-[200px]">Order Preview</TableHead>
+                        <TableHead className="w-10"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1002,6 +1031,8 @@ export default function CommissionerDraftDetail() {
                           round={round}
                           roundEntries={orderByRound(round.roundNumber)}
                           onUpdate={(data) => updateRound.mutate({ roundId: round.id, data })}
+                          onDelete={() => deleteRound.mutate(round.id)}
+                          canDelete={draftRounds.length > 1}
                           formatCentralInput={formatCentralInput}
                         />
                       ))}
