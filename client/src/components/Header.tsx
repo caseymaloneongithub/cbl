@@ -90,7 +90,7 @@ export function Header() {
   });
 
   const { data: drafts } = useQuery<DraftWithDetails[]>({
-    queryKey: ["/api/drafts", selectedLeagueId],
+    queryKey: ["/api/drafts", { leagueId: selectedLeagueId }],
     queryFn: async () => {
       const res = await fetch(`/api/drafts?leagueId=${selectedLeagueId}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch drafts");

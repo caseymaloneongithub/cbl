@@ -144,7 +144,7 @@ export default function CommissionerDraftDetail() {
   const [playerSearchText, setPlayerSearchText] = useState("");
 
   const { data: drafts, isLoading: draftsLoading } = useQuery<DraftWithDetails[]>({
-    queryKey: ["/api/drafts", selectedLeagueId],
+    queryKey: ["/api/drafts", { leagueId: selectedLeagueId }],
     queryFn: async () => {
       const res = await fetch(`/api/drafts?leagueId=${selectedLeagueId}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch drafts");
@@ -214,7 +214,7 @@ export default function CommissionerDraftDetail() {
     },
     onSuccess: () => {
       toast({ title: "Draft Deleted" });
-      queryClient.invalidateQueries({ queryKey: ["/api/drafts", selectedLeagueId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", { leagueId: selectedLeagueId }] });
       navigate("/commissioner/draft");
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -248,7 +248,7 @@ export default function CommissionerDraftDetail() {
       toast({ title: "Upload Complete", description: parts.join(", ") });
       setPlayerIdsText("");
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "players"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/drafts", selectedLeagueId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", { leagueId: selectedLeagueId }] });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -260,7 +260,7 @@ export default function CommissionerDraftDetail() {
     onSuccess: () => {
       toast({ title: "Player Pool Cleared" });
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "players"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/drafts", selectedLeagueId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", { leagueId: selectedLeagueId }] });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -285,7 +285,7 @@ export default function CommissionerDraftDetail() {
       setCsvText("");
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "rounds"] });
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "order"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/drafts", selectedLeagueId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", { leagueId: selectedLeagueId }] });
     },
     onError: (e: Error) => toast({ title: "Upload Failed", description: e.message, variant: "destructive" }),
   });
@@ -322,7 +322,7 @@ export default function CommissionerDraftDetail() {
     },
     onSuccess: () => {
       toast({ title: "Draft Started" });
-      queryClient.invalidateQueries({ queryKey: ["/api/drafts", selectedLeagueId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", { leagueId: selectedLeagueId }] });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -334,7 +334,7 @@ export default function CommissionerDraftDetail() {
     },
     onSuccess: () => {
       toast({ title: "Draft Paused" });
-      queryClient.invalidateQueries({ queryKey: ["/api/drafts", selectedLeagueId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", { leagueId: selectedLeagueId }] });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -346,7 +346,7 @@ export default function CommissionerDraftDetail() {
     },
     onSuccess: () => {
       toast({ title: "Draft Resumed" });
-      queryClient.invalidateQueries({ queryKey: ["/api/drafts", selectedLeagueId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", { leagueId: selectedLeagueId }] });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -358,7 +358,7 @@ export default function CommissionerDraftDetail() {
     },
     onSuccess: () => {
       toast({ title: "Draft Completed" });
-      queryClient.invalidateQueries({ queryKey: ["/api/drafts", selectedLeagueId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", { leagueId: selectedLeagueId }] });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -377,7 +377,7 @@ export default function CommissionerDraftDetail() {
       setPlayerSearchText("");
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "picks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "players"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/drafts", selectedLeagueId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", { leagueId: selectedLeagueId }] });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -390,7 +390,7 @@ export default function CommissionerDraftDetail() {
       toast({ title: "Pick Nullified" });
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "picks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "players"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/drafts", selectedLeagueId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", { leagueId: selectedLeagueId }] });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });

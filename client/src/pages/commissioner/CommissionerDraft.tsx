@@ -27,7 +27,7 @@ export default function CommissionerDraft() {
   const [newTeamDraftRound, setNewTeamDraftRound] = useState("");
 
   const { data: drafts, isLoading: loadingDrafts } = useQuery<DraftWithDetails[]>({
-    queryKey: ["/api/drafts", selectedLeagueId],
+    queryKey: ["/api/drafts", { leagueId: selectedLeagueId }],
     queryFn: async () => {
       const res = await fetch(`/api/drafts?leagueId=${selectedLeagueId}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch drafts");
@@ -54,7 +54,7 @@ export default function CommissionerDraft() {
       setNewName("");
       setNewPickDuration(30);
       setNewTeamDraftRound("");
-      queryClient.invalidateQueries({ queryKey: ["/api/drafts", selectedLeagueId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", { leagueId: selectedLeagueId }] });
       navigate(`/commissioner/drafts/${data.id}`);
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
