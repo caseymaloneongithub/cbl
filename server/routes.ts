@@ -9668,6 +9668,102 @@ export async function registerRoutes(
     }
   });
 
+  // POST /api/drafts/:id/assign-picks - Commissioner assigns all drafted players to rosters
+  app.post("/api/drafts/:id/assign-picks", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid draft ID" });
+
+      const draft = await storage.getDraft(id);
+      if (!draft) return res.status(404).json({ message: "Draft not found" });
+
+      const commUser = await storage.getUser(userId);
+      const membership = await storage.getLeagueMember(draft.leagueId, userId);
+      if (membership?.role !== "commissioner" && !commUser?.isSuperAdmin) {
+        return res.status(403).json({ message: "Only commissioners can assign draft picks" });
+      }
+
+      if (draft.status !== "completed") {
+        return res.status(400).json({ message: "Draft must be completed before assigning picks" });
+      }
+
+      const picks = await storage.getDraftPicks(id);
+      const madePicks = picks.filter(p => !!p.madeAt);
+      if (madePicks.length === 0) {
+        return res.status(400).json({ message: "No picks to assign" });
+      }
+
+      const existingAssignments = await db.select({ mlbPlayerId: leagueRosterAssignments.mlbPlayerId })
+        .from(leagueRosterAssignments)
+        .where(and(
+          eq(leagueRosterAssignments.leagueId, draft.leagueId),
+          eq(leagueRosterAssignments.season, draft.season),
+        ));
+      const alreadyAssigned = new Set(existingAssignments.map(a => a.mlbPlayerId));
+
+      const draftPoolPlayers = await storage.getDraftPlayers(id);
+      const poolMap = new Map(draftPoolPlayers.map(dp => [dp.mlbPlayerId, dp]));
+
+      let assignedCount = 0;
+      const assignments: {
+        leagueId: number;
+        userId: string;
+        mlbPlayerId: number;
+        rosterType: string;
+        minorLeagueStatus: string | null;
+        minorLeagueYears: number | null;
+        season: number;
+      }[] = [];
+
+      for (const pick of madePicks) {
+        if (pick.selectedOrgPlayerIds && pick.selectedOrgPlayerIds.length > 0) {
+          for (const playerId of pick.selectedOrgPlayerIds) {
+            if (alreadyAssigned.has(playerId)) continue;
+            const poolEntry = poolMap.get(playerId);
+            assignments.push({
+              leagueId: draft.leagueId,
+              userId: pick.userId,
+              mlbPlayerId: playerId,
+              rosterType: pick.rosterType || "milb",
+              minorLeagueStatus: poolEntry?.minorLeagueStatus || null,
+              minorLeagueYears: poolEntry?.minorLeagueYears ?? null,
+              season: draft.season,
+            });
+            alreadyAssigned.add(playerId);
+          }
+        } else if (pick.mlbPlayerId) {
+          if (alreadyAssigned.has(pick.mlbPlayerId)) continue;
+          const poolEntry = poolMap.get(pick.mlbPlayerId);
+          assignments.push({
+            leagueId: draft.leagueId,
+            userId: pick.userId,
+            mlbPlayerId: pick.mlbPlayerId,
+            rosterType: pick.rosterType || "milb",
+            minorLeagueStatus: poolEntry?.minorLeagueStatus || null,
+            minorLeagueYears: poolEntry?.minorLeagueYears ?? null,
+            season: draft.season,
+          });
+          alreadyAssigned.add(pick.mlbPlayerId);
+        }
+      }
+
+      if (assignments.length > 0) {
+        const batchSize = 100;
+        for (let i = 0; i < assignments.length; i += batchSize) {
+          await db.insert(leagueRosterAssignments).values(assignments.slice(i, i + batchSize));
+        }
+        assignedCount = assignments.length;
+      }
+
+      res.json({ message: `Successfully assigned ${assignedCount} players to rosters`, assignedCount });
+    } catch (error) {
+      console.error("Error assigning draft picks:", error);
+      const message = error instanceof Error ? error.message : "Failed to assign draft picks";
+      res.status(500).json({ message });
+    }
+  });
+
   // POST /api/drafts/:id/commissioner-pick - Commissioner makes a pick on behalf of a team
   app.post("/api/drafts/:id/commissioner-pick", isAuthenticated, async (req: any, res) => {
     try {

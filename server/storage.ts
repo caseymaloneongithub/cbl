@@ -3809,16 +3809,6 @@ export class DatabaseStorage implements IStorage {
         eq(draftPlayers.mlbPlayerId, playerId),
       ));
 
-      await tx.insert(leagueRosterAssignments).values({
-        leagueId: draft.leagueId,
-        userId,
-        mlbPlayerId: playerId,
-        rosterType,
-        minorLeagueStatus: poolRow.minorLeagueStatus || null,
-        minorLeagueYears: poolRow.minorLeagueYears ?? null,
-        season: draft.season,
-      });
-
       const [updatedSlot] = await tx.update(draftPicks).set({
         mlbPlayerId: playerId,
         rosterType,
@@ -3887,18 +3877,6 @@ export class DatabaseStorage implements IStorage {
         eq(draftPlayers.draftId, slot.draftId),
         inArray(draftPlayers.mlbPlayerId, draftedPlayerIds),
       ));
-
-      await tx.insert(leagueRosterAssignments).values(
-        orgRows.map((row) => ({
-          leagueId: draft.leagueId,
-          userId,
-          mlbPlayerId: row.mlbPlayerId,
-          rosterType,
-          minorLeagueStatus: row.minorLeagueStatus || null,
-          minorLeagueYears: row.minorLeagueYears ?? null,
-          season: draft.season,
-        })),
-      );
 
       const [updatedSlot] = await tx.update(draftPicks).set({
         mlbPlayerId: null,
