@@ -26,7 +26,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Clock, Search, Trophy, Users, Loader2, CheckCircle, Building2, AlertTriangle, ListOrdered, ArrowUp, ArrowDown, Plus, Trash2, Pause, Play, Bell, BellOff } from "lucide-react";
-import type { Draft, DraftRound, DraftPlayerWithDetails, DraftPickWithDetails, DraftOrder, User, AutoDraftListWithPlayer } from "@shared/schema";
+import type { Draft, DraftRound, DraftPlayerWithDetails, DraftPickWithDetails, DraftOrder, User, AutoDraftListWithPlayer, TeamAutoDraftList } from "@shared/schema";
 
 
 interface TimingInfo {
@@ -56,6 +56,8 @@ export default function DraftBoard() {
   const [teamDraftRosterType, setTeamDraftRosterType] = useState<string>("milb");
   const [countdown, setCountdown] = useState<string>("");
   const [autoDraftSearch, setAutoDraftSearch] = useState("");
+  const [teamAutoDraftSearch, setTeamAutoDraftSearch] = useState("");
+  const [teamAutoDraftRosterType, setTeamAutoDraftRosterType] = useState<string>("milb");
 
   const draftIdNum = draftId ? parseInt(draftId, 10) : null;
 
@@ -423,6 +425,104 @@ export default function DraftBoard() {
     if (swapIndex < 0 || swapIndex >= newList.length) return;
     [newList[index], newList[swapIndex]] = [newList[swapIndex], newList[index]];
     reorderAutoDraft.mutate(newList.map(item => item.id));
+  };
+
+  const hasTeamDraftRound = useMemo(() => {
+    return draftRounds?.some(r => r.isTeamDraft) || false;
+  }, [draftRounds]);
+
+  const { data: teamAutoDraftList } = useQuery<TeamAutoDraftList[]>({
+    queryKey: ["/api/drafts", draftIdNum, "team-auto-draft-list"],
+    queryFn: async () => {
+      const res = await fetch(`/api/drafts/${draftIdNum}/team-auto-draft-list`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch team auto-draft list");
+      return res.json();
+    },
+    enabled: !!draftIdNum && hasTeamDraftRound,
+    refetchInterval: DRAFT_POLL_INTERVAL,
+  });
+
+  const teamAutoDraftOrgNames = useMemo(() => {
+    if (!teamAutoDraftList) return new Set<string>();
+    return new Set(teamAutoDraftList.map(item => item.orgName));
+  }, [teamAutoDraftList]);
+
+  const claimedOrgs = useMemo(() => {
+    if (!picks) return new Set<string>();
+    return new Set(picks.filter(s => !!s.selectedOrgName).map(s => s.selectedOrgName as string));
+  }, [picks]);
+
+  const teamAutoDraftCandidateOrgs = useMemo(() => {
+    if (!availablePlayers) return [] as string[];
+    const seen: Record<string, boolean> = {};
+    const orgs: string[] = [];
+    availablePlayers.forEach(dp => {
+      if (dp.player.parentOrgName && !claimedOrgs.has(dp.player.parentOrgName) && !teamAutoDraftOrgNames.has(dp.player.parentOrgName) && !seen[dp.player.parentOrgName]) {
+        seen[dp.player.parentOrgName] = true;
+        orgs.push(dp.player.parentOrgName);
+      }
+    });
+    const needle = stripAccents(teamAutoDraftSearch.trim().toLowerCase());
+    if (needle) {
+      return orgs.filter(org => stripAccents(org.toLowerCase()).includes(needle)).sort();
+    }
+    return orgs.sort();
+  }, [availablePlayers, claimedOrgs, teamAutoDraftOrgNames, teamAutoDraftSearch]);
+
+  const addToTeamAutoDraft = useMutation({
+    mutationFn: async ({ orgName, rosterType }: { orgName: string; rosterType: string }) => {
+      await apiRequest("POST", `/api/drafts/${draftIdNum}/team-auto-draft-list`, { orgName, rosterType });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "team-auto-draft-list"] });
+      toast({ title: "Added to team auto-draft list" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to add", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const removeFromTeamAutoDraft = useMutation({
+    mutationFn: async (itemId: number) => {
+      await apiRequest("DELETE", `/api/drafts/${draftIdNum}/team-auto-draft-list/${itemId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "team-auto-draft-list"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to remove", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const reorderTeamAutoDraft = useMutation({
+    mutationFn: async (orderedIds: number[]) => {
+      await apiRequest("PUT", `/api/drafts/${draftIdNum}/team-auto-draft-list/reorder`, { orderedIds });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "team-auto-draft-list"] });
+    },
+  });
+
+  const clearTeamAutoDraft = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", `/api/drafts/${draftIdNum}/team-auto-draft-list`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "team-auto-draft-list"] });
+      toast({ title: "Team auto-draft list cleared" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to clear list", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const moveTeamAutoDraftItem = (index: number, direction: "up" | "down") => {
+    if (!teamAutoDraftList) return;
+    const newList = [...teamAutoDraftList];
+    const swapIndex = direction === "up" ? index - 1 : index + 1;
+    if (swapIndex < 0 || swapIndex >= newList.length) return;
+    [newList[index], newList[swapIndex]] = [newList[swapIndex], newList[index]];
+    reorderTeamAutoDraft.mutate(newList.map(item => item.id));
   };
 
   const handlePickClick = (player: DraftPlayerWithDetails) => {
@@ -967,6 +1067,182 @@ export default function DraftBoard() {
                                   onClick={() => removeFromAutoDraft.mutate(item.id)}
                                   disabled={removeFromAutoDraft.isPending}
                                   data-testid={`button-auto-draft-remove-${item.id}`}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {draft.status !== "completed" && hasTeamDraftRound && (
+            <Card className="mt-4">
+              <CardHeader className="pb-3 space-y-3">
+                <div className="flex flex-row items-center justify-between gap-2">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Building2 className="h-5 w-5" />
+                    Team Auto-Draft List
+                  </CardTitle>
+                  <div className="flex items-center gap-2">
+                    {teamAutoDraftList && teamAutoDraftList.length > 0 && (() => {
+                      const remaining = teamAutoDraftList.filter(i => !claimedOrgs.has(i.orgName)).length;
+                      return (
+                        <Badge variant="secondary" data-testid="badge-team-auto-draft-count">
+                          {remaining}/{teamAutoDraftList.length}
+                        </Badge>
+                      );
+                    })()}
+                    {!!teamAutoDraftList?.length && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => clearTeamAutoDraft.mutate()}
+                        disabled={clearTeamAutoDraft.isPending}
+                        data-testid="button-team-auto-draft-clear"
+                      >
+                        {clearTeamAutoDraft.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Rank your preferred organizations for the team draft round. When you are on the clock, the system picks the highest available org from this list.
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative min-w-[220px] flex-1">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      value={teamAutoDraftSearch}
+                      onChange={(e) => setTeamAutoDraftSearch(e.target.value)}
+                      placeholder="Search organizations to queue..."
+                      className="pl-9"
+                      data-testid="input-team-auto-draft-search"
+                    />
+                  </div>
+                  <Select value={teamAutoDraftRosterType} onValueChange={setTeamAutoDraftRosterType}>
+                    <SelectTrigger className="w-[100px]" data-testid="select-team-auto-draft-roster-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="milb">MiLB</SelectItem>
+                      <SelectItem value="mlb">MLB</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                {!!teamAutoDraftSearch && (
+                  <div className="border-t border-b p-2 space-y-1">
+                    {teamAutoDraftCandidateOrgs.length === 0 ? (
+                      <div className="px-2 py-1 text-xs text-muted-foreground">
+                        No matching available organizations found.
+                      </div>
+                    ) : (
+                      teamAutoDraftCandidateOrgs.map((org) => (
+                        <div
+                          key={org}
+                          className="flex items-center justify-between gap-2 rounded-md border px-2 py-1.5"
+                          data-testid={`row-team-auto-draft-candidate-${org}`}
+                        >
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium truncate">{org}</div>
+                            <div className="text-xs text-muted-foreground truncate">
+                              {getMlbAffiliationAbbreviation(org) || org}
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => addToTeamAutoDraft.mutate({ orgName: org, rosterType: teamAutoDraftRosterType })}
+                            disabled={addToTeamAutoDraft.isPending}
+                            data-testid={`button-team-auto-draft-candidate-add-${org}`}
+                          >
+                            <Plus className="h-3.5 w-3.5 mr-1" />
+                            Queue
+                          </Button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+                {!teamAutoDraftList?.length ? (
+                  <div className="p-4 text-center text-muted-foreground text-sm">
+                    No organizations in your team auto-draft list yet. Search above to add.
+                  </div>
+                ) : (
+                  <div className="max-h-[400px] overflow-y-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 z-10 bg-background">
+                        <TableRow className="bg-muted/50">
+                          <TableHead className="font-semibold w-8">#</TableHead>
+                          <TableHead className="font-semibold">Organization</TableHead>
+                          <TableHead className="font-semibold">Roster</TableHead>
+                          <TableHead className="font-semibold text-right w-24">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {teamAutoDraftList.map((item, idx) => {
+                          const isClaimed = claimedOrgs.has(item.orgName);
+                          return (
+                          <TableRow key={item.id} data-testid={`row-team-auto-draft-${item.id}`} className={isClaimed ? "opacity-50" : ""}>
+                            <TableCell className="font-mono text-xs text-muted-foreground">{idx + 1}</TableCell>
+                            <TableCell>
+                              <div className={`text-sm font-medium ${isClaimed ? "line-through" : ""}`}>{item.orgName}</div>
+                              {isClaimed ? (
+                                <div className="text-xs text-orange-600 dark:text-orange-400 flex items-center gap-1">
+                                  <CheckCircle className="h-3 w-3" />
+                                  Already claimed
+                                </div>
+                              ) : (
+                                <div className="text-xs text-muted-foreground">
+                                  {getMlbAffiliationAbbreviation(item.orgName) || item.orgName}
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {!isClaimed && (
+                                <Badge variant={item.rosterType === "mlb" ? "default" : "outline"} className="text-xs">
+                                  {item.rosterType === "mlb" ? "MLB" : "MiLB"}
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {!isClaimed && (
+                              <div className="flex items-center justify-end gap-0">
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => moveTeamAutoDraftItem(idx, "up")}
+                                  disabled={idx === 0 || reorderTeamAutoDraft.isPending}
+                                  data-testid={`button-team-auto-draft-up-${item.id}`}
+                                >
+                                  <ArrowUp className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => moveTeamAutoDraftItem(idx, "down")}
+                                  disabled={idx === teamAutoDraftList.length - 1 || reorderTeamAutoDraft.isPending}
+                                  data-testid={`button-team-auto-draft-down-${item.id}`}
+                                >
+                                  <ArrowDown className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => removeFromTeamAutoDraft.mutate(item.id)}
+                                  disabled={removeFromTeamAutoDraft.isPending}
+                                  data-testid={`button-team-auto-draft-remove-${item.id}`}
                                 >
                                   <Trash2 className="h-3 w-3" />
                                 </Button>

@@ -67,6 +67,8 @@ import {
   type AutoDraftList,
   type AutoDraftListWithPlayer,
   draftEmailOptOuts,
+  teamAutoDraftLists,
+  type TeamAutoDraftList,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, lt, sql, isNull, inArray, or } from "drizzle-orm";
@@ -391,6 +393,14 @@ export interface IStorage {
   reorderAutoDraftList(draftId: number, userId: string, orderedIds: number[]): Promise<void>;
   getTopAvailableAutoDraftPick(draftId: number, userId: string): Promise<AutoDraftList | undefined>;
   clearAutoDraftItem(draftId: number, mlbPlayerId: number): Promise<void>;
+
+  // Team auto-draft lists (for team draft rounds)
+  getTeamAutoDraftList(draftId: number, userId: string): Promise<TeamAutoDraftList[]>;
+  addTeamAutoDraftItem(draftId: number, userId: string, orgName: string, rosterType: string): Promise<TeamAutoDraftList>;
+  removeTeamAutoDraftItem(id: number): Promise<void>;
+  reorderTeamAutoDraftList(draftId: number, userId: string, orderedIds: number[]): Promise<void>;
+  getTopAvailableTeamAutoDraftPick(draftId: number, userId: string, claimedOrgs: Set<string>): Promise<TeamAutoDraftList | undefined>;
+  clearTeamAutoDraftList(draftId: number, userId: string): Promise<void>;
 
   // Draft email opt-outs
   getDraftEmailOptOut(draftId: number, userId: string): Promise<boolean>;
@@ -4021,6 +4031,69 @@ export class DatabaseStorage implements IStorage {
     await db.delete(autoDraftLists).where(and(
       eq(autoDraftLists.draftId, draftId),
       eq(autoDraftLists.mlbPlayerId, mlbPlayerId),
+    ));
+  }
+
+  async getTeamAutoDraftList(draftId: number, userId: string): Promise<TeamAutoDraftList[]> {
+    return db.select()
+      .from(teamAutoDraftLists)
+      .where(and(
+        eq(teamAutoDraftLists.draftId, draftId),
+        eq(teamAutoDraftLists.userId, userId),
+      ))
+      .orderBy(teamAutoDraftLists.rank);
+  }
+
+  async addTeamAutoDraftItem(draftId: number, userId: string, orgName: string, rosterType: string): Promise<TeamAutoDraftList> {
+    const existing = await db.select()
+      .from(teamAutoDraftLists)
+      .where(and(
+        eq(teamAutoDraftLists.draftId, draftId),
+        eq(teamAutoDraftLists.userId, userId),
+      ))
+      .orderBy(desc(teamAutoDraftLists.rank));
+    const nextRank = existing.length > 0 ? existing[0].rank + 1 : 1;
+    const [item] = await db.insert(teamAutoDraftLists).values({
+      draftId,
+      userId,
+      orgName,
+      rank: nextRank,
+      rosterType,
+    }).returning();
+    return item;
+  }
+
+  async removeTeamAutoDraftItem(id: number): Promise<void> {
+    await db.delete(teamAutoDraftLists).where(eq(teamAutoDraftLists.id, id));
+  }
+
+  async reorderTeamAutoDraftList(draftId: number, userId: string, orderedIds: number[]): Promise<void> {
+    for (let i = 0; i < orderedIds.length; i++) {
+      await db.update(teamAutoDraftLists)
+        .set({ rank: i + 1 })
+        .where(and(
+          eq(teamAutoDraftLists.id, orderedIds[i]),
+          eq(teamAutoDraftLists.draftId, draftId),
+          eq(teamAutoDraftLists.userId, userId),
+        ));
+    }
+  }
+
+  async getTopAvailableTeamAutoDraftPick(draftId: number, userId: string, claimedOrgs: Set<string>): Promise<TeamAutoDraftList | undefined> {
+    const list = await db.select()
+      .from(teamAutoDraftLists)
+      .where(and(
+        eq(teamAutoDraftLists.draftId, draftId),
+        eq(teamAutoDraftLists.userId, userId),
+      ))
+      .orderBy(teamAutoDraftLists.rank);
+    return list.find(item => !claimedOrgs.has(item.orgName));
+  }
+
+  async clearTeamAutoDraftList(draftId: number, userId: string): Promise<void> {
+    await db.delete(teamAutoDraftLists).where(and(
+      eq(teamAutoDraftLists.draftId, draftId),
+      eq(teamAutoDraftLists.userId, userId),
     ));
   }
 

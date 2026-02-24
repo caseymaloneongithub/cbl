@@ -9823,6 +9823,88 @@ export async function registerRoutes(
     }
   });
 
+  // GET /api/drafts/:id/team-auto-draft-list - Get user's team auto-draft list
+  app.get("/api/drafts/:id/team-auto-draft-list", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const draftId = parseInt(req.params.id);
+      if (isNaN(draftId)) return res.status(400).json({ message: "Invalid draft ID" });
+      const list = await storage.getTeamAutoDraftList(draftId, userId);
+      res.json(list);
+    } catch (error) {
+      console.error("Error fetching team auto-draft list:", error);
+      res.status(500).json({ message: "Failed to fetch team auto-draft list" });
+    }
+  });
+
+  // POST /api/drafts/:id/team-auto-draft-list - Add an org to team auto-draft list
+  app.post("/api/drafts/:id/team-auto-draft-list", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const draftId = parseInt(req.params.id);
+      if (isNaN(draftId)) return res.status(400).json({ message: "Invalid draft ID" });
+      const { orgName, rosterType } = req.body;
+      if (!orgName) return res.status(400).json({ message: "orgName is required" });
+      const existing = await storage.getTeamAutoDraftList(draftId, userId);
+      if (existing.some(item => item.orgName === orgName)) {
+        return res.status(400).json({ message: "Organization is already in your team auto-draft list" });
+      }
+      const item = await storage.addTeamAutoDraftItem(draftId, userId, orgName, rosterType || "milb");
+      res.status(201).json(item);
+    } catch (error) {
+      console.error("Error adding to team auto-draft list:", error);
+      res.status(500).json({ message: "Failed to add to team auto-draft list" });
+    }
+  });
+
+  // DELETE /api/drafts/:id/team-auto-draft-list/:itemId - Remove from team auto-draft list
+  app.delete("/api/drafts/:id/team-auto-draft-list/:itemId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const draftId = parseInt(req.params.id);
+      const itemId = parseInt(req.params.itemId);
+      if (isNaN(itemId) || isNaN(draftId)) return res.status(400).json({ message: "Invalid ID" });
+      const list = await storage.getTeamAutoDraftList(draftId, userId);
+      const item = list.find(i => i.id === itemId);
+      if (!item) return res.status(403).json({ message: "Not authorized" });
+      await storage.removeTeamAutoDraftItem(itemId);
+      res.json({ message: "Removed from team auto-draft list" });
+    } catch (error) {
+      console.error("Error removing from team auto-draft list:", error);
+      res.status(500).json({ message: "Failed to remove from team auto-draft list" });
+    }
+  });
+
+  // PUT /api/drafts/:id/team-auto-draft-list/reorder - Reorder team auto-draft list
+  app.put("/api/drafts/:id/team-auto-draft-list/reorder", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const draftId = parseInt(req.params.id);
+      if (isNaN(draftId)) return res.status(400).json({ message: "Invalid draft ID" });
+      const { orderedIds } = req.body;
+      if (!Array.isArray(orderedIds)) return res.status(400).json({ message: "orderedIds must be an array" });
+      await storage.reorderTeamAutoDraftList(draftId, userId, orderedIds);
+      res.json({ message: "Team auto-draft list reordered" });
+    } catch (error) {
+      console.error("Error reordering team auto-draft list:", error);
+      res.status(500).json({ message: "Failed to reorder team auto-draft list" });
+    }
+  });
+
+  // DELETE /api/drafts/:id/team-auto-draft-list - Clear entire team auto-draft list
+  app.delete("/api/drafts/:id/team-auto-draft-list", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const draftId = parseInt(req.params.id);
+      if (isNaN(draftId)) return res.status(400).json({ message: "Invalid draft ID" });
+      await storage.clearTeamAutoDraftList(draftId, userId);
+      res.json({ message: "Team auto-draft list cleared" });
+    } catch (error) {
+      console.error("Error clearing team auto-draft list:", error);
+      res.status(500).json({ message: "Failed to clear team auto-draft list" });
+    }
+  });
+
   // GET /api/drafts/:id/email-opt-out - Check if user has opted out of draft round summary emails
   app.get("/api/drafts/:id/email-opt-out", isAuthenticated, async (req: any, res) => {
     try {
@@ -9929,9 +10011,28 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
     if (sortedOpen.length === 0) return false;
     const nextSlot = sortedOpen[0];
     const roundConfig = rounds.find((r: any) => r.roundNumber === nextSlot.round);
-    if (roundConfig?.isTeamDraft) return false;
-
     const slot = nextSlot;
+
+    if (roundConfig?.isTeamDraft) {
+      const claimedOrgs = new Set(
+        slots.filter((s: any) => !!s.selectedOrgName).map((s: any) => s.selectedOrgName as string)
+      );
+      const topTeamPick = await storage.getTopAvailableTeamAutoDraftPick(draftId, slot.userId, claimedOrgs);
+      if (!topTeamPick) return false;
+
+      await storage.fillSlotWithOrg(slot.id, slot.userId, topTeamPick.orgName, null, topTeamPick.rosterType as "mlb" | "milb", now);
+
+      const updatedSlots = await storage.getDraftPicks(draftId);
+      if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt)) {
+        await storage.updateDraft(draftId, { status: "completed" });
+      } else {
+        setTimeout(() => processAutoDraft(draftId, storage), 500);
+      }
+
+      checkAndSendRoundSummaryEmail(draftId, slot.round, storage).catch(() => {});
+      console.log(`[AutoDraft] Auto-drafted org "${topTeamPick.orgName}" for user ${slot.userId} in draft ${draftId}`);
+      return true;
+    }
 
     const topPick = await storage.getTopAvailableAutoDraftPick(draftId, slot.userId);
     if (!topPick) return false;
