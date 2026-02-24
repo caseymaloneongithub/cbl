@@ -298,6 +298,8 @@ export default function CommissionerDraftDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "rounds"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "picks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "timing"] });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -347,6 +349,8 @@ export default function CommissionerDraftDetail() {
     },
     onSuccess: () => {
       toast({ title: "Draft Resumed" });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "picks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "timing"] });
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", { leagueId: selectedLeagueId }] });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
