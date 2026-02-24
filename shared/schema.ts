@@ -651,6 +651,8 @@ export const draftPicks = pgTable("draft_picks", {
   deadlineAt: timestamp("deadline_at", { withTimezone: true }).notNull(),
   madeAt: timestamp("made_at", { withTimezone: true }),
   madeByUserId: varchar("made_by_user_id").references(() => users.id),
+  skippedAt: timestamp("skipped_at", { withTimezone: true }),
+  skippedByUserId: varchar("skipped_by_user_id").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
   index("idx_draft_picks_draft").on(table.draftId),
