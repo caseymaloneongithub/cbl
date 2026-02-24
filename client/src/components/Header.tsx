@@ -17,7 +17,7 @@ import { Diamond, LogOut, Menu, UserCog, X, Globe, Check, Building2, ChevronDown
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { User } from "@shared/schema";
+import type { User, DraftWithDetails } from "@shared/schema";
 
 function NavDropdown({ label, items, location: loc, testId }: {
   label: string;
@@ -73,7 +73,7 @@ export function Header() {
     isStartingImpersonation,
     isStoppingImpersonation,
   } = useAuth();
-  const { leagues, currentLeague, selectLeague, isLoadingLeagues, hasAnyCommissionerRole } = useLeague();
+  const { leagues, currentLeague, selectedLeagueId, selectLeague, isLoadingLeagues, hasAnyCommissionerRole } = useLeague();
   const [location] = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -88,6 +88,20 @@ export function Header() {
     },
     enabled: (isSuperAdmin || isImpersonating) && !!currentLeague?.id,
   });
+
+  const { data: drafts } = useQuery<DraftWithDetails[]>({
+    queryKey: ["/api/drafts", selectedLeagueId],
+    queryFn: async () => {
+      const res = await fetch(`/api/drafts?leagueId=${selectedLeagueId}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch drafts");
+      return res.json();
+    },
+    enabled: !!selectedLeagueId && isAuthenticated,
+    staleTime: 5_000,
+  });
+
+  const activeDraft = drafts?.find(d => d.status === "active" || d.status === "paused");
+  const draftHref = activeDraft ? `/draft/${activeDraft.id}` : "/drafts";
 
   const initials = user?.firstName && user?.lastName
     ? `${user.firstName[0]}${user.lastName[0]}`
@@ -190,7 +204,7 @@ export function Header() {
                 location={location}
                 testId="nav-players"
               />
-              <Link href="/drafts">
+              <Link href={draftHref}>
                 <Button
                   variant={location === "/drafts" || location.startsWith("/draft/") ? "secondary" : "ghost"}
                   size="sm"
@@ -306,7 +320,7 @@ export function Header() {
                       <div className="px-2 py-1">
                         <span className="text-xs text-muted-foreground font-medium">Drafts</span>
                       </div>
-                      <Link href="/drafts" onClick={() => setMobileMenuOpen(false)}>
+                      <Link href={draftHref} onClick={() => setMobileMenuOpen(false)}>
                         <Button
                           variant={location === "/drafts" || location.startsWith("/draft/") ? "secondary" : "ghost"}
                           className="w-full justify-start"
