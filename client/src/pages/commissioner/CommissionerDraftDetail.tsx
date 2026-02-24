@@ -1048,7 +1048,7 @@ export default function CommissionerDraftDetail() {
       )}
 
       {draft.status !== "completed" && draftRounds && draftRounds.length > 0 && (
-        <Card className="mb-6">
+        <Card className="mt-6 mb-6">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><ListOrdered className="h-5 w-5" />Round Configuration</CardTitle>
           </CardHeader>
