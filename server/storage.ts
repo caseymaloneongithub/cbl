@@ -66,6 +66,7 @@ import {
   type DraftWithDetails,
   type AutoDraftList,
   type AutoDraftListWithPlayer,
+  draftEmailOptOuts,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, lt, sql, isNull, inArray, or } from "drizzle-orm";
@@ -390,6 +391,11 @@ export interface IStorage {
   reorderAutoDraftList(draftId: number, userId: string, orderedIds: number[]): Promise<void>;
   getTopAvailableAutoDraftPick(draftId: number, userId: string): Promise<AutoDraftList | undefined>;
   clearAutoDraftItem(draftId: number, mlbPlayerId: number): Promise<void>;
+
+  // Draft email opt-outs
+  getDraftEmailOptOut(draftId: number, userId: string): Promise<boolean>;
+  setDraftEmailOptOut(draftId: number, userId: string, optedOut: boolean): Promise<void>;
+  getDraftOptedOutUserIds(draftId: number): Promise<string[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -4016,6 +4022,40 @@ export class DatabaseStorage implements IStorage {
       eq(autoDraftLists.draftId, draftId),
       eq(autoDraftLists.mlbPlayerId, mlbPlayerId),
     ));
+  }
+
+  async getDraftEmailOptOut(draftId: number, userId: string): Promise<boolean> {
+    const [optOut] = await db
+      .select()
+      .from(draftEmailOptOuts)
+      .where(and(
+        eq(draftEmailOptOuts.draftId, draftId),
+        eq(draftEmailOptOuts.userId, userId)
+      ))
+      .limit(1);
+    return !!optOut;
+  }
+
+  async setDraftEmailOptOut(draftId: number, userId: string, optedOut: boolean): Promise<void> {
+    if (optedOut) {
+      const existing = await this.getDraftEmailOptOut(draftId, userId);
+      if (!existing) {
+        await db.insert(draftEmailOptOuts).values({ draftId, userId });
+      }
+    } else {
+      await db.delete(draftEmailOptOuts).where(and(
+        eq(draftEmailOptOuts.draftId, draftId),
+        eq(draftEmailOptOuts.userId, userId)
+      ));
+    }
+  }
+
+  async getDraftOptedOutUserIds(draftId: number): Promise<string[]> {
+    const optOuts = await db
+      .select({ userId: draftEmailOptOuts.userId })
+      .from(draftEmailOptOuts)
+      .where(eq(draftEmailOptOuts.draftId, draftId));
+    return optOuts.map(o => o.userId);
   }
 }
 

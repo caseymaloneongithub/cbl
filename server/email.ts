@@ -365,3 +365,122 @@ This is an automated hourly summary from CBL Auctions.${optOutText}
     text,
   });
 }
+
+interface DraftRoundPick {
+  overallPickNumber: number;
+  playerName: string;
+  position: string;
+  mlbTeam: string;
+  ownerTeamName: string;
+  ownerName: string;
+  rosterType: string;
+  isOrgPick: boolean;
+  orgName?: string;
+}
+
+export async function sendDraftRoundSummaryEmail(
+  to: string,
+  recipientName: string,
+  draftName: string,
+  roundNumber: number,
+  picks: DraftRoundPick[],
+): Promise<{ success: boolean; error?: string }> {
+  const now = new Date();
+  const easternTime = now.toLocaleString('en-US', {
+    timeZone: 'America/New_York',
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  });
+
+  const pickRowsHtml = picks.map(p => `
+    <tr style="border-bottom: 1px solid #eee;">
+      <td style="padding: 8px; text-align: center; font-weight: bold; color: #666;">${p.overallPickNumber}</td>
+      <td style="padding: 8px;">${p.isOrgPick ? `<em>${p.orgName} (Team Draft)</em>` : p.playerName}</td>
+      <td style="padding: 8px;">${p.isOrgPick ? '-' : p.position}</td>
+      <td style="padding: 8px;">${p.isOrgPick ? '-' : p.mlbTeam}</td>
+      <td style="padding: 8px; font-weight: bold;">${p.ownerTeamName}</td>
+      <td style="padding: 8px; text-align: center;">
+        <span style="background: ${p.rosterType === 'mlb' ? '#1a5f2a' : '#666'}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">
+          ${p.rosterType === 'mlb' ? 'MLB' : 'MiLB'}
+        </span>
+      </td>
+    </tr>
+  `).join('');
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Draft Round ${roundNumber} Complete - ${draftName}</title>
+</head>
+<body style="font-family: 'Roboto', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 700px; margin: 0 auto; padding: 20px;">
+  <div style="background: linear-gradient(135deg, #1a5f2a 0%, #2d8f4a 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+    <h1 style="color: white; margin: 0; font-size: 24px;">CBL Auctions</h1>
+    <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 14px;">${draftName} - Round ${roundNumber} Complete</p>
+  </div>
+  
+  <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px;">
+    <p>Hi ${recipientName},</p>
+    
+    <p>Round ${roundNumber} of <strong>${draftName}</strong> has been completed. Here's a summary of all picks:</p>
+    
+    <div style="background: white; border: 1px solid #ddd; border-radius: 6px; padding: 0; margin: 20px 0; overflow: hidden;">
+      <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+          <tr style="background: #f0f0f0;">
+            <th style="padding: 10px; text-align: center; border-bottom: 2px solid #ddd; width: 40px;">#</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Player</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Pos</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">MLB Team</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Owner</th>
+            <th style="padding: 10px; text-align: center; border-bottom: 2px solid #ddd;">Roster</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${pickRowsHtml}
+        </tbody>
+      </table>
+    </div>
+    
+    <p style="color: #666; font-size: 13px;">Completed as of ${easternTime} ET</p>
+    
+    <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+    
+    <p style="color: #999; font-size: 12px; text-align: center;">
+      This is an automated draft round summary from CBL Auctions.<br>
+      You can opt out of these emails from the Draft Board.
+    </p>
+  </div>
+</body>
+</html>
+  `;
+
+  const pickLines = picks.map(p =>
+    p.isOrgPick
+      ? `  #${p.overallPickNumber} - ${p.orgName} (Team Draft) -> ${p.ownerTeamName} [${p.rosterType.toUpperCase()}]`
+      : `  #${p.overallPickNumber} - ${p.playerName} (${p.position}, ${p.mlbTeam}) -> ${p.ownerTeamName} [${p.rosterType.toUpperCase()}]`
+  ).join('\n');
+
+  const text = `
+Draft Round ${roundNumber} Complete - ${draftName}
+
+Hi ${recipientName},
+
+Round ${roundNumber} of ${draftName} has been completed. Here's a summary:
+
+${pickLines}
+
+Completed as of ${easternTime} ET
+
+You can opt out of these emails from the Draft Board.
+  `;
+
+  return sendEmail({
+    to,
+    subject: `${draftName} - Round ${roundNumber} Complete (${picks.length} picks)`,
+    html,
+    text,
+  });
+}

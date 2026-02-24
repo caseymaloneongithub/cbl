@@ -25,7 +25,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Clock, Search, Trophy, Users, Loader2, CheckCircle, Building2, AlertTriangle, ListOrdered, ArrowUp, ArrowDown, Plus, Trash2, Pause, Play } from "lucide-react";
+import { Clock, Search, Trophy, Users, Loader2, CheckCircle, Building2, AlertTriangle, ListOrdered, ArrowUp, ArrowDown, Plus, Trash2, Pause, Play, Bell, BellOff } from "lucide-react";
 import type { Draft, DraftRound, DraftPlayerWithDetails, DraftPickWithDetails, DraftOrder, User, AutoDraftListWithPlayer } from "@shared/schema";
 
 
@@ -282,6 +282,25 @@ export default function DraftBoard() {
     },
     enabled: !!draftIdNum,
     refetchInterval: DRAFT_POLL_INTERVAL,
+  });
+
+  const { data: emailOptOut } = useQuery<{ optedOut: boolean }>({
+    queryKey: ["/api/drafts", draftIdNum, "email-opt-out"],
+    queryFn: async () => {
+      const res = await fetch(`/api/drafts/${draftIdNum}/email-opt-out`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch email preference");
+      return res.json();
+    },
+    enabled: !!draftIdNum,
+  });
+
+  const toggleEmailOptOut = useMutation({
+    mutationFn: async (optedOut: boolean) => {
+      await apiRequest("PUT", `/api/drafts/${draftIdNum}/email-opt-out`, { optedOut });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "email-opt-out"] });
+    },
   });
 
   const autoDraftListIds = useMemo(() => {
@@ -812,8 +831,24 @@ export default function DraftBoard() {
                     )}
                   </div>
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  Set your priority order here. When you are on the clock, the system takes the highest available player in this list.
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-muted-foreground">
+                    Set your priority order here. When you are on the clock, the system takes the highest available player in this list.
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-xs shrink-0 ml-2"
+                    onClick={() => toggleEmailOptOut.mutate(!emailOptOut?.optedOut)}
+                    disabled={toggleEmailOptOut.isPending}
+                    data-testid="button-toggle-draft-email"
+                  >
+                    {emailOptOut?.optedOut ? (
+                      <><BellOff className="h-3.5 w-3.5 mr-1" /> Emails Off</>
+                    ) : (
+                      <><Bell className="h-3.5 w-3.5 mr-1" /> Round Emails</>
+                    )}
+                  </Button>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="relative min-w-[220px] flex-1">

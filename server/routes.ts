@@ -26,6 +26,7 @@ import { fromZonedTime } from "date-fns-tz";
 import { parse, isValid, format } from "date-fns";
 import crypto from "crypto";
 import { syncPlayerStatsFromMLB, testMLBConnection, fetchAllAffiliatedPlayers } from "./mlb-api";
+import { sendDraftRoundSummaryEmail } from "./email";
 import fs from "fs/promises";
 import path from "path";
 
@@ -9564,6 +9565,8 @@ export async function registerRoutes(
         setTimeout(() => processAutoDraft(id, storage), 500);
       }
 
+      checkAndSendRoundSummaryEmail(id, slot.round, storage).catch(() => {});
+
       res.status(201).json(pickResponse);
     } catch (error) {
       console.error("Error making draft pick:", error);
@@ -9624,6 +9627,7 @@ export async function registerRoutes(
         if (allSlots.length > 0 && allSlots.every((s) => !!s.madeAt)) {
           await storage.updateDraft(id, { status: "completed" });
         }
+        checkAndSendRoundSummaryEmail(id, slot.round, storage).catch(() => {});
         return res.status(201).json({
           teamDraft: true,
           slot: result.slot,
@@ -9649,6 +9653,7 @@ export async function registerRoutes(
       } else {
         setTimeout(() => processAutoDraft(id, storage), 500);
       }
+      checkAndSendRoundSummaryEmail(id, slot.round, storage).catch(() => {});
       res.status(201).json(updatedSlot);
     } catch (error) {
       console.error("Error making commissioner pick:", error);
@@ -9818,7 +9823,96 @@ export async function registerRoutes(
     }
   });
 
+  // GET /api/drafts/:id/email-opt-out - Check if user has opted out of draft round summary emails
+  app.get("/api/drafts/:id/email-opt-out", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid draft ID" });
+      const optedOut = await storage.getDraftEmailOptOut(id, userId);
+      res.json({ optedOut });
+    } catch (error) {
+      console.error("Error checking draft email opt-out:", error);
+      res.status(500).json({ message: "Failed to check email preference" });
+    }
+  });
+
+  // PUT /api/drafts/:id/email-opt-out - Toggle draft round summary email opt-out
+  app.put("/api/drafts/:id/email-opt-out", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid draft ID" });
+      const { optedOut } = req.body;
+      if (typeof optedOut !== "boolean") return res.status(400).json({ message: "optedOut must be a boolean" });
+      await storage.setDraftEmailOptOut(id, userId, optedOut);
+      res.json({ optedOut });
+    } catch (error) {
+      console.error("Error updating draft email opt-out:", error);
+      res.status(500).json({ message: "Failed to update email preference" });
+    }
+  });
+
   return httpServer;
+}
+
+const sentRoundEmails = new Set<string>();
+
+async function checkAndSendRoundSummaryEmail(draftId: number, completedPickRound: number, storage: any): Promise<void> {
+  try {
+    const emailKey = `${draftId}-${completedPickRound}`;
+    if (sentRoundEmails.has(emailKey)) return;
+
+    const allSlots = await storage.getDraftPicks(draftId);
+    const roundSlots = allSlots.filter((s: any) => s.round === completedPickRound);
+    const allRoundComplete = roundSlots.length > 0 && roundSlots.every((s: any) => !!s.madeAt);
+    if (!allRoundComplete) return;
+
+    sentRoundEmails.add(emailKey);
+
+    const draft = await storage.getDraft(draftId);
+    if (!draft) return;
+
+    const isDev = process.env.NODE_ENV === "development";
+
+    let recipients: Array<{ email: string; firstName: string | null; userId: string }> = [];
+    if (isDev) {
+      const superAdmin = await storage.getSuperAdmin();
+      if (superAdmin?.email) {
+        recipients = [{ email: superAdmin.email, firstName: superAdmin.firstName, userId: superAdmin.id }];
+      }
+    } else {
+      const allMembers = await storage.getLeagueMembersEmails(draft.leagueId);
+      const optedOut = await storage.getDraftOptedOutUserIds(draftId);
+      const optedOutSet = new Set(optedOut);
+      recipients = allMembers.filter((m: any) => !optedOutSet.has(m.userId));
+    }
+
+    if (recipients.length === 0) return;
+
+    const picks = roundSlots
+      .sort((a: any, b: any) => a.overallPickNumber - b.overallPickNumber)
+      .map((s: any) => ({
+        overallPickNumber: s.overallPickNumber,
+        playerName: s.player?.fullName || "Unknown",
+        position: s.player?.primaryPosition || "-",
+        mlbTeam: s.player?.parentOrgName || "-",
+        ownerTeamName: s.user?.teamName || `${s.user?.firstName || ""} ${s.user?.lastName || ""}`.trim() || "Unknown",
+        ownerName: `${s.user?.firstName || ""} ${s.user?.lastName || ""}`.trim() || "Unknown",
+        rosterType: s.rosterType || "milb",
+        isOrgPick: !!s.selectedOrgName,
+        orgName: s.selectedOrgName || undefined,
+      }));
+
+    console.log(`[DraftEmail] Round ${completedPickRound} of draft ${draftId} complete. Sending summary to ${recipients.length} recipient(s)${isDev ? " (dev mode - super admin only)" : ""}`);
+
+    for (const recipient of recipients) {
+      const name = recipient.firstName || "Owner";
+      await sendDraftRoundSummaryEmail(recipient.email, name, draft.name, completedPickRound, picks);
+    }
+  } catch (error) {
+    console.error("[DraftEmail] Error sending round summary email:", error);
+  }
 }
 
 async function processAutoDraft(draftId: number, storage: any): Promise<boolean> {
@@ -9850,6 +9944,8 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
     } else {
       setTimeout(() => processAutoDraft(draftId, storage), 500);
     }
+
+    checkAndSendRoundSummaryEmail(draftId, slot.round, storage).catch(() => {});
 
     console.log(`[AutoDraft] Auto-drafted player ${topPick.mlbPlayerId} for user ${slot.userId} in draft ${draftId}`);
     return true;

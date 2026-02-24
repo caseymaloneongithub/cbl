@@ -379,6 +379,33 @@ export const bidBundleItemsRelations = relations(bidBundleItems, ({ one }) => ({
   }),
 }));
 
+// Draft email opt-outs table - tracks users who have opted out of draft round summary emails
+export const draftEmailOptOuts = pgTable("draft_email_opt_outs", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  draftId: integer("draft_id").references(() => drafts.id, { onDelete: "cascade" }).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  uniqueIndex("uq_draft_email_opt_out").on(table.draftId, table.userId),
+]);
+
+export const draftEmailOptOutsRelations = relations(draftEmailOptOuts, ({ one }) => ({
+  draft: one(drafts, {
+    fields: [draftEmailOptOuts.draftId],
+    references: [drafts.id],
+  }),
+  user: one(users, {
+    fields: [draftEmailOptOuts.userId],
+    references: [users.id],
+  }),
+}));
+
+export const insertDraftEmailOptOutSchema = (createInsertSchema(draftEmailOptOuts) as any).omit({
+  id: true,
+  createdAt: true,
+});
+export type DraftEmailOptOut = typeof draftEmailOptOuts.$inferSelect;
+
 // Email opt-outs table - tracks users who have opted out of email notifications per auction
 export const emailOptOuts = pgTable("email_opt_outs", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
