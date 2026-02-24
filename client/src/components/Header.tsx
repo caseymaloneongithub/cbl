@@ -193,6 +193,15 @@ export function Header() {
 
           {isAuthenticated && (
             <nav className="hidden md:flex items-center gap-1">
+              <Link href={draftHref}>
+                <Button
+                  variant={location === "/drafts" || location.startsWith("/draft/") ? "secondary" : "ghost"}
+                  size="sm"
+                  data-testid="nav-drafts"
+                >
+                  Draft
+                </Button>
+              </Link>
               <NavDropdown
                 label="My Roster"
                 items={myRosterItems}
@@ -205,15 +214,6 @@ export function Header() {
                 location={location}
                 testId="nav-players"
               />
-              <Link href={draftHref}>
-                <Button
-                  variant={location === "/drafts" || location.startsWith("/draft/") ? "secondary" : "ghost"}
-                  size="sm"
-                  data-testid="nav-drafts"
-                >
-                  Draft
-                </Button>
-              </Link>
               <NavDropdown
                 label="Free Agency"
                 items={freeAgencyItems}
@@ -283,6 +283,19 @@ export function Header() {
                         </>
                       )}
                       <div className="px-2 py-1">
+                        <span className="text-xs text-muted-foreground font-medium">Drafts</span>
+                      </div>
+                      <Link href={draftHref} onClick={() => setMobileMenuOpen(false)}>
+                        <Button
+                          variant={location === "/drafts" || location.startsWith("/draft/") ? "secondary" : "ghost"}
+                          className="w-full justify-start"
+                          size="sm"
+                        >
+                          Draft
+                        </Button>
+                      </Link>
+                      <div className="border-b my-2" />
+                      <div className="px-2 py-1">
                         <span className="text-xs text-muted-foreground font-medium">My Roster</span>
                       </div>
                       {myRosterItems.map((link) => {
@@ -317,19 +330,6 @@ export function Header() {
                           </Link>
                         );
                       })}
-                      <div className="border-b my-2" />
-                      <div className="px-2 py-1">
-                        <span className="text-xs text-muted-foreground font-medium">Drafts</span>
-                      </div>
-                      <Link href={draftHref} onClick={() => setMobileMenuOpen(false)}>
-                        <Button
-                          variant={location === "/drafts" || location.startsWith("/draft/") ? "secondary" : "ghost"}
-                          className="w-full justify-start"
-                          size="sm"
-                        >
-                          Draft
-                        </Button>
-                      </Link>
                       <div className="border-b my-2" />
                       <div className="px-2 py-1">
                         <span className="text-xs text-muted-foreground font-medium">Free Agency</span>
