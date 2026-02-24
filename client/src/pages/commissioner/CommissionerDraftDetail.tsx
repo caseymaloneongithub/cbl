@@ -31,7 +31,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import type { DraftWithDetails, DraftPlayerWithDetails, DraftPickWithDetails, DraftRound, DraftOrder, User, LeagueMember } from "@shared/schema";
 import {
   ArrowLeft, Loader2, Trash2, Play, Pause, Upload, Users, ListOrdered,
-  FileSpreadsheet, Clock, X, UserPlus, Download,
+  FileSpreadsheet, Clock, X, UserPlus, Download, ClipboardCheck,
 } from "lucide-react";
 
 function RoundConfigRow({ round, roundEntries, onUpdate, onDelete, canDelete, showDelete, formatCentralInput }: {
@@ -363,6 +363,18 @@ export default function CommissionerDraftDetail() {
     },
     onSuccess: () => {
       toast({ title: "Draft Completed" });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", { leagueId: selectedLeagueId }] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const assignPicks = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/drafts/${draftId}/assign-picks`);
+      return res.json();
+    },
+    onSuccess: (data: { assignedCount: number }) => {
+      toast({ title: "Picks Assigned", description: `${data.assignedCount} players assigned to rosters` });
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", { leagueId: selectedLeagueId }] });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -1166,6 +1178,27 @@ export default function CommissionerDraftDetail() {
                       </AlertDialogContent>
                     </AlertDialog>
                   </>
+                )}
+                {draft.status === "completed" && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button disabled={assignPicks.isPending} data-testid="button-assign-picks">
+                        {assignPicks.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Assigning...</> : <><ClipboardCheck className="h-4 w-4 mr-2" />Assign Picks to Rosters</>}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Assign Picks to Rosters</AlertDialogTitle>
+                        <AlertDialogDescription>This will assign all drafted players to their respective team rosters for the {draft.season} season. Players already on rosters will be skipped.</AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => assignPicks.mutate()} data-testid="button-confirm-assign-picks">
+                          Assign Picks
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 )}
               </div>
             </CardHeader>
