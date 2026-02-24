@@ -20,6 +20,7 @@ export default function Drafts() {
       return res.json();
     },
     enabled: !!selectedLeagueId,
+    staleTime: 30_000,
   });
 
   const statusIcon = (status: string) => {
