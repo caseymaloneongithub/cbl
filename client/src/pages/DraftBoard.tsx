@@ -246,7 +246,7 @@ export default function DraftBoard() {
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "order"] });
       setPickDialogOpen(false);
       setSelectedPlayer(null);
-      setRosterType("mlb");
+      setRosterType("milb");
     },
     onError: (error: Error) => {
       toast({ title: "Pick failed", description: error.message, variant: "destructive" });
@@ -393,7 +393,7 @@ export default function DraftBoard() {
 
   const handlePickClick = (player: DraftPlayerWithDetails) => {
     setSelectedPlayer(player);
-    setRosterType("mlb");
+    setRosterType("milb");
     setPickDialogOpen(true);
   };
 
