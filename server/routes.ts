@@ -9469,11 +9469,26 @@ export async function registerRoutes(
       const now = new Date();
       const slots = await storage.getDraftPicks(id);
 
-      const unmadeSlots = slots
-        .filter((slot) => !slot.madeAt)
-        .sort((a, b) => a.overallPickNumber - b.overallPickNumber);
+      const sortedSlots = [...slots].sort((a, b) => a.overallPickNumber - b.overallPickNumber);
+      const unmadeSlots = sortedSlots.filter((slot) => !slot.madeAt);
 
-      const currentSlot = unmadeSlots.find(slot => !slot.skippedAt) || null;
+      const nextUnskipped = unmadeSlots.find(slot => !slot.skippedAt) || null;
+
+      let currentSlot: typeof nextUnskipped = null;
+      if (nextUnskipped) {
+        const isFirstPick = nextUnskipped.overallPickNumber === 1;
+        const allPreviousResolved = sortedSlots
+          .filter(s => s.overallPickNumber < nextUnskipped.overallPickNumber)
+          .every(s => !!s.madeAt || !!s.skippedAt);
+
+        if (isFirstPick) {
+          if (new Date(nextUnskipped.scheduledAt).getTime() <= now.getTime()) {
+            currentSlot = nextUnskipped;
+          }
+        } else if (allPreviousResolved) {
+          currentSlot = nextUnskipped;
+        }
+      }
 
       const openSlots = unmadeSlots
         .filter((slot) => new Date(slot.scheduledAt).getTime() <= now.getTime());
@@ -9575,6 +9590,11 @@ export async function registerRoutes(
       }
 
       const allSlots = await storage.getDraftPicks(id);
+
+      if (slot.overallPickNumber === 1 && new Date(slot.scheduledAt).getTime() > now.getTime()) {
+        return res.status(400).json({ message: "The draft has not started yet" });
+      }
+
       const previousUnmade = allSlots.find((s) => s.overallPickNumber < slot.overallPickNumber && !s.madeAt && !s.skippedAt);
       if (previousUnmade && !slot.skippedAt) {
         return res.status(400).json({ message: "Previous picks must be completed before making this pick" });
@@ -10068,11 +10088,21 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
     const now = new Date();
     const slots = await storage.getDraftPicks(draftId);
     const rounds = await storage.getDraftRounds(draftId);
-    const sortedOpen = slots
-      .filter((s: any) => !s.madeAt && !s.skippedAt)
-      .sort((a: any, b: any) => a.overallPickNumber - b.overallPickNumber);
+    const allSorted = [...slots].sort((a: any, b: any) => a.overallPickNumber - b.overallPickNumber);
+    const sortedOpen = allSorted
+      .filter((s: any) => !s.madeAt && !s.skippedAt);
     if (sortedOpen.length === 0) return false;
     const nextSlot = sortedOpen[0];
+
+    if (nextSlot.overallPickNumber === 1 && new Date(nextSlot.scheduledAt).getTime() > now.getTime()) {
+      return false;
+    }
+
+    const allPreviousResolved = allSorted
+      .filter((s: any) => s.overallPickNumber < nextSlot.overallPickNumber)
+      .every((s: any) => !!s.madeAt || !!s.skippedAt);
+    if (!allPreviousResolved) return false;
+
     const roundConfig = rounds.find((r: any) => r.roundNumber === nextSlot.round);
     const slot = nextSlot;
 
