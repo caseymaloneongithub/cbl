@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
@@ -136,6 +136,12 @@ export default function DraftBoard() {
   const currentSlot = useMemo(() => {
     return timingInfo?.currentSlot || null;
   }, [timingInfo]);
+
+  const getRoundLabel = useCallback((roundNumber: number, pickIndex: number) => {
+    const round = draftRounds?.find(r => r.roundNumber === roundNumber);
+    const name = round?.name || `Round ${roundNumber}`;
+    return `${name}.${pickIndex + 1}`;
+  }, [draftRounds]);
 
   const currentRoundConfig = useMemo(() => {
     if (!currentSlot || !draftRounds) return null;
@@ -615,7 +621,7 @@ export default function DraftBoard() {
                 <TableHeader>
                   <TableRow className="bg-muted/50">
                     <TableHead className="font-semibold">Pick</TableHead>
-                    <TableHead className="font-semibold">Rd</TableHead>
+                    <TableHead className="font-semibold">Round</TableHead>
                     <TableHead className="font-semibold">Team</TableHead>
                     <TableHead className="font-semibold">Player</TableHead>
                     <TableHead className="font-semibold">Pos</TableHead>
@@ -627,7 +633,7 @@ export default function DraftBoard() {
                   {filledPicks.map((pick) => (
                     <TableRow key={pick.id} data-testid={`row-pick-${pick.id}`}>
                       <TableCell className="font-mono">{pick.overallPickNumber}</TableCell>
-                      <TableCell className="font-mono">{pick.round}</TableCell>
+                      <TableCell className="font-mono">{getRoundLabel(pick.round, pick.roundPickIndex)}</TableCell>
                       <TableCell className="font-medium">{pick.user.teamName || `${pick.user.firstName} ${pick.user.lastName}`}</TableCell>
                       <TableCell className="font-medium">{pick.player?.fullName || pick.selectedOrgName || "-"}</TableCell>
                       <TableCell>{pick.player?.primaryPosition || (pick.selectedOrgName ? "Org Claim" : "-")}</TableCell>
@@ -811,7 +817,7 @@ export default function DraftBoard() {
             <div className="flex flex-wrap gap-4">
               {upcomingPicks.map((slot, idx) => (
                 <div key={slot.id} className="flex items-center gap-2" data-testid={`upcoming-pick-${idx}`}>
-                  <span className="text-xs font-mono text-muted-foreground">{slot.round}.{slot.roundPickIndex + 1}</span>
+                  <span className="text-xs font-mono text-muted-foreground">{getRoundLabel(slot.round, slot.roundPickIndex)}</span>
                   <span className={`text-sm font-medium ${slot.userId === user?.id ? "text-primary" : ""}`}>
                     {slot.user.teamName || `${slot.user.firstName} ${slot.user.lastName}`}
                   </span>
@@ -869,7 +875,7 @@ export default function DraftBoard() {
                       {[...filledPicks].reverse().map((pick) => (
                         <TableRow key={pick.id} data-testid={`row-pick-${pick.id}`}>
                           <TableCell className="font-mono text-xs">
-                            {pick.round}.{pick.roundPickIndex + 1}
+                            {getRoundLabel(pick.round, pick.roundPickIndex)}
                           </TableCell>
                           <TableCell className="text-sm font-medium">
                             {pick.user.teamName || `${pick.user.firstName}`}
@@ -915,7 +921,7 @@ export default function DraftBoard() {
                   <TableBody>
                     {myPicks.map((slot) => (
                       <TableRow key={slot.id} data-testid={`row-my-pick-${slot.id}`}>
-                        <TableCell className="font-mono text-xs">{slot.round}.{slot.roundPickIndex + 1}</TableCell>
+                        <TableCell className="font-mono text-xs">{getRoundLabel(slot.round, slot.roundPickIndex)}</TableCell>
                         <TableCell>
                           {slot.madeAt ? (
                             <>

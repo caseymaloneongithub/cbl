@@ -652,6 +652,12 @@ export default function CommissionerDraftDetail() {
     return eligible[0] || null;
   }, [commPickUserId, draftPicks]);
 
+  const getRoundLabel = useCallback((roundNumber: number, pickIndex: number) => {
+    const round = draftRounds?.find(r => r.roundNumber === roundNumber);
+    const name = round?.name || `Round ${roundNumber}`;
+    return `${name}.${pickIndex + 1}`;
+  }, [draftRounds]);
+
   const commissionerSlotRound = useMemo(() => {
     if (!commissionerTargetSlot || !draftRounds) return null;
     return draftRounds.find((r) => r.roundNumber === commissionerTargetSlot.round) || null;
@@ -1168,7 +1174,7 @@ export default function CommissionerDraftDetail() {
                 <p className="text-sm text-muted-foreground mb-4">
                   {draft.status === "paused" && <span className="text-destructive font-medium mr-2">Draft is paused.</span>}
                   {nextOpenSlot
-                    ? `Next open slot: Round ${nextOpenSlot.round}, Pick ${nextOpenSlot.roundPickIndex + 1} (Overall ${nextOpenSlot.overallPickNumber})`
+                    ? `Next open slot: ${getRoundLabel(nextOpenSlot.round, nextOpenSlot.roundPickIndex)} (Overall ${nextOpenSlot.overallPickNumber})`
                     : "All slots are currently filled"}
                 </p>
               )}
@@ -1190,7 +1196,7 @@ export default function CommissionerDraftDetail() {
                       {draftPicks.map(pick => (
                         <TableRow key={pick.id} data-testid={`row-pick-${pick.id}`}>
                           <TableCell className="font-mono">{pick.overallPickNumber}</TableCell>
-                          <TableCell className="font-mono">{pick.round}</TableCell>
+                          <TableCell className="font-mono">{getRoundLabel(pick.round, pick.roundPickIndex)}</TableCell>
                           <TableCell className="font-medium">{pick.user.teamName || `${pick.user.firstName} ${pick.user.lastName}`}</TableCell>
                           <TableCell>{pick.player?.fullName || pick.selectedOrgName || <span className="text-muted-foreground">Unfilled</span>}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{new Date(pick.scheduledAt).toLocaleString()}</TableCell>
@@ -1270,7 +1276,7 @@ export default function CommissionerDraftDetail() {
             </div>
             {commissionerTargetSlot && (
               <div className="text-sm text-muted-foreground">
-                Slot: Round {commissionerTargetSlot.round}, Pick {commissionerTargetSlot.roundPickIndex + 1} (Overall {commissionerTargetSlot.overallPickNumber})
+                Slot: {getRoundLabel(commissionerTargetSlot.round, commissionerTargetSlot.roundPickIndex)} (Overall {commissionerTargetSlot.overallPickNumber})
               </div>
             )}
             {!commissionerTargetSlot && commPickUserId && (
