@@ -1041,26 +1041,29 @@ export default function DraftBoard() {
                               )}
                             </TableCell>
                             <TableCell className="text-right">
-                              {!isDrafted && (
                               <div className="flex items-center justify-end gap-0">
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => moveAutoDraftItem(idx, "up")}
-                                  disabled={idx === 0 || reorderAutoDraft.isPending}
-                                  data-testid={`button-auto-draft-up-${item.id}`}
-                                >
-                                  <ArrowUp className="h-3 w-3" />
-                                </Button>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => moveAutoDraftItem(idx, "down")}
-                                  disabled={idx === autoDraftList.length - 1 || reorderAutoDraft.isPending}
-                                  data-testid={`button-auto-draft-down-${item.id}`}
-                                >
-                                  <ArrowDown className="h-3 w-3" />
-                                </Button>
+                                {!isDrafted && (
+                                  <>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      onClick={() => moveAutoDraftItem(idx, "up")}
+                                      disabled={idx === 0 || reorderAutoDraft.isPending}
+                                      data-testid={`button-auto-draft-up-${item.id}`}
+                                    >
+                                      <ArrowUp className="h-3 w-3" />
+                                    </Button>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      onClick={() => moveAutoDraftItem(idx, "down")}
+                                      disabled={idx === autoDraftList.length - 1 || reorderAutoDraft.isPending}
+                                      data-testid={`button-auto-draft-down-${item.id}`}
+                                    >
+                                      <ArrowDown className="h-3 w-3" />
+                                    </Button>
+                                  </>
+                                )}
                                 <Button
                                   size="icon"
                                   variant="ghost"
@@ -1071,7 +1074,6 @@ export default function DraftBoard() {
                                   <Trash2 className="h-3 w-3" />
                                 </Button>
                               </div>
-                              )}
                             </TableCell>
                           </TableRow>
                           );
@@ -1217,26 +1219,29 @@ export default function DraftBoard() {
                               )}
                             </TableCell>
                             <TableCell className="text-right">
-                              {!isClaimed && (
                               <div className="flex items-center justify-end gap-0">
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => moveTeamAutoDraftItem(idx, "up")}
-                                  disabled={idx === 0 || reorderTeamAutoDraft.isPending}
-                                  data-testid={`button-team-auto-draft-up-${item.id}`}
-                                >
-                                  <ArrowUp className="h-3 w-3" />
-                                </Button>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => moveTeamAutoDraftItem(idx, "down")}
-                                  disabled={idx === teamAutoDraftList.length - 1 || reorderTeamAutoDraft.isPending}
-                                  data-testid={`button-team-auto-draft-down-${item.id}`}
-                                >
-                                  <ArrowDown className="h-3 w-3" />
-                                </Button>
+                                {!isClaimed && (
+                                  <>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      onClick={() => moveTeamAutoDraftItem(idx, "up")}
+                                      disabled={idx === 0 || reorderTeamAutoDraft.isPending}
+                                      data-testid={`button-team-auto-draft-up-${item.id}`}
+                                    >
+                                      <ArrowUp className="h-3 w-3" />
+                                    </Button>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      onClick={() => moveTeamAutoDraftItem(idx, "down")}
+                                      disabled={idx === teamAutoDraftList.length - 1 || reorderTeamAutoDraft.isPending}
+                                      data-testid={`button-team-auto-draft-down-${item.id}`}
+                                    >
+                                      <ArrowDown className="h-3 w-3" />
+                                    </Button>
+                                  </>
+                                )}
                                 <Button
                                   size="icon"
                                   variant="ghost"
@@ -1247,7 +1252,6 @@ export default function DraftBoard() {
                                   <Trash2 className="h-3 w-3" />
                                 </Button>
                               </div>
-                              )}
                             </TableCell>
                           </TableRow>
                           );
