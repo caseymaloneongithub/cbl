@@ -12,7 +12,7 @@ export default function Drafts() {
   const { selectedLeagueId, currentLeague } = useLeague();
   const [, navigate] = useLocation();
 
-  const { data: drafts, isLoading } = useQuery<DraftWithDetails[]>({
+  const { data: drafts, isLoading, error } = useQuery<DraftWithDetails[]>({
     queryKey: ["/api/drafts", selectedLeagueId],
     queryFn: async () => {
       const res = await fetch(`/api/drafts?leagueId=${selectedLeagueId}`, { credentials: "include" });
@@ -50,6 +50,13 @@ export default function Drafts() {
           <Skeleton className="h-20 w-full" />
           <Skeleton className="h-20 w-full" />
         </div>
+      ) : error ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <p className="text-destructive mb-2">Failed to load drafts</p>
+            <p className="text-sm text-muted-foreground">{(error as Error).message}</p>
+          </CardContent>
+        </Card>
       ) : drafts && drafts.length > 0 ? (
         <div className="space-y-3">
           {drafts.map(draft => (
