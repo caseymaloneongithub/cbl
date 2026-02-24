@@ -536,7 +536,7 @@ export const drafts = pgTable("drafts", {
   season: integer("season").notNull(),
   rounds: integer("rounds").notNull().default(1),
   snake: boolean("snake").notNull().default(false),
-  status: varchar("status", { length: 20 }).notNull().default("setup"), // 'setup', 'active', 'completed'
+  status: varchar("status", { length: 20 }).notNull().default("setup"), // 'setup', 'active', 'paused', 'completed'
   pickDurationMinutes: integer("pick_duration_minutes").notNull().default(30),
   teamDraftRound: integer("team_draft_round"),
   currentRound: integer("current_round").notNull().default(1),

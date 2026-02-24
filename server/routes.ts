@@ -8847,6 +8847,66 @@ export async function registerRoutes(
     }
   });
 
+  // POST /api/drafts/:id/pause - Pause an active draft
+  app.post("/api/drafts/:id/pause", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid draft ID" });
+      }
+
+      const draft = await storage.getDraft(id);
+      if (!draft) {
+        return res.status(404).json({ message: "Draft not found" });
+      }
+
+      if (draft.status !== "active") {
+        return res.status(400).json({ message: "Draft must be active to pause" });
+      }
+
+      if (!await hasLeagueCommissionerAccess(userId, draft.leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const updated = await storage.updateDraft(id, { status: "paused" });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error pausing draft:", error);
+      res.status(500).json({ message: "Failed to pause draft" });
+    }
+  });
+
+  // POST /api/drafts/:id/resume - Resume a paused draft
+  app.post("/api/drafts/:id/resume", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid draft ID" });
+      }
+
+      const draft = await storage.getDraft(id);
+      if (!draft) {
+        return res.status(404).json({ message: "Draft not found" });
+      }
+
+      if (draft.status !== "paused") {
+        return res.status(400).json({ message: "Draft must be paused to resume" });
+      }
+
+      if (!await hasLeagueCommissionerAccess(userId, draft.leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const updated = await storage.updateDraft(id, { status: "active" });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error resuming draft:", error);
+      res.status(500).json({ message: "Failed to resume draft" });
+    }
+  });
+
   // GET /api/drafts/:id/players - Get draft player pool
   app.get("/api/drafts/:id/players", isAuthenticated, async (req: any, res) => {
     try {
@@ -9094,7 +9154,7 @@ export async function registerRoutes(
 
       const draft = await storage.getDraft(id);
       if (!draft) return res.status(404).json({ message: "Draft not found" });
-      if (draft.status !== "setup") return res.status(400).json({ message: "Draft must be in setup status" });
+      if (draft.status === "completed") return res.status(400).json({ message: "Cannot edit rounds for a completed draft" });
       if (!await hasLeagueCommissionerAccess(userId, draft.leagueId)) {
         return res.status(403).json({ message: "Commissioner access required" });
       }

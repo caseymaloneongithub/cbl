@@ -479,8 +479,8 @@ export default function DraftBoard() {
       <div className="mb-4">
         <h1 className="text-2xl font-bold" data-testid="text-draft-name">{draft.name}</h1>
         <div className="flex flex-wrap items-center gap-2 mt-1">
-          <Badge variant={draft.status === "active" ? "default" : "secondary"} data-testid="badge-draft-status">
-            {draft.status === "active" ? "Live" : draft.status}
+          <Badge variant={draft.status === "active" ? "default" : draft.status === "paused" ? "destructive" : "secondary"} data-testid="badge-draft-status">
+            {draft.status === "active" ? "Live" : draft.status === "paused" ? "Paused" : draft.status}
           </Badge>
           <span className="text-muted-foreground text-sm" data-testid="text-round-info">
             {currentSlot ? `${roundName} (Round ${currentSlot.round} of ${draft.rounds})` : "Waiting for first slot to open"}

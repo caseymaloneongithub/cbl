@@ -29,16 +29,17 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatInTimeZone } from "date-fns-tz";
 import type { DraftWithDetails, DraftPlayerWithDetails, DraftPickWithDetails, DraftRound, DraftOrder, User, LeagueMember } from "@shared/schema";
 import {
-  ArrowLeft, Loader2, Trash2, Play, Upload, Users, ListOrdered,
+  ArrowLeft, Loader2, Trash2, Play, Pause, Upload, Users, ListOrdered,
   FileSpreadsheet, Clock, X, UserPlus, Download,
 } from "lucide-react";
 
-function RoundConfigRow({ round, roundEntries, onUpdate, onDelete, canDelete, formatCentralInput }: {
+function RoundConfigRow({ round, roundEntries, onUpdate, onDelete, canDelete, showDelete, formatCentralInput }: {
   round: DraftRound;
   roundEntries: (DraftOrder & { user: User })[];
   onUpdate: (data: Record<string, any>) => void;
   onDelete: () => void;
   canDelete: boolean;
+  showDelete: boolean;
   formatCentralInput: (time: any) => string;
 }) {
   const [localName, setLocalName] = useState(round.name);
@@ -108,18 +109,20 @@ function RoundConfigRow({ round, roundEntries, onUpdate, onDelete, canDelete, fo
           ))}
         </div>
       </TableCell>
-      <TableCell>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 text-destructive hover:text-destructive"
-          disabled={!canDelete}
-          onClick={onDelete}
-          data-testid={`btn-delete-round-${round.id}`}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </TableCell>
+      {showDelete && (
+        <TableCell>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-destructive hover:text-destructive"
+            disabled={!canDelete}
+            onClick={onDelete}
+            data-testid={`btn-delete-round-${round.id}`}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </TableCell>
+      )}
     </TableRow>
   );
 }
@@ -179,7 +182,7 @@ export default function CommissionerDraftDetail() {
       if (!res.ok) throw new Error("Failed to fetch order");
       return res.json();
     },
-    enabled: !!draftId && draft?.status === "setup",
+    enabled: !!draftId && draft?.status !== "completed",
   });
 
   const { data: draftPicks } = useQuery<DraftPickWithDetails[]>({
@@ -319,6 +322,30 @@ export default function CommissionerDraftDetail() {
     },
     onSuccess: () => {
       toast({ title: "Draft Started" });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", selectedLeagueId] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const pauseDraft = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/drafts/${draftId}/pause`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Draft Paused" });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", selectedLeagueId] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const resumeDraft = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/drafts/${draftId}/resume`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Draft Resumed" });
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", selectedLeagueId] });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -697,7 +724,7 @@ export default function CommissionerDraftDetail() {
   if (!draft) return null;
 
   const statusBadge = (status: string) => {
-    const variant = status === "active" ? "default" : status === "completed" ? "secondary" : "outline";
+    const variant = status === "active" ? "default" : status === "paused" ? "destructive" : status === "completed" ? "secondary" : "outline";
     return <Badge variant={variant}>{status.charAt(0).toUpperCase() + status.slice(1)}</Badge>;
   };
 
@@ -980,55 +1007,6 @@ export default function CommissionerDraftDetail() {
             </CardContent>
           </Card>
 
-          {draftRounds && draftRounds.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2"><ListOrdered className="h-5 w-5" />Round Configuration</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="border rounded-md overflow-hidden overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-12">#</TableHead>
-                        <TableHead className="min-w-[140px]">Round Name</TableHead>
-                        <TableHead className="w-28 text-center">Team Draft</TableHead>
-                        <TableHead className="min-w-[200px]">Start Date/Time (CT)</TableHead>
-                        <TableHead className="min-w-[100px]">Pick Duration</TableHead>
-                        <TableHead className="min-w-[200px]">Order Preview</TableHead>
-                        <TableHead className="w-10"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {draftRounds.map(round => (
-                        <RoundConfigRow
-                          key={round.id}
-                          round={round}
-                          roundEntries={orderByRound(round.roundNumber)}
-                          onUpdate={(data) => updateRound.mutate({ roundId: round.id, data })}
-                          onDelete={() => deleteRound.mutate(round.id)}
-                          canDelete={draftRounds.length > 1}
-                          formatCentralInput={formatCentralInput}
-                        />
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-                <div className="mt-3 space-y-1">
-                  <p className="text-sm text-muted-foreground">
-                    <Clock className="inline h-3.5 w-3.5 mr-1" />
-                    Enter each round start in Central Time (America/Chicago). Picks open on the configured cadence; missed picks stay open while later slots still open on schedule.
-                  </p>
-                  {draftRounds.some(r => r.isTeamDraft) && (
-                    <p className="text-sm text-muted-foreground">
-                      Rounds marked as "Team Draft" let the picking team select an MLB organization, drafting all remaining affiliated players at once.
-                    </p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
           <div className="flex items-center gap-3 flex-wrap">
             <AlertDialog>
               <AlertDialogTrigger asChild>
@@ -1037,7 +1015,7 @@ export default function CommissionerDraftDetail() {
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Start Draft</AlertDialogTitle>
-                  <AlertDialogDescription>Once started, the draft setup cannot be changed. Are you ready to begin?</AlertDialogDescription>
+                  <AlertDialogDescription>This will generate pick slots and start the clock. You can pause the draft at any time to modify upcoming rounds and settings.</AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -1069,22 +1047,97 @@ export default function CommissionerDraftDetail() {
         </div>
       )}
 
-      {(draft.status === "active" || draft.status === "completed") && (
+      {draft.status !== "completed" && draftRounds && draftRounds.length > 0 && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><ListOrdered className="h-5 w-5" />Round Configuration</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="border rounded-md overflow-hidden overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12">#</TableHead>
+                    <TableHead className="min-w-[140px]">Round Name</TableHead>
+                    <TableHead className="w-28 text-center">Team Draft</TableHead>
+                    <TableHead className="min-w-[200px]">Start Date/Time (CT)</TableHead>
+                    <TableHead className="min-w-[100px]">Pick Duration</TableHead>
+                    <TableHead className="min-w-[200px]">Order Preview</TableHead>
+                    {draft.status === "setup" && <TableHead className="w-10"></TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {draftRounds.map(round => (
+                    <RoundConfigRow
+                      key={round.id}
+                      round={round}
+                      roundEntries={orderByRound(round.roundNumber)}
+                      onUpdate={(data) => updateRound.mutate({ roundId: round.id, data })}
+                      onDelete={() => deleteRound.mutate(round.id)}
+                      canDelete={draft.status === "setup" && draftRounds.length > 1}
+                      showDelete={draft.status === "setup"}
+                      formatCentralInput={formatCentralInput}
+                    />
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <div className="mt-3 space-y-1">
+              <p className="text-sm text-muted-foreground">
+                <Clock className="inline h-3.5 w-3.5 mr-1" />
+                Enter each round start in Central Time (America/Chicago). Picks open on the configured cadence; missed picks stay open while later slots still open on schedule.
+              </p>
+              {draftRounds.some(r => r.isTeamDraft) && (
+                <p className="text-sm text-muted-foreground">
+                  Rounds marked as "Team Draft" let the picking team select an MLB organization, drafting all remaining affiliated players at once.
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {(draft.status === "active" || draft.status === "paused" || draft.status === "completed") && (
         <div className="space-y-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
               <CardTitle className="flex items-center gap-2">
-                {draft.status === "active" ? "Active Draft" : "Draft Results"}
+                {draft.status === "active" ? "Active Draft" : draft.status === "paused" ? "Draft Paused" : "Draft Results"}
               </CardTitle>
               <div className="flex items-center gap-2 flex-wrap">
-                {draft.status === "active" && (
+                {(draft.status === "active" || draft.status === "paused") && (
                   <>
-                    <Button onClick={() => setCommPickDialogOpen(true)} data-testid="button-commissioner-pick">
-                      <UserPlus className="h-4 w-4 mr-2" />Make Pick
-                    </Button>
+                    {draft.status === "active" && (
+                      <Button onClick={() => setCommPickDialogOpen(true)} data-testid="button-commissioner-pick">
+                        <UserPlus className="h-4 w-4 mr-2" />Make Pick
+                      </Button>
+                    )}
                     <Button variant="outline" onClick={() => window.open(`/draft/${draft.id}`, '_blank')} data-testid="button-open-draft-board">
                       Open Draft Board
                     </Button>
+                    {draft.status === "active" ? (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="outline" data-testid="button-pause-draft"><Pause className="h-4 w-4 mr-2" />Pause Draft</Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Pause Draft</AlertDialogTitle>
+                            <AlertDialogDescription>Pausing will stop the clock on all picks. You can modify upcoming rounds and draft order while paused.</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => pauseDraft.mutate()} data-testid="button-confirm-pause-draft">
+                              {pauseDraft.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Pausing...</> : "Pause Draft"}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    ) : (
+                      <Button onClick={() => resumeDraft.mutate()} disabled={resumeDraft.isPending} data-testid="button-resume-draft">
+                        {resumeDraft.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Resuming...</> : <><Play className="h-4 w-4 mr-2" />Resume Draft</>}
+                      </Button>
+                    )}
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button variant="outline" data-testid="button-complete-draft">Complete Draft</Button>
@@ -1107,8 +1160,9 @@ export default function CommissionerDraftDetail() {
               </div>
             </CardHeader>
             <CardContent>
-              {draft.status === "active" && (
+              {(draft.status === "active" || draft.status === "paused") && (
                 <p className="text-sm text-muted-foreground mb-4">
+                  {draft.status === "paused" && <span className="text-destructive font-medium mr-2">Draft is paused.</span>}
                   {nextOpenSlot
                     ? `Next open slot: Round ${nextOpenSlot.round}, Pick ${nextOpenSlot.roundPickIndex + 1} (Overall ${nextOpenSlot.overallPickNumber})`
                     : "All slots are currently filled"}
@@ -1125,7 +1179,7 @@ export default function CommissionerDraftDetail() {
                         <TableHead>Selection</TableHead>
                         <TableHead>Scheduled</TableHead>
                         <TableHead>Roster</TableHead>
-                        {draft.status === "active" && <TableHead className="w-16">Actions</TableHead>}
+                        {(draft.status === "active" || draft.status === "paused") && <TableHead className="w-16">Actions</TableHead>}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1145,7 +1199,7 @@ export default function CommissionerDraftDetail() {
                               <Badge variant="outline">-</Badge>
                             )}
                           </TableCell>
-                          {draft.status === "active" && pick.madeAt && (
+                          {(draft.status === "active" || draft.status === "paused") && pick.madeAt && (
                             <TableCell>
                               <AlertDialog>
                                 <AlertDialogTrigger asChild>
@@ -1170,7 +1224,7 @@ export default function CommissionerDraftDetail() {
                               </AlertDialog>
                             </TableCell>
                           )}
-                          {draft.status === "active" && !pick.madeAt && <TableCell />}
+                          {(draft.status === "active" || draft.status === "paused") && !pick.madeAt && <TableCell />}
                         </TableRow>
                       ))}
                     </TableBody>
