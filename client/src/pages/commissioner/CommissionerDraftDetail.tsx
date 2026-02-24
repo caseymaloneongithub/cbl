@@ -1177,6 +1177,25 @@ export default function CommissionerDraftDetail() {
                         </AlertDialogFooter>
                       </AlertDialogContent>
                     </AlertDialog>
+                    {draft.status === "paused" && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="destructive" data-testid="button-delete-paused-draft"><Trash2 className="h-4 w-4 mr-2" />Delete Draft</Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Draft</AlertDialogTitle>
+                            <AlertDialogDescription>This will permanently delete this draft including all picks that have been made, player pools, and draft order. This action cannot be undone.</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => deleteDraft.mutate()} className="bg-destructive text-destructive-foreground hover:bg-destructive/90" data-testid="button-confirm-delete-paused-draft">
+                              Delete Draft
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
                   </>
                 )}
                 {draft.status === "completed" && (

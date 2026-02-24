@@ -8745,8 +8745,8 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Draft not found" });
       }
 
-      if (draft.status !== "setup") {
-        return res.status(400).json({ message: "Can only delete drafts in setup status" });
+      if (draft.status !== "setup" && draft.status !== "paused") {
+        return res.status(400).json({ message: "Can only delete drafts in setup or paused status" });
       }
 
       if (!await hasLeagueCommissionerAccess(userId, draft.leagueId)) {
