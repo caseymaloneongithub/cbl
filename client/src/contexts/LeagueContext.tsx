@@ -79,7 +79,7 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
   const value: LeagueContextValue = {
     leagues: leagues || [],
     currentLeague,
-    selectedLeagueId: currentLeague?.id || null,
+    selectedLeagueId: selectedLeagueId ?? currentLeague?.id ?? null,
     selectLeague,
     isLoadingLeagues,
     isLeagueCommissioner,
