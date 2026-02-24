@@ -3746,7 +3746,6 @@ export class DatabaseStorage implements IStorage {
       eq(draftPicks.draftId, draftId),
       eq(draftPicks.userId, userId),
       isNull(draftPicks.madeAt),
-      sql`${draftPicks.scheduledAt} <= ${now}`,
     )).orderBy(draftPicks.overallPickNumber).limit(1);
     return slot;
   }
