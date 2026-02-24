@@ -8935,6 +8935,7 @@ export async function registerRoutes(
       }
 
       const updated = await storage.updateDraft(id, { status: "active" });
+      setTimeout(() => processAutoDraft(id, storage), 500);
       res.json(updated);
     } catch (error) {
       console.error("Error resuming draft:", error);
@@ -9828,15 +9829,15 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
     const now = new Date();
     const slots = await storage.getDraftPicks(draftId);
     const rounds = await storage.getDraftRounds(draftId);
-    const slot = slots
-      .filter((s: any) => !s.madeAt && new Date(s.scheduledAt).getTime() <= now.getTime())
-      .sort((a: any, b: any) => a.overallPickNumber - b.overallPickNumber)
-      .find((s: any) => {
-        const roundConfig = rounds.find((r: any) => r.roundNumber === s.round);
-        return !roundConfig?.isTeamDraft;
-      });
+    const sortedOpen = slots
+      .filter((s: any) => !s.madeAt)
+      .sort((a: any, b: any) => a.overallPickNumber - b.overallPickNumber);
+    if (sortedOpen.length === 0) return false;
+    const nextSlot = sortedOpen[0];
+    const roundConfig = rounds.find((r: any) => r.roundNumber === nextSlot.round);
+    if (roundConfig?.isTeamDraft) return false;
 
-    if (!slot) return false;
+    const slot = nextSlot;
 
     const topPick = await storage.getTopAvailableAutoDraftPick(draftId, slot.userId);
     if (!topPick) return false;
