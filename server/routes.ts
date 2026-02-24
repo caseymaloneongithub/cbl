@@ -9186,6 +9186,23 @@ export async function registerRoutes(
       if (pickDurationMinutes !== undefined) updateData.pickDurationMinutes = parseInt(pickDurationMinutes) || 30;
 
       const updated = await storage.updateDraftRound(roundId, updateData);
+
+      if (updated && (updateData.startTime !== undefined || updateData.pickDurationMinutes !== undefined)) {
+        const roundStartMs = new Date(updated.startTime!).getTime();
+        const pickDurationMs = (updated.pickDurationMinutes || 30) * 60 * 1000;
+        const allPicks = await storage.getDraftPicks(id);
+        const roundPicks = allPicks
+          .filter((p) => p.round === updated.roundNumber)
+          .sort((a, b) => a.roundPickIndex - b.roundPickIndex);
+        for (const pick of roundPicks) {
+          if (pick.madeAt) continue;
+          const idx = pick.roundPickIndex;
+          const scheduledAt = new Date(roundStartMs + idx * pickDurationMs);
+          const deadlineAt = new Date(roundStartMs + (idx + 1) * pickDurationMs);
+          await storage.updateDraftPick(pick.id, { scheduledAt, deadlineAt });
+        }
+      }
+
       res.json(updated);
     } catch (error) {
       console.error("Error updating draft round:", error);

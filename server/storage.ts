@@ -3741,6 +3741,10 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
+  async updateDraftPick(pickId: number, data: Partial<{ scheduledAt: Date; deadlineAt: Date }>): Promise<void> {
+    await db.update(draftPicks).set(data).where(eq(draftPicks.id, pickId));
+  }
+
   async getOldestEligibleOpenSlotForUser(draftId: number, userId: string, now: Date): Promise<DraftPick | undefined> {
     const [slot] = await db.select().from(draftPicks).where(and(
       eq(draftPicks.draftId, draftId),
