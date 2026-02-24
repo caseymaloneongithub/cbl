@@ -34,7 +34,7 @@ import { CountdownTimer } from "./CountdownTimer";
 import { BidDialog } from "./BidDialog";
 import { AutoBidDialog } from "./AutoBidDialog";
 import { BidHistoryModal } from "./BidHistoryModal";
-import { formatCurrency, isAuctionClosed, hasAuctionStarted, formatTimeRemaining } from "@/lib/utils";
+import { formatCurrency, isAuctionClosed, hasAuctionStarted, formatTimeRemaining, stripAccents } from "@/lib/utils";
 import type { FreeAgentWithBids } from "@shared/schema";
 import { Gavel, Zap, Search, ArrowUpDown, ArrowUp, ArrowDown, X, Trash2, History } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -103,10 +103,10 @@ export function FreeAgentsTable({ freeAgents, bidIncrement = 0.10, allowAutoBidd
     let result = [...freeAgents];
 
     if (searchTerm) {
-      const term = searchTerm.toLowerCase();
+      const term = stripAccents(searchTerm.toLowerCase());
       result = result.filter(
-        a => a.name.toLowerCase().includes(term) || 
-             a.team?.toLowerCase().includes(term)
+        a => stripAccents(a.name.toLowerCase()).includes(term) || 
+             stripAccents(a.team?.toLowerCase() || "").includes(term)
       );
     }
 

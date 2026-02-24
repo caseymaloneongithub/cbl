@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { stripAccents } from "@/lib/utils";
 import { useLeague } from "@/hooks/useLeague";
 import { useToast } from "@/hooks/use-toast";
 import { useParams, useLocation } from "wouter";
@@ -628,9 +629,9 @@ export default function CommissionerDraftDetail() {
   const availablePlayers = draftPlayers?.filter(dp => dp.status === "available") || [];
   const filteredPlayers = playerSearchText.trim()
     ? availablePlayers.filter(dp =>
-        dp.player.fullName.toLowerCase().includes(playerSearchText.toLowerCase()) ||
-        (dp.player.currentTeamName || "").toLowerCase().includes(playerSearchText.toLowerCase()) ||
-        (dp.player.primaryPosition || "").toLowerCase().includes(playerSearchText.toLowerCase())
+        stripAccents(dp.player.fullName.toLowerCase()).includes(stripAccents(playerSearchText.toLowerCase())) ||
+        stripAccents((dp.player.currentTeamName || "").toLowerCase()).includes(stripAccents(playerSearchText.toLowerCase())) ||
+        stripAccents((dp.player.primaryPosition || "").toLowerCase()).includes(stripAccents(playerSearchText.toLowerCase()))
       )
     : availablePlayers;
   const nowMs = Date.now();

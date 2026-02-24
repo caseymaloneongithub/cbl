@@ -40,7 +40,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import { formatCurrency, formatNumberWithCommas } from "@/lib/utils";
+import { formatCurrency, formatNumberWithCommas, stripAccents } from "@/lib/utils";
 import type { Auction, User, FreeAgentWithBids, Bid, AutoBid, FreeAgent } from "@shared/schema";
 import { 
   Settings, Users, Loader2, FileSpreadsheet, Trash2, DollarSign, Plus, UserPlus, 
@@ -1767,7 +1767,7 @@ export default function CommissionerAuction() {
                       const now = new Date();
                       const endTime = new Date(p.auctionEndTime);
                       const notEnded = endTime > now;
-                      const matchesSearch = !playerSearchQuery || p.name.toLowerCase().includes(playerSearchQuery.toLowerCase());
+                      const matchesSearch = !playerSearchQuery || stripAccents(p.name.toLowerCase()).includes(stripAccents(playerSearchQuery.toLowerCase()));
                       // Commissioners can bid on any player that hasn't ended and hasn't been won
                       return notEnded && matchesSearch && !p.winnerId;
                     })

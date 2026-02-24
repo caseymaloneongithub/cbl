@@ -98,3 +98,7 @@ export function parseFormattedNumber(value: string): number {
   const num = parseInt(cleaned, 10);
   return isNaN(num) ? 0 : num;
 }
+
+export function stripAccents(s: string): string {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}

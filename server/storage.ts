@@ -3104,7 +3104,7 @@ export class DatabaseStorage implements IStorage {
       }
     }
     if (filters?.search) {
-      conditions.push(sql`LOWER(${mlbPlayers.fullName}) LIKE LOWER(${'%' + filters.search + '%'})`);
+      conditions.push(sql`LOWER(unaccent(${mlbPlayers.fullName})) LIKE LOWER(unaccent(${'%' + filters.search + '%'}))`);
     }
     if (filters?.currentTeamName) {
       conditions.push(eq(mlbPlayers.currentTeamName, filters.currentTeamName));
@@ -3157,7 +3157,7 @@ export class DatabaseStorage implements IStorage {
       }
     }
     if (filters?.search) {
-      conditions.push(sql`LOWER(${mlbPlayers.fullName}) LIKE LOWER(${'%' + filters.search + '%'})`);
+      conditions.push(sql`LOWER(unaccent(${mlbPlayers.fullName})) LIKE LOWER(unaccent(${'%' + filters.search + '%'}))`);
     }
     if (filters?.hadHittingStats !== undefined) {
       conditions.push(eq(mlbPlayers.hadHittingStats, filters.hadHittingStats));
@@ -3381,7 +3381,7 @@ export class DatabaseStorage implements IStorage {
       sql`NOT EXISTS (SELECT 1 FROM league_roster_assignments lra WHERE lra.mlb_player_id = ${mlbPlayers.id} AND lra.league_id = ${leagueId} AND lra.season = ${season})`,
     ];
     if (filters?.search) {
-      conditions.push(sql`LOWER(${mlbPlayers.fullName}) LIKE LOWER(${'%' + filters.search + '%'})`);
+      conditions.push(sql`LOWER(unaccent(${mlbPlayers.fullName})) LIKE LOWER(unaccent(${'%' + filters.search + '%'}))`);
     }
     if (filters?.sportLevel) {
       if (filters.sportLevel === 'MLB') {
@@ -3409,7 +3409,7 @@ export class DatabaseStorage implements IStorage {
       sql`NOT EXISTS (SELECT 1 FROM league_roster_assignments lra WHERE lra.mlb_player_id = ${mlbPlayers.id} AND lra.league_id = ${leagueId} AND lra.season = ${season})`,
     ];
     if (filters?.search) {
-      conditions.push(sql`LOWER(${mlbPlayers.fullName}) LIKE LOWER(${'%' + filters.search + '%'})`);
+      conditions.push(sql`LOWER(unaccent(${mlbPlayers.fullName})) LIKE LOWER(unaccent(${'%' + filters.search + '%'}))`);
     }
     if (filters?.sportLevel) {
       if (filters.sportLevel === 'MLB') {
@@ -3488,7 +3488,7 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(draftPlayers.status, filters.status));
     }
     if (filters?.search) {
-      conditions.push(sql`LOWER(${mlbPlayers.fullName}) LIKE LOWER(${'%' + filters.search + '%'})`);
+      conditions.push(sql`LOWER(unaccent(${mlbPlayers.fullName})) LIKE LOWER(unaccent(${'%' + filters.search + '%'}))`);
     }
     const rows = await db.select({
       draftPlayer: draftPlayers,

@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { stripAccents } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -802,8 +803,8 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
   const filteredAssignments = useMemo(() => {
     if (!rosterData?.assignments) return [];
     if (!rosterSearch) return rosterData.assignments;
-    const q = rosterSearch.toLowerCase();
-    return rosterData.assignments.filter(a => a.player.fullName.toLowerCase().includes(q));
+    const q = stripAccents(rosterSearch.toLowerCase());
+    return rosterData.assignments.filter(a => stripAccents(a.player.fullName.toLowerCase()).includes(q));
   }, [rosterData?.assignments, rosterSearch]);
 
   const parsedUploadErrors = useMemo(() => {

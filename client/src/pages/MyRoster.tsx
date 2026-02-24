@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { stripAccents } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useLeague } from "@/hooks/useLeague";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -90,11 +91,11 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
   const filtered = useMemo(() => {
     let result = [...(data?.assignments || [])];
     if (search) {
-      const s = search.toLowerCase();
+      const s = stripAccents(search.toLowerCase());
       result = result.filter((a) =>
-        a.player.fullName.toLowerCase().includes(s) ||
-        (a.player.primaryPosition || "").toLowerCase().includes(s) ||
-        (a.player.currentTeamName || "").toLowerCase().includes(s)
+        stripAccents(a.player.fullName.toLowerCase()).includes(s) ||
+        stripAccents((a.player.primaryPosition || "").toLowerCase()).includes(s) ||
+        stripAccents((a.player.currentTeamName || "").toLowerCase()).includes(s)
       );
     }
     return result;

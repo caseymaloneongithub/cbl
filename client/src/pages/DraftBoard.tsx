@@ -20,12 +20,14 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { formatAffiliatedTeamLabel } from "@/lib/teamDisplay";
+import { stripAccents } from "@/lib/utils";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Clock, Search, Trophy, Users, Loader2, CheckCircle, Building2, AlertTriangle, ListOrdered, ArrowUp, ArrowDown, Plus, Trash2, Pause, Play } from "lucide-react";
 import type { Draft, DraftRound, DraftPlayerWithDetails, DraftPickWithDetails, DraftOrder, User, AutoDraftListWithPlayer } from "@shared/schema";
+
 
 interface TimingInfo {
   hasTiming: boolean;
@@ -219,9 +221,9 @@ export default function DraftBoard() {
     return orgs.sort();
   }, [availablePlayers, picks]);
   const filteredOrgs = useMemo(() => {
-    const needle = orgSearch.trim().toLowerCase();
+    const needle = stripAccents(orgSearch.trim().toLowerCase());
     if (!needle) return availableOrgs;
-    return availableOrgs.filter((org) => org.toLowerCase().includes(needle));
+    return availableOrgs.filter((org) => stripAccents(org.toLowerCase()).includes(needle));
   }, [availableOrgs, orgSearch]);
 
   const makePick = useMutation({
@@ -280,7 +282,7 @@ export default function DraftBoard() {
   }, [autoDraftList]);
 
   const autoDraftCandidatePlayers = useMemo(() => {
-    const needle = autoDraftSearch.trim().toLowerCase();
+    const needle = stripAccents(autoDraftSearch.trim().toLowerCase());
     if (!availablePlayers?.length) return [] as DraftPlayerWithDetails[];
     return availablePlayers
       .filter((dp) => !autoDraftListIds.has(dp.mlbPlayerId))
@@ -291,7 +293,7 @@ export default function DraftBoard() {
           dp.player.primaryPosition,
           dp.player.currentTeamName,
           dp.player.parentOrgName,
-        ].some((value) => (value || "").toLowerCase().includes(needle));
+        ].some((value) => stripAccents((value || "").toLowerCase()).includes(needle));
       })
       .slice(0, 8);
   }, [availablePlayers, autoDraftListIds, autoDraftSearch]);
