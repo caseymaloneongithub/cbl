@@ -566,6 +566,23 @@ export default function CommissionerDraftDetail() {
     URL.revokeObjectURL(url);
   };
 
+  const handleFileUpload = (setter: (value: string) => void) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".csv,.txt";
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const text = ev.target?.result;
+        if (typeof text === "string") setter(text);
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  };
+
   const handleUploadPlayers = () => {
     if (playerIdAnalysis.uniqueIds.length === 0) {
       toast({ title: "No valid IDs", description: "Enter numeric MLB player IDs separated by commas or newlines.", variant: "destructive" });
@@ -792,6 +809,14 @@ export default function CommissionerDraftDetail() {
                 <Button
                   type="button"
                   variant="outline"
+                  onClick={() => handleFileUpload(setPlayerIdsText)}
+                  data-testid="button-upload-player-csv-file"
+                >
+                  <Upload className="h-4 w-4 mr-2" />Upload CSV File
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
                   onClick={() => setPlayerIdsText("660271\n665742\n592450")}
                   data-testid="button-load-player-id-template"
                 >
@@ -965,6 +990,14 @@ export default function CommissionerDraftDetail() {
                 )}
               </div>
               <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleFileUpload(setCsvText)}
+                  data-testid="button-upload-order-csv-file"
+                >
+                  <Upload className="h-4 w-4 mr-2" />Upload CSV File
+                </Button>
                 <Button
                   type="button"
                   variant="outline"
