@@ -100,7 +100,8 @@ export function Header() {
     staleTime: 5_000,
   });
 
-  const activeDraft = drafts?.find(d => d.status === "active" || d.status === "paused");
+  const draftsArray = Array.isArray(drafts) ? drafts : [];
+  const activeDraft = draftsArray.find(d => d.status === "active" || d.status === "paused");
   const draftHref = activeDraft ? `/draft/${activeDraft.id}` : "/drafts";
 
   const initials = user?.firstName && user?.lastName
