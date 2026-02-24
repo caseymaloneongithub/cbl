@@ -211,7 +211,7 @@ export default function DraftBoard() {
     return picks
       .filter((p) => !p.madeAt && p.overallPickNumber > currentSlot.overallPickNumber)
       .sort((a, b) => a.overallPickNumber - b.overallPickNumber)
-      .slice(0, 3);
+      .slice(0, 4);
   }, [picks, currentSlot]);
 
   const myPicks = useMemo(() => {
@@ -811,7 +811,6 @@ export default function DraftBoard() {
         <Card className="mb-6">
           <CardContent className="py-3">
             <div className="flex items-center gap-2 mb-2">
-              <Users className="h-4 w-4 text-muted-foreground" />
               <span className="font-semibold text-sm text-muted-foreground" data-testid="text-upcoming-label">Up Next</span>
             </div>
             <div className="flex flex-wrap gap-4">
