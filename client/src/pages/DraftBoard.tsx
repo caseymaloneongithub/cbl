@@ -197,6 +197,14 @@ export default function DraftBoard() {
     return (picks || []).filter((slot) => !!slot.madeAt);
   }, [picks]);
 
+  const upcomingPicks = useMemo(() => {
+    if (!currentSlot || !picks) return [];
+    return picks
+      .filter((p) => !p.madeAt && p.overallPickNumber > currentSlot.overallPickNumber)
+      .sort((a, b) => a.overallPickNumber - b.overallPickNumber)
+      .slice(0, 3);
+  }, [picks, currentSlot]);
+
   const myOpenSlots = useMemo(() => {
     if (!user || !picks) return [];
     return picks
@@ -604,6 +612,30 @@ export default function DraftBoard() {
                 Select Organization
               </Button>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {draft.status === "active" && upcomingPicks.length > 0 && (
+        <Card className="mb-6">
+          <CardContent className="py-3">
+            <div className="flex items-center gap-2 mb-2">
+              <Users className="h-4 w-4 text-muted-foreground" />
+              <span className="font-semibold text-sm text-muted-foreground" data-testid="text-upcoming-label">Up Next</span>
+            </div>
+            <div className="flex flex-wrap gap-4">
+              {upcomingPicks.map((slot, idx) => (
+                <div key={slot.id} className="flex items-center gap-2" data-testid={`upcoming-pick-${idx}`}>
+                  <span className="text-xs font-mono text-muted-foreground">{slot.round}.{slot.roundPickIndex + 1}</span>
+                  <span className={`text-sm font-medium ${slot.userId === user?.id ? "text-primary" : ""}`}>
+                    {slot.user.teamName || `${slot.user.firstName} ${slot.user.lastName}`}
+                  </span>
+                  {slot.userId === user?.id && (
+                    <Badge variant="outline" className="text-xs">You</Badge>
+                  )}
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}
