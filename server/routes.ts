@@ -9247,6 +9247,7 @@ export async function registerRoutes(
         });
       }
 
+      const draftPickDuration = draft.pickDurationMinutes || 30;
       const roundConfigs = headers.map((name, idx) => {
         let startTime = new Date();
         if (startTimesRow && startTimesRow[idx]) {
@@ -9261,6 +9262,7 @@ export async function registerRoutes(
           name: name || `Round ${idx + 1}`,
           isTeamDraft: false,
           startTime,
+          pickDurationMinutes: draftPickDuration,
         };
       });
 

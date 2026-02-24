@@ -29,7 +29,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatInTimeZone } from "date-fns-tz";
 import type { DraftWithDetails, DraftPlayerWithDetails, DraftPickWithDetails, DraftRound, DraftOrder, User, LeagueMember } from "@shared/schema";
 import {
-  ArrowLeft, Loader2, Trash2, Play, Settings, Upload, Users, ListOrdered,
+  ArrowLeft, Loader2, Trash2, Play, Upload, Users, ListOrdered,
   FileSpreadsheet, Clock, X, UserPlus, Download,
 } from "lucide-react";
 
@@ -131,10 +131,6 @@ export default function CommissionerDraftDetail() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
 
-  const [editName, setEditName] = useState("");
-  const [editPickDuration, setEditPickDuration] = useState(30);
-  const [editTeamDraftRound, setEditTeamDraftRound] = useState("");
-  const [showSettings, setShowSettings] = useState(false);
   const [playerIdsText, setPlayerIdsText] = useState("");
   const [csvText, setCsvText] = useState("");
   const [commPickDialogOpen, setCommPickDialogOpen] = useState(false);
@@ -208,20 +204,6 @@ export default function CommissionerDraftDetail() {
 
   const activeMembers = leagueMembers?.filter(m => !m.isArchived) || [];
 
-  const updateDraft = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("PATCH", `/api/drafts/${draftId}`, {
-        name: editName, pickDurationMinutes: editPickDuration, teamDraftRound: editTeamDraftRound ? Number(editTeamDraftRound) : null,
-      });
-      return res.json();
-    },
-    onSuccess: () => {
-      toast({ title: "Draft Updated" });
-      setShowSettings(false);
-      queryClient.invalidateQueries({ queryKey: ["/api/drafts", selectedLeagueId] });
-    },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
-  });
 
   const deleteDraft = useMutation({
     mutationFn: async () => {
@@ -675,14 +657,7 @@ export default function CommissionerDraftDetail() {
       .sort((a, b) => a.overallPickNumber - b.overallPickNumber)[0] || null;
   }, [draftPicks]);
 
-  const handleInitSettings = () => {
-    if (draft) {
-      setEditName(draft.name);
-      setEditPickDuration(draft.pickDurationMinutes || 30);
-      setEditTeamDraftRound(draft.teamDraftRound ? String(draft.teamDraftRound) : "");
-      setShowSettings(true);
-    }
-  };
+
 
   if (!draftId || isNaN(draftId)) {
     return (
@@ -1053,45 +1028,6 @@ export default function CommissionerDraftDetail() {
               </CardContent>
             </Card>
           )}
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2"><Settings className="h-5 w-5" />Draft Settings</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {showSettings ? (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-name">Name</Label>
-                    <Input id="edit-name" value={editName} onChange={e => setEditName(e.target.value)} data-testid="input-edit-draft-name" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-pick-duration">Pick Duration (minutes)</Label>
-                    <Input id="edit-pick-duration" type="number" value={editPickDuration} onChange={e => setEditPickDuration(Number(e.target.value))} min={1} max={1440} data-testid="input-edit-pick-duration" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-team-round">Team Draft Round (optional)</Label>
-                    <Input id="edit-team-round" type="number" value={editTeamDraftRound} onChange={e => setEditTeamDraftRound(e.target.value)} min={1} placeholder="Leave blank for none" data-testid="input-edit-team-round" />
-                  </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Button onClick={() => updateDraft.mutate()} disabled={updateDraft.isPending} data-testid="button-save-settings">
-                      {updateDraft.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</> : "Save Settings"}
-                    </Button>
-                    <Button variant="outline" onClick={() => setShowSettings(false)}>Cancel</Button>
-                  </div>
-                </>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-sm"><span className="text-muted-foreground">Name:</span> {draft.name}</p>
-                  <p className="text-sm"><span className="text-muted-foreground">Pick Duration:</span> {draft.pickDurationMinutes || 30} minutes</p>
-                  <p className="text-sm"><span className="text-muted-foreground">Team Draft Round:</span> {draft.teamDraftRound || "None"}</p>
-                  <Button variant="outline" onClick={handleInitSettings} data-testid="button-edit-settings">
-                    <Settings className="h-4 w-4 mr-2" />Edit Settings
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
 
           <div className="flex items-center gap-3 flex-wrap">
             <AlertDialog>
