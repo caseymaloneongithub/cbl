@@ -1007,7 +1007,7 @@ export default function CommissionerDraftDetail() {
             </CardContent>
           </Card>
 
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap mb-6">
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button data-testid="button-start-draft"><Play className="h-4 w-4 mr-2" />Start Draft</Button>
