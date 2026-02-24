@@ -1284,17 +1284,8 @@ export default function CommissionerDraftDetail() {
                 This team has no eligible open slot right now.
               </div>
             )}
-            <div className="space-y-2">
-              <Label>Roster Type</Label>
-              <Select value={commPickRosterType} onValueChange={v => setCommPickRosterType(v as "mlb" | "milb")}>
-                <SelectTrigger data-testid="select-comm-pick-roster">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="mlb">MLB</SelectItem>
-                  <SelectItem value="milb">MiLB</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="text-xs text-muted-foreground">
+              Player will be added to the MiLB roster.
             </div>
             {commissionerIsTeamDraftSlot ? (
               <div className="space-y-2">

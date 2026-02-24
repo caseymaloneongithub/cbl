@@ -43,8 +43,8 @@ export default function DraftBoard() {
   const [orgSearch, setOrgSearch] = useState("");
   const [pickDialogOpen, setPickDialogOpen] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState<DraftPlayerWithDetails | null>(null);
-  const [rosterType, setRosterType] = useState<string>("mlb");
-  const [autoDraftRosterType, setAutoDraftRosterType] = useState<string>("mlb");
+  const [rosterType, setRosterType] = useState<string>("milb");
+  const [autoDraftRosterType, setAutoDraftRosterType] = useState<string>("milb");
   const [teamDraftDialogOpen, setTeamDraftDialogOpen] = useState(false);
   const [selectedOrg, setSelectedOrg] = useState<string>("");
   const [teamDraftRosterType, setTeamDraftRosterType] = useState<string>("milb");
@@ -855,15 +855,6 @@ export default function DraftBoard() {
                   Set your priority order here. When you are on the clock, the system takes the highest available player in this list.
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Select value={autoDraftRosterType} onValueChange={setAutoDraftRosterType}>
-                    <SelectTrigger className="w-[160px]" data-testid="select-auto-draft-roster-type">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="mlb">Queue as MLB</SelectItem>
-                      <SelectItem value="milb">Queue as MiLB</SelectItem>
-                    </SelectContent>
-                  </Select>
                   <div className="relative min-w-[220px] flex-1">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
@@ -1015,17 +1006,8 @@ export default function DraftBoard() {
                   Level: {selectedPlayer.player.sportLevel}
                 </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Roster Assignment</label>
-                <Select value={rosterType} onValueChange={setRosterType}>
-                  <SelectTrigger data-testid="select-roster-type">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="mlb">MLB Roster</SelectItem>
-                    <SelectItem value="milb">MiLB System</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="text-xs text-muted-foreground mt-1">
+                Player will be added to the MiLB roster.
               </div>
             </div>
           )}
@@ -1072,17 +1054,8 @@ export default function DraftBoard() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Roster Assignment</label>
-              <Select value={teamDraftRosterType} onValueChange={setTeamDraftRosterType}>
-                <SelectTrigger data-testid="select-team-draft-roster-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="mlb">MLB Roster</SelectItem>
-                  <SelectItem value="milb">MiLB System</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="text-xs text-muted-foreground">
+              All drafted players will be added to the MiLB roster.
             </div>
             {selectedOrg && (
               <div className="bg-muted/50 rounded-md p-3">

@@ -9619,7 +9619,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Player is already in your auto-draft list" });
       }
 
-      const item = await storage.addAutoDraftItem(id, userId, mlbPlayerId, rosterType || "mlb");
+      const item = await storage.addAutoDraftItem(id, userId, mlbPlayerId, rosterType || "milb");
       res.status(201).json(item);
     } catch (error) {
       console.error("Error adding to auto-draft list:", error);
