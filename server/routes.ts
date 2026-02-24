@@ -9415,11 +9415,14 @@ export async function registerRoutes(
       const now = new Date();
       const slots = await storage.getDraftPicks(id);
 
-      const openSlots = slots
-        .filter((slot) => !slot.madeAt && new Date(slot.scheduledAt).getTime() <= now.getTime())
+      const unmadeSlots = slots
+        .filter((slot) => !slot.madeAt)
         .sort((a, b) => a.overallPickNumber - b.overallPickNumber);
 
-      const currentSlot = openSlots.length > 0 ? openSlots[0] : null;
+      const currentSlot = unmadeSlots.length > 0 ? unmadeSlots[0] : null;
+
+      const openSlots = unmadeSlots
+        .filter((slot) => new Date(slot.scheduledAt).getTime() <= now.getTime());
       const eligiblePickerIds = Array.from(new Set(openSlots.map((slot) => slot.userId)));
 
       res.json({
