@@ -35,6 +35,7 @@ interface TimingInfo {
   currentSlot?: DraftPickWithDetails | null;
   eligiblePickerIds?: string[];
   openSlotCount?: number;
+  skippedTeams?: { userId: string; teamName: string }[];
 }
 
 const DRAFT_POLL_INTERVAL = 3000;
@@ -739,6 +740,16 @@ export default function DraftBoard() {
               <p className="text-sm text-primary mt-2" data-testid="text-your-turn-eligible">
                 Your pick window is open - you can make your selection now.
               </p>
+            )}
+            {timingInfo?.skippedTeams && timingInfo.skippedTeams.length > 0 && (
+              <div className="mt-2 p-2 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800" data-testid="skipped-teams-notice">
+                <p className="text-sm text-amber-800 dark:text-amber-300">
+                  <AlertTriangle className="h-3.5 w-3.5 inline mr-1 -mt-0.5" />
+                  <strong>Skipped picks:</strong>{" "}
+                  {timingInfo.skippedTeams.map(t => t.teamName).join(", ")}{" "}
+                  {timingInfo.skippedTeams.length === 1 ? "was" : "were"} skipped and can still pick at any time.
+                </p>
+              </div>
             )}
             {canPick && isTeamDraftRound && (
               <Button className="mt-3" onClick={handleTeamDraftClick} data-testid="button-team-draft-pick">

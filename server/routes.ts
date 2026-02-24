@@ -9479,12 +9479,24 @@ export async function registerRoutes(
         .filter((slot) => new Date(slot.scheduledAt).getTime() <= now.getTime());
       const eligiblePickerIds = Array.from(new Set(openSlots.map((slot) => slot.userId)));
 
+      const skippedSlots = currentSlot
+        ? openSlots.filter((slot) => slot.overallPickNumber > currentSlot.overallPickNumber)
+        : [];
+      const skippedTeamMap = new Map<string, string>();
+      for (const slot of skippedSlots) {
+        if (!skippedTeamMap.has(slot.userId)) {
+          skippedTeamMap.set(slot.userId, slot.user?.teamName || `${slot.user?.firstName || ""} ${slot.user?.lastName || ""}`.trim() || slot.userId);
+        }
+      }
+      const skippedTeams = Array.from(skippedTeamMap.entries()).map(([userId, teamName]) => ({ userId, teamName }));
+
       res.json({
         hasTiming: slots.length > 0,
         now: now.toISOString(),
         currentSlot,
         eligiblePickerIds,
         openSlotCount: openSlots.length,
+        skippedTeams,
       });
     } catch (error) {
       console.error("Error fetching draft timing:", error);
