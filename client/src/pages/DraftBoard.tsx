@@ -1330,7 +1330,7 @@ export default function DraftBoard() {
                 <Table>
                   <TableHeader className="sticky top-0 z-10 bg-background">
                     <TableRow className="bg-muted/50">
-                      <TableHead>#</TableHead>
+                      <TableHead>Pick</TableHead>
                       <TableHead>Team</TableHead>
                       <TableHead>Scheduled</TableHead>
                       <TableHead>Status</TableHead>
@@ -1339,7 +1339,7 @@ export default function DraftBoard() {
                   <TableBody>
                     {picks.map((slot) => (
                       <TableRow key={slot.id} className={currentSlot?.id === slot.id ? "bg-primary/10" : ""}>
-                        <TableCell className="font-mono text-xs">{slot.overallPickNumber}</TableCell>
+                        <TableCell className="font-mono text-xs">{getRoundLabel(slot.round, slot.roundPickIndex)}</TableCell>
                         <TableCell className="text-sm">{slot.user.teamName || slot.user.firstName || slot.user.lastName || slot.user.id}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{new Date(slot.scheduledAt).toLocaleString()}</TableCell>
                         <TableCell>
