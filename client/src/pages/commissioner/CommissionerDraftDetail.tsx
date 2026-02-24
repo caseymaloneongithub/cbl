@@ -647,11 +647,10 @@ export default function CommissionerDraftDetail() {
     const eligible = draftPicks
       .filter((slot) =>
         slot.userId === commPickUserId &&
-        !slot.madeAt &&
-        new Date(slot.scheduledAt).getTime() <= nowMs)
+        !slot.madeAt)
       .sort((a, b) => a.overallPickNumber - b.overallPickNumber);
     return eligible[0] || null;
-  }, [commPickUserId, draftPicks, nowMs]);
+  }, [commPickUserId, draftPicks]);
 
   const commissionerSlotRound = useMemo(() => {
     if (!commissionerTargetSlot || !draftRounds) return null;

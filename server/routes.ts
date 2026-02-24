@@ -9604,12 +9604,6 @@ export async function registerRoutes(
       const slot = await storage.getOldestEligibleOpenSlotForUser(id, targetUserId, now);
       if (!slot) return res.status(400).json({ message: "No eligible open slot for target user" });
 
-      const allPicksForOrder = await storage.getDraftPicks(id);
-      const previousUnmade = allPicksForOrder.find((s) => s.overallPickNumber < slot.overallPickNumber && !s.madeAt);
-      if (previousUnmade) {
-        return res.status(400).json({ message: "Previous picks must be completed before making this pick" });
-      }
-
       const rounds = await storage.getDraftRounds(id);
       const slotRound = rounds.find((r) => r.roundNumber === slot.round);
       const isTeamDraftRound = slotRound?.isTeamDraft === true;
