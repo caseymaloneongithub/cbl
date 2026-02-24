@@ -8916,6 +8916,24 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
+      const rounds = await storage.getDraftRounds(id);
+      const allPicks = await storage.getDraftPicks(id);
+      for (const round of rounds) {
+        if (!round.startTime) continue;
+        const roundStartMs = new Date(round.startTime).getTime();
+        const pickDurationMs = (round.pickDurationMinutes || 30) * 60 * 1000;
+        const roundPicks = allPicks
+          .filter((p) => p.round === round.roundNumber)
+          .sort((a, b) => a.roundPickIndex - b.roundPickIndex);
+        for (const pick of roundPicks) {
+          if (pick.madeAt) continue;
+          const idx = pick.roundPickIndex;
+          const scheduledAt = new Date(roundStartMs + idx * pickDurationMs);
+          const deadlineAt = new Date(roundStartMs + (idx + 1) * pickDurationMs);
+          await storage.updateDraftPick(pick.id, { scheduledAt, deadlineAt });
+        }
+      }
+
       const updated = await storage.updateDraft(id, { status: "active" });
       res.json(updated);
     } catch (error) {
