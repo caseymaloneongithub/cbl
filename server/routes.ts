@@ -9844,8 +9844,6 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
 
     await storage.fillSlotWithPlayer(slot.id, slot.userId, topPick.mlbPlayerId, topPick.rosterType, now);
 
-    await storage.clearAutoDraftItem(draftId, topPick.mlbPlayerId);
-
     const updatedSlots = await storage.getDraftPicks(draftId);
     if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt)) {
       await storage.updateDraft(draftId, { status: "completed" });

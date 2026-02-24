@@ -289,6 +289,21 @@ export default function DraftBoard() {
     return new Set(autoDraftList.map(item => item.mlbPlayerId));
   }, [autoDraftList]);
 
+  const draftedPlayerLookup = useMemo(() => {
+    const lookup = new Map<number, { teamName: string | null; firstName: string | null; lastName: string | null }>();
+    if (!picks) return lookup;
+    for (const p of picks) {
+      if (p.madeAt && p.mlbPlayerId) {
+        lookup.set(p.mlbPlayerId, {
+          teamName: p.user?.teamName || null,
+          firstName: p.user?.firstName || null,
+          lastName: p.user?.lastName || null,
+        });
+      }
+    }
+    return lookup;
+  }, [picks]);
+
   const autoDraftCandidatePlayers = useMemo(() => {
     const needle = stripAccents(autoDraftSearch.trim().toLowerCase());
     if (!availablePlayers?.length) return [] as DraftPlayerWithDetails[];
@@ -775,9 +790,14 @@ export default function DraftBoard() {
                     Auto-Draft List
                   </CardTitle>
                   <div className="flex items-center gap-2">
-                    {autoDraftList && autoDraftList.length > 0 && (
-                      <Badge variant="secondary" data-testid="badge-auto-draft-count">{autoDraftList.length}</Badge>
-                    )}
+                    {autoDraftList && autoDraftList.length > 0 && (() => {
+                      const remaining = autoDraftList.filter(i => !draftedPlayerLookup.has(i.mlbPlayerId)).length;
+                      return (
+                        <Badge variant="secondary" data-testid="badge-auto-draft-count">
+                          {remaining}/{autoDraftList.length}
+                        </Badge>
+                      );
+                    })()}
                     {!!autoDraftList?.length && (
                       <Button
                         size="sm"
@@ -859,21 +879,34 @@ export default function DraftBoard() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {autoDraftList.map((item, idx) => (
-                          <TableRow key={item.id} data-testid={`row-auto-draft-${item.id}`}>
+                        {autoDraftList.map((item, idx) => {
+                          const drafted = draftedPlayerLookup.get(item.mlbPlayerId);
+                          const isDrafted = !!drafted;
+                          return (
+                          <TableRow key={item.id} data-testid={`row-auto-draft-${item.id}`} className={isDrafted ? "opacity-50" : ""}>
                             <TableCell className="font-mono text-xs text-muted-foreground">{idx + 1}</TableCell>
                             <TableCell>
-                              <div className="text-sm font-medium">{item.player.fullName}</div>
-                              <div className="text-xs text-muted-foreground">
-                                {item.player.primaryPosition} - {getMlbAffiliationAbbreviation(item.player.parentOrgName) || item.player.parentOrgName || "-"} ({item.player.sportLevel})
-                              </div>
+                              <div className={`text-sm font-medium ${isDrafted ? "line-through" : ""}`}>{item.player.fullName}</div>
+                              {isDrafted ? (
+                                <div className="text-xs text-orange-600 dark:text-orange-400 flex items-center gap-1">
+                                  <CheckCircle className="h-3 w-3" />
+                                  Drafted by {drafted.teamName || `${drafted.firstName || ""} ${drafted.lastName || ""}`.trim() || "Unknown"}
+                                </div>
+                              ) : (
+                                <div className="text-xs text-muted-foreground">
+                                  {item.player.primaryPosition} - {getMlbAffiliationAbbreviation(item.player.parentOrgName) || item.player.parentOrgName || "-"} ({item.player.sportLevel})
+                                </div>
+                              )}
                             </TableCell>
                             <TableCell>
-                              <Badge variant={item.rosterType === "mlb" ? "default" : "outline"} className="text-xs">
-                                {item.rosterType === "mlb" ? "MLB" : "MiLB"}
-                              </Badge>
+                              {!isDrafted && (
+                                <Badge variant={item.rosterType === "mlb" ? "default" : "outline"} className="text-xs">
+                                  {item.rosterType === "mlb" ? "MLB" : "MiLB"}
+                                </Badge>
+                              )}
                             </TableCell>
                             <TableCell className="text-right">
+                              {!isDrafted && (
                               <div className="flex items-center justify-end gap-0">
                                 <Button
                                   size="icon"
@@ -903,9 +936,11 @@ export default function DraftBoard() {
                                   <Trash2 className="h-3 w-3" />
                                 </Button>
                               </div>
+                              )}
                             </TableCell>
                           </TableRow>
-                        ))}
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>
