@@ -8796,13 +8796,30 @@ export async function registerRoutes(
       if (rounds.length === 0) {
         return res.status(400).json({ message: "Draft rounds must be configured before starting" });
       }
-      for (const round of rounds) {
+      const sortedRounds = [...rounds].sort((a, b) => a.roundNumber - b.roundNumber);
+      for (let i = 0; i < sortedRounds.length; i++) {
+        const round = sortedRounds[i];
         if (!round.startTime) {
           return res.status(400).json({ message: `Round ${round.roundNumber} must have a start time` });
         }
         const roundOrder = await storage.getDraftOrder(id, round.roundNumber);
         if (roundOrder.length === 0) {
           return res.status(400).json({ message: `Draft order must be set for round ${round.roundNumber} before starting` });
+        }
+
+        if (i > 0) {
+          const prevRound = sortedRounds[i - 1];
+          const prevOrder = await storage.getDraftOrder(id, prevRound.roundNumber);
+          const prevPickCount = prevOrder.length;
+          const prevDurationMs = (prevRound.pickDurationMinutes || 30) * 60 * 1000;
+          const prevEndMs = new Date(prevRound.startTime!).getTime() + prevPickCount * prevDurationMs;
+          const thisStartMs = new Date(round.startTime).getTime();
+          if (thisStartMs < prevEndMs) {
+            const prevEndDate = new Date(prevEndMs);
+            return res.status(400).json({
+              message: `Round ${round.roundNumber} starts before Round ${prevRound.roundNumber} finishes. Round ${prevRound.roundNumber} ends at ${prevEndDate.toLocaleString("en-US", { timeZone: "America/Chicago" })} CT. Please adjust the start time.`,
+            });
+          }
         }
       }
 

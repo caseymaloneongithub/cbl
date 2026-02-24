@@ -20,7 +20,11 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { formatAffiliatedTeamLabel } from "@/lib/teamDisplay";
-import { Clock, Search, Trophy, Users, Loader2, CheckCircle, Building2, AlertTriangle, ListOrdered, ArrowUp, ArrowDown, Plus, Trash2 } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Clock, Search, Trophy, Users, Loader2, CheckCircle, Building2, AlertTriangle, ListOrdered, ArrowUp, ArrowDown, Plus, Trash2, Pause, Play } from "lucide-react";
 import type { Draft, DraftRound, DraftPlayerWithDetails, DraftPickWithDetails, DraftOrder, User, AutoDraftListWithPlayer } from "@shared/schema";
 
 interface TimingInfo {
@@ -37,7 +41,7 @@ export default function DraftBoard() {
   const { draftId } = useParams<{ draftId: string }>();
   const [, navigate] = useLocation();
   const { user } = useAuth();
-  const { currentLeague, selectedLeagueId } = useLeague();
+  const { currentLeague, selectedLeagueId, isLeagueCommissioner } = useLeague();
   const { toast } = useToast();
   const [playerSearch, setPlayerSearch] = useState("");
   const [orgSearch, setOrgSearch] = useState("");
@@ -342,6 +346,32 @@ export default function DraftBoard() {
     },
   });
 
+  const pauseDraft = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/drafts/${draftIdNum}/pause`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", { leagueId: selectedLeagueId }] });
+      toast({ title: "Draft Paused" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const resumeDraft = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/drafts/${draftIdNum}/resume`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", { leagueId: selectedLeagueId }] });
+      toast({ title: "Draft Resumed" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const moveAutoDraftItem = (index: number, direction: "up" | "down") => {
     if (!autoDraftList) return;
     const newList = [...autoDraftList];
@@ -493,6 +523,32 @@ export default function DraftBoard() {
               <Building2 className="h-3 w-3 mr-1" />
               Team Draft Round
             </Badge>
+          )}
+          {isLeagueCommissioner && draft.status === "active" && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" data-testid="button-pause-draft">
+                  <Pause className="h-3 w-3 mr-1" />Pause
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Pause Draft</AlertDialogTitle>
+                  <AlertDialogDescription>This will pause the draft. No picks can be made while paused. You can resume at any time.</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => pauseDraft.mutate()} data-testid="button-confirm-pause-draft">
+                    {pauseDraft.isPending ? "Pausing..." : "Pause Draft"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+          {isLeagueCommissioner && draft.status === "paused" && (
+            <Button size="sm" onClick={() => resumeDraft.mutate()} disabled={resumeDraft.isPending} data-testid="button-resume-draft">
+              {resumeDraft.isPending ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Resuming...</> : <><Play className="h-3 w-3 mr-1" />Resume</>}
+            </Button>
           )}
         </div>
       </div>
