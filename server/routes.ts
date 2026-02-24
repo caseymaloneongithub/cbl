@@ -9474,6 +9474,12 @@ export async function registerRoutes(
         return res.status(403).json({ message: "No eligible open pick slot for this user" });
       }
 
+      const allSlots = await storage.getDraftPicks(id);
+      const previousUnmade = allSlots.find((s) => s.overallPickNumber < slot.overallPickNumber && !s.madeAt);
+      if (previousUnmade) {
+        return res.status(400).json({ message: "Previous picks must be completed before making this pick" });
+      }
+
       const rounds = await storage.getDraftRounds(id);
       const currentRoundConfig = rounds.find((r) => r.roundNumber === slot.round);
       const isTeamDraftRound = currentRoundConfig?.isTeamDraft === true;
@@ -9516,8 +9522,7 @@ export async function registerRoutes(
         );
       }
 
-      const allSlots = await storage.getDraftPicks(id);
-      if (allSlots.length > 0 && allSlots.every((s) => !!s.madeAt)) {
+      if (allSlots.length > 0 && allSlots.filter((s) => s.id !== slot.id).every((s) => !!s.madeAt)) {
         await storage.updateDraft(id, { status: "completed" });
       } else {
         setTimeout(() => processAutoDraft(id, storage), 500);
@@ -9532,7 +9537,8 @@ export async function registerRoutes(
         message.includes("already") ||
         message.includes("available") ||
         message.includes("open slot") ||
-        message.includes("not open yet")
+        message.includes("not open yet") ||
+        message.includes("Previous picks")
       ) {
         return res.status(400).json({ message });
       }
@@ -9562,6 +9568,12 @@ export async function registerRoutes(
       const now = new Date();
       const slot = await storage.getOldestEligibleOpenSlotForUser(id, targetUserId, now);
       if (!slot) return res.status(400).json({ message: "No eligible open slot for target user" });
+
+      const allPicksForOrder = await storage.getDraftPicks(id);
+      const previousUnmade = allPicksForOrder.find((s) => s.overallPickNumber < slot.overallPickNumber && !s.madeAt);
+      if (previousUnmade) {
+        return res.status(400).json({ message: "Previous picks must be completed before making this pick" });
+      }
 
       const rounds = await storage.getDraftRounds(id);
       const slotRound = rounds.find((r) => r.roundNumber === slot.round);

@@ -3758,7 +3758,6 @@ export class DatabaseStorage implements IStorage {
       if (!slot) throw new Error("Draft slot not found");
       if (slot.userId !== userId) throw new Error("Slot does not belong to user");
       if (slot.madeAt) throw new Error("Draft slot already filled");
-      if (new Date(slot.scheduledAt).getTime() > now.getTime()) throw new Error("Draft slot is not open yet");
 
       await tx.execute(sql`SELECT id FROM draft_players WHERE draft_id = ${slot.draftId} AND mlb_player_id = ${playerId} FOR UPDATE`);
       const [poolRow] = await tx.select().from(draftPlayers).where(and(
@@ -3821,7 +3820,6 @@ export class DatabaseStorage implements IStorage {
       if (!slot) throw new Error("Draft slot not found");
       if (slot.userId !== userId) throw new Error("Slot does not belong to user");
       if (slot.madeAt) throw new Error("Draft slot already filled");
-      if (new Date(slot.scheduledAt).getTime() > now.getTime()) throw new Error("Draft slot is not open yet");
 
       const [alreadyClaimed] = await tx
         .select({ id: draftPicks.id })
