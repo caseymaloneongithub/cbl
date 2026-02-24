@@ -9473,17 +9473,19 @@ export async function registerRoutes(
         .filter((slot) => !slot.madeAt)
         .sort((a, b) => a.overallPickNumber - b.overallPickNumber);
 
-      const currentSlot = unmadeSlots.length > 0 ? unmadeSlots[0] : null;
+      const currentSlot = unmadeSlots.find(slot => !slot.skippedAt) || null;
 
       const openSlots = unmadeSlots
         .filter((slot) => new Date(slot.scheduledAt).getTime() <= now.getTime());
-      const eligiblePickerIds = Array.from(new Set(openSlots.map((slot) => slot.userId)));
 
-      const skippedSlots = currentSlot
-        ? openSlots.filter((slot) => slot.overallPickNumber > currentSlot.overallPickNumber)
-        : [];
+      const skippedOpenSlots = openSlots.filter(slot => !!slot.skippedAt);
+      const eligiblePickerIds = Array.from(new Set([
+        ...(currentSlot ? [currentSlot.userId] : []),
+        ...skippedOpenSlots.map(slot => slot.userId),
+      ]));
+
       const skippedTeamMap = new Map<string, string>();
-      for (const slot of skippedSlots) {
+      for (const slot of skippedOpenSlots) {
         if (!skippedTeamMap.has(slot.userId)) {
           skippedTeamMap.set(slot.userId, slot.user?.teamName || `${slot.user?.firstName || ""} ${slot.user?.lastName || ""}`.trim() || slot.userId);
         }
@@ -9495,12 +9497,61 @@ export async function registerRoutes(
         now: now.toISOString(),
         currentSlot,
         eligiblePickerIds,
-        openSlotCount: openSlots.length,
+        openSlotCount: openSlots.filter(s => !s.skippedAt).length + skippedOpenSlots.length,
         skippedTeams,
       });
     } catch (error) {
       console.error("Error fetching draft timing:", error);
       res.status(500).json({ message: "Failed to fetch draft timing" });
+    }
+  });
+
+  // POST /api/drafts/:id/skip-pick - Commissioner skips the current pick
+  app.post("/api/drafts/:id/skip-pick", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid draft ID" });
+
+      const draft = await storage.getDraft(id);
+      if (!draft) return res.status(404).json({ message: "Draft not found" });
+
+      const commUser = await storage.getUser(userId);
+      const membership = await storage.getLeagueMember(draft.leagueId, userId);
+      if (membership?.role !== "commissioner" && !commUser?.isSuperAdmin) {
+        return res.status(403).json({ message: "Only commissioners can skip picks" });
+      }
+
+      if (draft.status !== "active") {
+        return res.status(400).json({ message: "Draft is not active" });
+      }
+
+      const { slotId } = req.body;
+      if (!slotId) return res.status(400).json({ message: "slotId is required" });
+
+      const picks = await storage.getDraftPicks(id);
+      const slot = picks.find(p => p.id === slotId);
+      if (!slot) return res.status(404).json({ message: "Pick slot not found" });
+      if (slot.madeAt) return res.status(400).json({ message: "This pick has already been made" });
+      if (slot.skippedAt) return res.status(400).json({ message: "This pick has already been skipped" });
+
+      const currentOnClock = picks
+        .filter(p => !p.madeAt && !p.skippedAt)
+        .sort((a, b) => a.overallPickNumber - b.overallPickNumber)[0];
+      if (!currentOnClock || currentOnClock.id !== slotId) {
+        return res.status(400).json({ message: "Can only skip the current on-the-clock pick" });
+      }
+
+      await db.update(draftPicks)
+        .set({ skippedAt: new Date(), skippedByUserId: userId })
+        .where(eq(draftPicks.id, slotId));
+
+      setTimeout(() => processAutoDraft(id, storage), 500);
+
+      res.json({ message: "Pick skipped successfully" });
+    } catch (error) {
+      console.error("Error skipping pick:", error);
+      res.status(500).json({ message: "Failed to skip pick" });
     }
   });
 
@@ -9524,8 +9575,8 @@ export async function registerRoutes(
       }
 
       const allSlots = await storage.getDraftPicks(id);
-      const previousUnmade = allSlots.find((s) => s.overallPickNumber < slot.overallPickNumber && !s.madeAt);
-      if (previousUnmade) {
+      const previousUnmade = allSlots.find((s) => s.overallPickNumber < slot.overallPickNumber && !s.madeAt && !s.skippedAt);
+      if (previousUnmade && !slot.skippedAt) {
         return res.status(400).json({ message: "Previous picks must be completed before making this pick" });
       }
 
@@ -9571,7 +9622,7 @@ export async function registerRoutes(
         );
       }
 
-      if (allSlots.length > 0 && allSlots.filter((s) => s.id !== slot.id).every((s) => !!s.madeAt)) {
+      if (allSlots.length > 0 && allSlots.filter((s) => s.id !== slot.id).every((s) => !!s.madeAt || !!s.skippedAt)) {
         await storage.updateDraft(id, { status: "completed" });
       } else {
         setTimeout(() => processAutoDraft(id, storage), 500);
@@ -9636,7 +9687,7 @@ export async function registerRoutes(
         }
         const result = await storage.fillSlotWithOrg(slot.id, targetUserId, selectedOrgName, selectedOrgId, rosterType, now);
         const allSlots = await storage.getDraftPicks(id);
-        if (allSlots.length > 0 && allSlots.every((s) => !!s.madeAt)) {
+        if (allSlots.length > 0 && allSlots.every((s) => !!s.madeAt || !!s.skippedAt)) {
           await storage.updateDraft(id, { status: "completed" });
         }
         checkAndSendRoundSummaryEmail(id, slot.round, storage).catch(() => {});
@@ -9660,7 +9711,7 @@ export async function registerRoutes(
 
       const updatedSlot = await storage.fillSlotWithPlayer(slot.id, targetUserId, mlbPlayerId, rosterType, now);
       const allSlots = await storage.getDraftPicks(id);
-      if (allSlots.length > 0 && allSlots.every((s) => !!s.madeAt)) {
+      if (allSlots.length > 0 && allSlots.every((s) => !!s.madeAt || !!s.skippedAt)) {
         await storage.updateDraft(id, { status: "completed" });
       } else {
         setTimeout(() => processAutoDraft(id, storage), 500);
@@ -9959,7 +10010,7 @@ async function checkAndSendRoundSummaryEmail(draftId: number, completedPickRound
 
     const allSlots = await storage.getDraftPicks(draftId);
     const roundSlots = allSlots.filter((s: any) => s.round === completedPickRound);
-    const allRoundComplete = roundSlots.length > 0 && roundSlots.every((s: any) => !!s.madeAt);
+    const allRoundComplete = roundSlots.length > 0 && roundSlots.every((s: any) => !!s.madeAt || !!s.skippedAt);
     if (!allRoundComplete) return;
 
     sentRoundEmails.add(emailKey);
@@ -10018,7 +10069,7 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
     const slots = await storage.getDraftPicks(draftId);
     const rounds = await storage.getDraftRounds(draftId);
     const sortedOpen = slots
-      .filter((s: any) => !s.madeAt)
+      .filter((s: any) => !s.madeAt && !s.skippedAt)
       .sort((a: any, b: any) => a.overallPickNumber - b.overallPickNumber);
     if (sortedOpen.length === 0) return false;
     const nextSlot = sortedOpen[0];
@@ -10035,7 +10086,7 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
       await storage.fillSlotWithOrg(slot.id, slot.userId, topTeamPick.orgName, null, topTeamPick.rosterType as "mlb" | "milb", now);
 
       const updatedSlots = await storage.getDraftPicks(draftId);
-      if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt)) {
+      if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt || !!s.skippedAt)) {
         await storage.updateDraft(draftId, { status: "completed" });
       } else {
         setTimeout(() => processAutoDraft(draftId, storage), 500);
@@ -10052,7 +10103,7 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
     await storage.fillSlotWithPlayer(slot.id, slot.userId, topPick.mlbPlayerId, topPick.rosterType, now);
 
     const updatedSlots = await storage.getDraftPicks(draftId);
-    if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt)) {
+    if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt || !!s.skippedAt)) {
       await storage.updateDraft(draftId, { status: "completed" });
     } else {
       setTimeout(() => processAutoDraft(draftId, storage), 500);

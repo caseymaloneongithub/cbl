@@ -3827,6 +3827,8 @@ export class DatabaseStorage implements IStorage {
         selectedOrgPlayerIds: [],
         madeAt: now,
         madeByUserId: userId,
+        skippedAt: null,
+        skippedByUserId: null,
       }).where(eq(draftPicks.id, slotId)).returning();
 
       return updatedSlot;
@@ -3906,6 +3908,8 @@ export class DatabaseStorage implements IStorage {
         selectedOrgPlayerIds: draftedPlayerIds,
         madeAt: now,
         madeByUserId: userId,
+        skippedAt: null,
+        skippedByUserId: null,
       }).where(eq(draftPicks.id, slotId)).returning();
 
       return { slot: updatedSlot, draftedPlayerIds };

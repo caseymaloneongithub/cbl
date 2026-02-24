@@ -25,7 +25,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Clock, Search, Trophy, Users, Loader2, CheckCircle, Building2, AlertTriangle, ListOrdered, ArrowUp, ArrowDown, Plus, Trash2, Pause, Play, Bell, BellOff } from "lucide-react";
+import { Clock, Search, Trophy, Users, Loader2, CheckCircle, Building2, AlertTriangle, ListOrdered, ArrowUp, ArrowDown, Plus, Trash2, Pause, Play, Bell, BellOff, SkipForward } from "lucide-react";
 import type { Draft, DraftRound, DraftPlayerWithDetails, DraftPickWithDetails, DraftOrder, User, AutoDraftListWithPlayer, TeamAutoDraftList } from "@shared/schema";
 
 
@@ -208,15 +208,12 @@ export default function DraftBoard() {
       .slice(0, 3);
   }, [picks, currentSlot]);
 
-  const myOpenSlots = useMemo(() => {
+  const myPicks = useMemo(() => {
     if (!user || !picks) return [];
     return picks
-      .filter((slot) =>
-        slot.userId === user.id &&
-        !slot.madeAt &&
-        new Date(slot.scheduledAt).getTime() <= nowMs)
+      .filter((slot) => slot.userId === user.id)
       .sort((a, b) => a.overallPickNumber - b.overallPickNumber);
-  }, [user, picks, nowMs]);
+  }, [user, picks]);
 
   const availableOrgs = useMemo(() => {
     if (!availablePlayers) return [];
@@ -415,6 +412,19 @@ export default function DraftBoard() {
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum] });
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", { leagueId: selectedLeagueId }] });
       toast({ title: "Draft Resumed" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const skipPick = useMutation({
+    mutationFn: async (slotId: number) => {
+      const res = await apiRequest("POST", `/api/drafts/${draftIdNum}/skip-pick`, { slotId });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "picks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "timing"] });
+      toast({ title: "Pick Skipped", description: "The team can still come back and pick at any time." });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -751,12 +761,42 @@ export default function DraftBoard() {
                 </p>
               </div>
             )}
-            {canPick && isTeamDraftRound && (
-              <Button className="mt-3" onClick={handleTeamDraftClick} data-testid="button-team-draft-pick">
-                <Building2 className="h-4 w-4 mr-2" />
-                Select Organization
-              </Button>
-            )}
+            <div className="flex items-center gap-2 mt-3">
+              {canPick && isTeamDraftRound && (
+                <Button onClick={handleTeamDraftClick} data-testid="button-team-draft-pick">
+                  <Building2 className="h-4 w-4 mr-2" />
+                  Select Organization
+                </Button>
+              )}
+              {(isLeagueCommissioner || user?.isSuperAdmin) && currentSlot && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="outline" size="sm" data-testid="button-skip-pick">
+                      <SkipForward className="h-4 w-4 mr-1" />
+                      Skip Pick
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Skip this pick?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will skip {currentTeam?.user.teamName || "this team"}'s current pick and move on to the next team. The skipped team can still come back and make their pick at any time.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => skipPick.mutate(currentSlot.id)}
+                        disabled={skipPick.isPending}
+                        data-testid="button-confirm-skip-pick"
+                      >
+                        {skipPick.isPending ? "Skipping..." : "Skip Pick"}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}
@@ -858,50 +898,50 @@ export default function DraftBoard() {
             </CardContent>
           </Card>
 
-          {draft.status !== "completed" && (
+          {myPicks.length > 0 && (
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-lg">Your Open Picks</CardTitle>
+                <CardTitle className="text-lg" data-testid="title-your-picks">Your Picks</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2">
-                <div className="text-2xl font-semibold">{myOpenSlots.length}</div>
-                <p className="text-sm text-muted-foreground">Eligible open slots (scheduled and unfilled).</p>
-                {myOpenSlots.slice(0, 3).map((slot) => (
-                  <div key={slot.id} className="text-sm text-muted-foreground">
-                    Pick {slot.overallPickNumber} due {new Date(slot.deadlineAt).toLocaleString()}
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
-
-          {!!picks?.length && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg">Slot Board</CardTitle>
-              </CardHeader>
-              <CardContent className="p-0 max-h-[360px] overflow-y-auto">
+              <CardContent className="p-0 max-h-[300px] overflow-y-auto">
                 <Table>
                   <TableHeader className="sticky top-0 z-10 bg-background">
                     <TableRow className="bg-muted/50">
-                      <TableHead>#</TableHead>
-                      <TableHead>Team</TableHead>
-                      <TableHead>Scheduled</TableHead>
+                      <TableHead className="w-[50px]">#</TableHead>
+                      <TableHead>Pick</TableHead>
                       <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {picks.map((slot) => (
-                      <TableRow key={slot.id} className={currentSlot?.id === slot.id ? "bg-primary/10" : ""}>
-                        <TableCell className="font-mono text-xs">{slot.overallPickNumber}</TableCell>
-                        <TableCell className="text-sm">{slot.user.teamName || slot.user.firstName || slot.user.lastName || slot.user.id}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{new Date(slot.scheduledAt).toLocaleString()}</TableCell>
+                    {myPicks.map((slot) => (
+                      <TableRow key={slot.id} data-testid={`row-my-pick-${slot.id}`}>
+                        <TableCell className="font-mono text-xs">{slot.round}.{slot.roundPickIndex + 1}</TableCell>
+                        <TableCell>
+                          {slot.madeAt ? (
+                            <>
+                              <div className="text-sm font-medium">{slot.player?.fullName || slot.selectedOrgName || "-"}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {slot.player
+                                  ? `${slot.player.primaryPosition} - ${getMlbAffiliationAbbreviation(slot.player.parentOrgName) || slot.player.parentOrgName || "-"}`
+                                  : slot.selectedOrgName
+                                    ? `Organization (${slot.selectedOrgPlayerIds?.length || 0} players)`
+                                    : "-"}
+                              </div>
+                            </>
+                          ) : (
+                            <div className="text-sm text-muted-foreground">-</div>
+                          )}
+                        </TableCell>
                         <TableCell>
                           {slot.madeAt
-                            ? <Badge variant="secondary" className="text-xs">Filled</Badge>
-                            : (new Date(slot.scheduledAt).getTime() <= nowMs
-                              ? <Badge variant="default" className="text-xs">Open</Badge>
-                              : <Badge variant="outline" className="text-xs">Upcoming</Badge>)}
+                            ? <Badge variant="secondary" className="text-xs">Picked</Badge>
+                            : slot.skippedAt
+                              ? <Badge variant="destructive" className="text-xs">Skipped</Badge>
+                              : currentSlot?.id === slot.id
+                                ? <Badge variant="default" className="text-xs">On Clock</Badge>
+                                : new Date(slot.scheduledAt).getTime() <= nowMs
+                                  ? <Badge className="text-xs bg-amber-500">Open</Badge>
+                                  : <Badge variant="outline" className="text-xs">Upcoming</Badge>}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -912,7 +952,7 @@ export default function DraftBoard() {
           )}
 
           {draft.status !== "completed" && (
-            <Card className="mt-4">
+            <Card>
               <CardHeader className="pb-3 space-y-3">
                 <div className="flex flex-row items-center justify-between gap-2">
                   <CardTitle className="text-lg flex items-center gap-2">
@@ -1098,7 +1138,7 @@ export default function DraftBoard() {
           )}
 
           {draft.status !== "completed" && hasTeamDraftRound && (
-            <Card className="mt-4">
+            <Card>
               <CardHeader className="pb-3 space-y-3">
                 <div className="flex flex-row items-center justify-between gap-2">
                   <CardTitle className="text-lg flex items-center gap-2">
@@ -1271,6 +1311,46 @@ export default function DraftBoard() {
                     </Table>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          )}
+
+          {!!picks?.length && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Slot Board</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0 max-h-[360px] overflow-y-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 z-10 bg-background">
+                    <TableRow className="bg-muted/50">
+                      <TableHead>#</TableHead>
+                      <TableHead>Team</TableHead>
+                      <TableHead>Scheduled</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {picks.map((slot) => (
+                      <TableRow key={slot.id} className={currentSlot?.id === slot.id ? "bg-primary/10" : ""}>
+                        <TableCell className="font-mono text-xs">{slot.overallPickNumber}</TableCell>
+                        <TableCell className="text-sm">{slot.user.teamName || slot.user.firstName || slot.user.lastName || slot.user.id}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{new Date(slot.scheduledAt).toLocaleString()}</TableCell>
+                        <TableCell>
+                          {slot.madeAt
+                            ? <Badge variant="secondary" className="text-xs">Filled</Badge>
+                            : slot.skippedAt
+                              ? <Badge variant="destructive" className="text-xs">Skipped</Badge>
+                              : currentSlot?.id === slot.id
+                                ? <Badge variant="default" className="text-xs">On Clock</Badge>
+                                : (new Date(slot.scheduledAt).getTime() <= nowMs
+                                  ? <Badge variant="default" className="text-xs">Open</Badge>
+                                  : <Badge variant="outline" className="text-xs">Upcoming</Badge>)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </CardContent>
             </Card>
           )}
