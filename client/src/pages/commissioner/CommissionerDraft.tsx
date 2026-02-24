@@ -34,7 +34,7 @@ export default function CommissionerDraft() {
       return res.json();
     },
     enabled: !!selectedLeagueId,
-    staleTime: 30_000,
+    staleTime: 5_000,
   });
 
   const createDraft = useMutation({
