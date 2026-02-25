@@ -230,6 +230,7 @@ export interface IStorage {
   
   // Admin operations
   getSuperAdmin(): Promise<User | undefined>;
+  getAllSuperAdmins(): Promise<User[]>;
   getUnemailedClosedAuctions(): Promise<{
     withBids: Array<{
       agent: FreeAgent;
@@ -2232,6 +2233,13 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.isSuperAdmin, true))
       .limit(1);
     return superAdmin;
+  }
+
+  async getAllSuperAdmins(): Promise<User[]> {
+    return db
+      .select()
+      .from(users)
+      .where(eq(users.isSuperAdmin, true));
   }
 
   async getUnemailedClosedAuctions(): Promise<{

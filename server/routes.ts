@@ -10142,10 +10142,10 @@ async function checkAndSendRoundSummaryEmail(draftId: number, completedPickRound
 
     let recipients: Array<{ email: string; firstName: string | null; userId: string }> = [];
     if (isDev) {
-      const superAdmin = await storage.getSuperAdmin();
-      if (superAdmin?.email) {
-        recipients = [{ email: superAdmin.email, firstName: superAdmin.firstName, userId: superAdmin.id }];
-      }
+      const allSuperAdmins = await storage.getAllSuperAdmins();
+      recipients = allSuperAdmins
+        .filter((sa: any) => sa.email && !sa.email.includes("@example.com"))
+        .map((sa: any) => ({ email: sa.email, firstName: sa.firstName, userId: sa.id }));
     } else {
       const allMembers = await storage.getLeagueMembersEmails(draft.leagueId);
       const optedOut = await storage.getDraftOptedOutUserIds(draftId);
@@ -10233,10 +10233,10 @@ async function sendPickNotificationEmails(
 
     let recipients: Array<{ email: string; firstName: string | null; userId: string }> = [];
     if (isDev) {
-      const superAdmin = await storage.getSuperAdmin();
-      if (superAdmin?.email) {
-        recipients = [{ email: superAdmin.email, firstName: superAdmin.firstName, userId: superAdmin.id }];
-      }
+      const allSuperAdmins = await storage.getAllSuperAdmins();
+      recipients = allSuperAdmins
+        .filter((sa: any) => sa.email && !sa.email.includes("@example.com"))
+        .map((sa: any) => ({ email: sa.email, firstName: sa.firstName, userId: sa.id }));
     } else {
       const allMembers = await storage.getLeagueMembersEmails(draft.leagueId);
       const optedOut = await storage.getDraftOptedOutUserIds(draftId);
