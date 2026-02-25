@@ -1058,8 +1058,8 @@ export default function DraftBoard() {
                 </div>
               </CardHeader>
               <CardContent className="p-0">
-                {!!autoDraftSearch && (
-                  <div className="border-t border-b p-2 space-y-1">
+                {autoDraftSearch.trim().length >= 2 && (
+                  <div className="border-t border-b p-2 space-y-1 max-h-60 overflow-y-auto">
                     {autoDraftCandidatePlayers.length === 0 ? (
                       <div className="px-2 py-1 text-xs text-muted-foreground">
                         No matching available players found.
@@ -1224,8 +1224,8 @@ export default function DraftBoard() {
                 </div>
               </CardHeader>
               <CardContent className="p-0">
-                {!!teamAutoDraftSearch && (
-                  <div className="border-t border-b p-2 space-y-1">
+                {teamAutoDraftSearch.trim().length >= 2 && (
+                  <div className="border-t border-b p-2 space-y-1 max-h-60 overflow-y-auto">
                     {teamAutoDraftCandidateOrgs.length === 0 ? (
                       <div className="px-2 py-1 text-xs text-muted-foreground">
                         No matching available organizations found.
