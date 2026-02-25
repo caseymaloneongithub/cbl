@@ -712,7 +712,7 @@ export default function DraftBoard() {
             {draft.status === "active" ? "Live" : draft.status === "paused" ? "Paused" : draft.status}
           </Badge>
           <span className="text-muted-foreground text-sm" data-testid="text-round-info">
-            {currentSlot ? `${draftRounds?.find(r => r.roundNumber === currentSlot.round)?.name || `Round ${currentSlot.round}`}, Pick ${currentSlot.roundPickIndex + 1}, Overall ${currentSlot.overallPickNumber}` : "Waiting for first slot to open"}
+            {currentSlot ? (() => { const rn = draftRounds?.find(r => r.roundNumber === currentSlot.round)?.name; const label = rn ? (/^\d+$/.test(rn) ? `Round ${rn}` : rn) : `Round ${currentSlot.round}`; return `${label}, Pick ${currentSlot.roundPickIndex + 1}, Overall ${currentSlot.overallPickNumber}`; })() : "Waiting for first slot to open"}
           </span>
           {isTeamDraftRound && (
             <Badge variant="secondary" data-testid="badge-team-draft-round">
