@@ -10152,6 +10152,15 @@ async function sendPickNotificationEmails(
       nextPickRoundName = nextRoundConfig?.name || `Round ${nextSlot.round}`;
     }
 
+    const skippedSlots = allSlots.filter((s: any) => s.skippedAt && !s.madeAt && s.id !== madeSlotId);
+    const skippedTeamMap = new Map<string, string>();
+    for (const s of skippedSlots) {
+      if (!skippedTeamMap.has(s.userId)) {
+        skippedTeamMap.set(s.userId, s.user?.teamName || `${s.user?.firstName || ""} ${s.user?.lastName || ""}`.trim() || "Unknown");
+      }
+    }
+    const skippedTeams = Array.from(skippedTeamMap.values()).map(teamName => ({ teamName }));
+
     const notification: DraftPickNotification = {
       draftName: draft.name,
       pickNumber: madeSlot.overallPickNumber,
@@ -10170,6 +10179,7 @@ async function sendPickNotificationEmails(
       nextPickOwnerName: nextSlot ? (`${nextSlot.user?.firstName || ""} ${nextSlot.user?.lastName || ""}`.trim() || "Unknown") : undefined,
       nextPickRoundName,
       nextPickNumber: nextSlot?.overallPickNumber,
+      skippedTeams: skippedTeams.length > 0 ? skippedTeams : undefined,
     };
 
     const isDev = process.env.NODE_ENV === "development";

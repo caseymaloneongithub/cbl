@@ -503,6 +503,7 @@ export interface DraftPickNotification {
   nextPickOwnerName?: string;
   nextPickRoundName?: string;
   nextPickNumber?: number;
+  skippedTeams?: Array<{ teamName: string }>;
 }
 
 export async function sendDraftPickNotificationEmail(
@@ -572,6 +573,11 @@ export async function sendDraftPickNotificationEmail(
     </div>
 
     ${upNextHtml}
+    ${notification.skippedTeams && notification.skippedTeams.length > 0 ? `
+      <div style="background: #fff8e1; border: 1px solid #ffe082; border-radius: 6px; padding: 15px; margin: 15px 0;">
+        <p style="margin: 0; font-weight: bold; color: #f57f17;">Skipped ${notification.skippedTeams.length === 1 ? 'Team' : 'Teams'} — Can Still Pick</p>
+        <p style="margin: 5px 0 0 0; font-size: 13px;">${notification.skippedTeams.map(t => `<strong>${t.teamName}</strong>`).join(', ')} ${notification.skippedTeams.length === 1 ? 'has a' : 'have'} skipped ${notification.skippedTeams.length === 1 ? 'pick' : 'picks'} and can still make ${notification.skippedTeams.length === 1 ? 'a selection' : 'selections'} at any time.</p>
+      </div>` : ''}
     
     <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
     
@@ -589,7 +595,11 @@ export async function sendDraftPickNotificationEmail(
       ? `Pick #${notification.pickNumber} (${notification.roundName}.${notification.roundPickIndex + 1}) - ${notification.orgName} (Team Draft) to ${notification.pickedByTeamName} [${notification.rosterType.toUpperCase()}]`
       : `Pick #${notification.pickNumber} (${notification.roundName}.${notification.roundPickIndex + 1}) - ${notification.playerName} (${notification.playerPosition}, ${notification.playerMlbTeam}) to ${notification.pickedByTeamName} [${notification.rosterType.toUpperCase()}]`;
 
-  const text = `${draftName}\n\n${pickTextLine}${upNextText}\n`;
+  const skippedTeamsText = notification.skippedTeams && notification.skippedTeams.length > 0
+    ? `\nSkipped teams that can still pick: ${notification.skippedTeams.map(t => t.teamName).join(', ')}`
+    : '';
+
+  const text = `${draftName}\n\n${pickTextLine}${upNextText}${skippedTeamsText}\n`;
 
   return sendEmail({
     to,
