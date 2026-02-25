@@ -9493,14 +9493,14 @@ export async function registerRoutes(
       const openSlots = unmadeSlots
         .filter((slot) => new Date(slot.scheduledAt).getTime() <= now.getTime());
 
-      const skippedOpenSlots = openSlots.filter(slot => !!slot.skippedAt);
+      const allSkippedSlots = unmadeSlots.filter(slot => !!slot.skippedAt);
       const eligiblePickerIds = Array.from(new Set([
         ...(currentSlot ? [currentSlot.userId] : []),
-        ...skippedOpenSlots.map(slot => slot.userId),
+        ...allSkippedSlots.map(slot => slot.userId),
       ]));
 
       const skippedTeamMap = new Map<string, string>();
-      for (const slot of skippedOpenSlots) {
+      for (const slot of allSkippedSlots) {
         if (!skippedTeamMap.has(slot.userId)) {
           skippedTeamMap.set(slot.userId, slot.user?.teamName || `${slot.user?.firstName || ""} ${slot.user?.lastName || ""}`.trim() || slot.userId);
         }
@@ -9516,7 +9516,7 @@ export async function registerRoutes(
         now: now.toISOString(),
         currentSlot,
         eligiblePickerIds,
-        openSlotCount: openSlots.filter(s => !s.skippedAt).length + skippedOpenSlots.length,
+        openSlotCount: openSlots.filter(s => !s.skippedAt).length + allSkippedSlots.length,
         skippedTeams,
       });
     } catch (error) {
