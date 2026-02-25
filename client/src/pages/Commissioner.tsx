@@ -871,7 +871,7 @@ export default function Commissioner() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Settings className="h-6 w-6" />
-          CBL Auctions
+          CBL Strat
         </h1>
         <p className="text-muted-foreground">
           Manage league auctions and team accounts. Click "Manage" on any auction to configure its settings, teams, and free agents.

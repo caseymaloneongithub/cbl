@@ -186,7 +186,7 @@ export function Header() {
             <Link href="/" className="flex items-center gap-2 hover-elevate active-elevate-2 rounded-md px-2 py-1">
               <Diamond className="h-6 w-6 text-primary" />
               <span className="font-bold text-lg hidden sm:inline">
-                {currentLeague?.name || "CBL Auctions"}
+                {currentLeague?.name || "CBL Strat"}
               </span>
             </Link>
           </div>

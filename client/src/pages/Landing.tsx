@@ -88,7 +88,7 @@ export default function Landing() {
           <div className="mx-auto rounded-full bg-primary/10 p-4 w-fit">
             <Diamond className="h-10 w-10 text-primary" />
           </div>
-          <CardTitle className="text-2xl">CBL Auctions</CardTitle>
+          <CardTitle className="text-2xl">CBL Strat</CardTitle>
           <CardDescription>
             Sign in to access the auction platform
           </CardDescription>
