@@ -666,8 +666,8 @@ export default function DraftBoard() {
   const picksMade = filledPicks.length;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mb-4">
+    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-6">
+      <div>
         <h1 className="text-2xl font-bold" data-testid="text-draft-name">{draft.name}</h1>
         <div className="flex flex-wrap items-center gap-2 mt-1">
           <Badge variant={draft.status === "active" ? "default" : draft.status === "paused" ? "destructive" : "secondary"} data-testid="badge-draft-status">
