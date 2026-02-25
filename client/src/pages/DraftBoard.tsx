@@ -59,6 +59,8 @@ export default function DraftBoard() {
   const [autoDraftSearch, setAutoDraftSearch] = useState("");
   const [teamAutoDraftSearch, setTeamAutoDraftSearch] = useState("");
   const [teamAutoDraftRosterType, setTeamAutoDraftRosterType] = useState<string>("milb");
+  const [positionFilter, setPositionFilter] = useState<string>("all");
+  const [orgFilter, setOrgFilter] = useState<string>("all");
 
   const draftIdNum = draftId ? parseInt(draftId, 10) : null;
 
@@ -243,6 +245,33 @@ export default function DraftBoard() {
       return orgLower.includes(needle) || abbr.includes(needle);
     });
   }, [availableOrgs, orgSearch]);
+
+  const availablePositions = useMemo(() => {
+    if (!availablePlayers?.length) return [] as string[];
+    const posSet = new Set<string>();
+    availablePlayers.forEach(dp => {
+      if (dp.player.primaryPosition) posSet.add(dp.player.primaryPosition);
+    });
+    return [...posSet].sort();
+  }, [availablePlayers]);
+
+  const availableOrgOptions = useMemo(() => {
+    if (!availablePlayers?.length) return [] as string[];
+    const orgSet = new Set<string>();
+    availablePlayers.forEach(dp => {
+      if (dp.player.parentOrgName) orgSet.add(dp.player.parentOrgName);
+    });
+    return [...orgSet].sort();
+  }, [availablePlayers]);
+
+  const filteredAvailablePlayers = useMemo(() => {
+    if (!availablePlayers) return undefined;
+    return availablePlayers.filter(dp => {
+      if (positionFilter !== "all" && dp.player.primaryPosition !== positionFilter) return false;
+      if (orgFilter !== "all" && dp.player.parentOrgName !== orgFilter) return false;
+      return true;
+    });
+  }, [availablePlayers, positionFilter, orgFilter]);
 
   const makePick = useMutation({
     mutationFn: async ({ mlbPlayerId, rosterType }: { mlbPlayerId: number; rosterType: string }) => {
@@ -1345,8 +1374,8 @@ export default function DraftBoard() {
               <CardTitle className="text-lg">
                 {isTeamDraftRound ? "Available Organizations" : "Available Players"}
               </CardTitle>
-              <div className="flex items-center gap-2">
-                <div className="relative w-64">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative w-48">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     placeholder={isTeamDraftRound ? "Search organizations..." : "Search players..."}
@@ -1356,6 +1385,34 @@ export default function DraftBoard() {
                     data-testid="input-search-players"
                   />
                 </div>
+                {!isTeamDraftRound && (
+                  <>
+                    <Select value={positionFilter} onValueChange={setPositionFilter}>
+                      <SelectTrigger className="w-[100px]" data-testid="select-position-filter">
+                        <SelectValue placeholder="Position" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Pos</SelectItem>
+                        {availablePositions.map(pos => (
+                          <SelectItem key={pos} value={pos}>{pos}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select value={orgFilter} onValueChange={setOrgFilter}>
+                      <SelectTrigger className="w-[140px]" data-testid="select-org-filter">
+                        <SelectValue placeholder="Organization" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Orgs</SelectItem>
+                        {availableOrgOptions.map(org => (
+                          <SelectItem key={org} value={org}>
+                            {getMlbAffiliationAbbreviation(org) || org}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </>
+                )}
               </div>
             </CardHeader>
             <CardContent className="p-0 flex-1 overflow-hidden">
@@ -1409,9 +1466,9 @@ export default function DraftBoard() {
                 <div className="p-6 space-y-3">
                   {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
                 </div>
-              ) : !availablePlayers?.length ? (
+              ) : !filteredAvailablePlayers?.length ? (
                 <div className="p-8 text-center text-muted-foreground">
-                  {playerSearch ? "No players match your search." : "No available players remaining."}
+                  {playerSearch || positionFilter !== "all" || orgFilter !== "all" ? "No players match your filters." : "No available players remaining."}
                 </div>
               ) : (
                 <div className="overflow-x-auto h-full overflow-y-auto">
@@ -1420,16 +1477,18 @@ export default function DraftBoard() {
                       <TableRow className="bg-muted/50">
                         <TableHead className="font-semibold">Player</TableHead>
                         <TableHead className="font-semibold">Pos</TableHead>
+                        <TableHead className="font-semibold">Age</TableHead>
                         <TableHead className="font-semibold">Org</TableHead>
                         <TableHead className="font-semibold">Level</TableHead>
                         {!isTeamDraftRound && <TableHead className="font-semibold text-right">Action</TableHead>}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {availablePlayers.map((dp) => (
+                      {filteredAvailablePlayers.map((dp) => (
                         <TableRow key={dp.id} data-testid={`row-player-${dp.id}`}>
                           <TableCell className="font-medium">{dp.player.fullName}</TableCell>
                           <TableCell>{dp.player.primaryPosition}</TableCell>
+                          <TableCell className="text-muted-foreground">{dp.player.age ?? "-"}</TableCell>
                           <TableCell className="text-muted-foreground">
                             {getMlbAffiliationAbbreviation(dp.player.parentOrgName) || dp.player.parentOrgName || "-"}
                           </TableCell>
