@@ -1,15 +1,15 @@
 // Email service using Resend
 import { Resend } from 'resend';
 
-// Use direct API key from environment
+const APP_NAME = "CBL Auctions";
+
 function getResendClient() {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     throw new Error('RESEND_API_KEY not configured');
   }
   
-  // Use verified domain
-  const fromEmail = 'CBL Auctions <noreply@cbl-strat.me>';
+  const fromEmail = `${APP_NAME} <noreply@cbl-strat.me>`;
   
   return {
     client: new Resend(apiKey),
@@ -62,11 +62,11 @@ export async function sendPasswordResetEmail(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Password Reset - CBL Auctions</title>
+  <title>Password Reset - ${APP_NAME}</title>
 </head>
 <body style="font-family: 'Roboto', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
   <div style="background: linear-gradient(135deg, #1a5f2a 0%, #2d8f4a 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
-    <h1 style="color: white; margin: 0; font-size: 24px;">CBL Auctions</h1>
+    <h1 style="color: white; margin: 0; font-size: 24px;">${APP_NAME}</h1>
   </div>
   
   <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px;">
@@ -74,7 +74,7 @@ export async function sendPasswordResetEmail(
     
     <p>Hi ${firstName},</p>
     
-    <p>We received a request to reset your password for your CBL Auctions account. Click the button below to set a new password:</p>
+    <p>We received a request to reset your password for your ${APP_NAME} account. Click the button below to set a new password:</p>
     
     <div style="text-align: center; margin: 30px 0;">
       <a href="${resetLink}" style="background-color: #1a5f2a; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Reset Password</a>
@@ -96,11 +96,11 @@ export async function sendPasswordResetEmail(
   `;
 
   const text = `
-Password Reset Request - CBL Auctions
+Password Reset Request - ${APP_NAME}
 
 Hi ${firstName},
 
-We received a request to reset your password for your CBL Auctions account.
+We received a request to reset your password for your ${APP_NAME} account.
 
 Click the following link to reset your password:
 ${resetLink}
@@ -112,7 +112,7 @@ If you didn't request this password reset, you can safely ignore this email. You
 
   return sendEmail({
     to,
-    subject: 'Password Reset - CBL Auctions',
+    subject: `Password Reset - ${APP_NAME}`,
     html,
     text,
   });
@@ -130,19 +130,19 @@ export async function sendNewUserCredentialsEmail(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Welcome to CBL Auctions</title>
+  <title>Welcome to ${APP_NAME}</title>
 </head>
 <body style="font-family: 'Roboto', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
   <div style="background: linear-gradient(135deg, #1a5f2a 0%, #2d8f4a 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
-    <h1 style="color: white; margin: 0; font-size: 24px;">CBL Auctions</h1>
+    <h1 style="color: white; margin: 0; font-size: 24px;">${APP_NAME}</h1>
   </div>
   
   <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px;">
-    <h2 style="color: #1a5f2a; margin-top: 0;">Welcome to CBL Auctions!</h2>
+    <h2 style="color: #1a5f2a; margin-top: 0;">Welcome to ${APP_NAME}!</h2>
     
     <p>Hi ${firstName},</p>
     
-    <p>Your account has been created for the CBL Auctions platform. Here are your login credentials:</p>
+    <p>Your account has been created for the ${APP_NAME} platform. Here are your login credentials:</p>
     
     <div style="background: white; border: 1px solid #ddd; border-radius: 6px; padding: 20px; margin: 20px 0;">
       <p style="margin: 0 0 10px 0;"><strong>Email:</strong> ${to}</p>
@@ -166,11 +166,11 @@ export async function sendNewUserCredentialsEmail(
   `;
 
   const text = `
-Welcome to CBL Auctions!
+Welcome to ${APP_NAME}!
 
 Hi ${firstName},
 
-Your account has been created for the CBL Auctions platform. Here are your login credentials:
+Your account has been created for the ${APP_NAME} platform. Here are your login credentials:
 
 Email: ${to}
 Temporary Password: ${temporaryPassword}
@@ -184,7 +184,7 @@ If you have any questions, please contact your league commissioner.
 
   return sendEmail({
     to,
-    subject: 'Welcome to CBL Auctions - Your Login Credentials',
+    subject: `Welcome to ${APP_NAME} - Your Login Credentials`,
     html,
     text,
   });
@@ -293,11 +293,11 @@ export async function sendAuctionResultsSummaryEmail(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hourly Auction Results - CBL Auctions</title>
+  <title>Hourly Auction Results - ${APP_NAME}</title>
 </head>
 <body style="font-family: 'Roboto', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 700px; margin: 0 auto; padding: 20px;">
   <div style="background: linear-gradient(135deg, #1a5f2a 0%, #2d8f4a 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
-    <h1 style="color: white; margin: 0; font-size: 24px;">CBL Auctions</h1>
+    <h1 style="color: white; margin: 0; font-size: 24px;">${APP_NAME}</h1>
     <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 14px;">Hourly Auction Results Summary</p>
   </div>
   
@@ -317,7 +317,7 @@ export async function sendAuctionResultsSummaryEmail(
     <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
     
     <p style="color: #999; font-size: 12px; text-align: center;">
-      This is an automated hourly summary from CBL Auctions.
+      This is an automated hourly summary from ${APP_NAME}.
     </p>
     ${optOutLink ? `
     <p style="color: #999; font-size: 11px; text-align: center; margin-top: 10px;">
@@ -344,7 +344,7 @@ export async function sendAuctionResultsSummaryEmail(
   const optOutText = optOutLink ? `\nTo manage your email preferences, visit: ${optOutLink}` : '';
   
   const text = `
-Hourly Auction Results Summary - CBL Auctions
+Hourly Auction Results Summary - ${APP_NAME}
 
 Hi ${adminName},
 
@@ -355,12 +355,12 @@ Won: ${withBids.length} | No Bids: ${noBids.length}
 ${withBidsText}
 ${noBidsText}
 
-This is an automated hourly summary from CBL Auctions.${optOutText}
+This is an automated hourly summary from ${APP_NAME}.${optOutText}
   `;
 
   return sendEmail({
     to,
-    subject: `CBL Auctions - Results Summary (${results.length} closed)`,
+    subject: `${APP_NAME} - Results Summary (${results.length} closed)`,
     html,
     text,
   });
@@ -417,7 +417,7 @@ export async function sendDraftRoundSummaryEmail(
 </head>
 <body style="font-family: 'Roboto', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 700px; margin: 0 auto; padding: 20px;">
   <div style="background: linear-gradient(135deg, #1a5f2a 0%, #2d8f4a 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
-    <h1 style="color: white; margin: 0; font-size: 24px;">CBL Auctions</h1>
+    <h1 style="color: white; margin: 0; font-size: 24px;">${APP_NAME}</h1>
     <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 14px;">${draftName} - Round ${roundNumber} Complete</p>
   </div>
   
@@ -449,7 +449,7 @@ export async function sendDraftRoundSummaryEmail(
     <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
     
     <p style="color: #999; font-size: 12px; text-align: center;">
-      This is an automated draft round summary from CBL Auctions.<br>
+      This is an automated draft round summary from ${APP_NAME}.<br>
       You can opt out of these emails from the Draft Board.
     </p>
   </div>
@@ -560,7 +560,7 @@ export async function sendDraftPickNotificationEmail(
 </head>
 <body style="font-family: 'Roboto', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
   <div style="background: linear-gradient(135deg, #1a5f2a 0%, #2d8f4a 100%); padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-    <h1 style="color: white; margin: 0; font-size: 20px;">CBL Auctions</h1>
+    <h1 style="color: white; margin: 0; font-size: 20px;">${APP_NAME}</h1>
     <p style="color: rgba(255,255,255,0.9); margin: 5px 0 0 0; font-size: 13px;">${draftName}</p>
   </div>
   
@@ -576,7 +576,7 @@ export async function sendDraftPickNotificationEmail(
     <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
     
     <p style="color: #999; font-size: 11px; text-align: center;">
-      This is an automated draft notification from CBL Auctions.
+      This is an automated draft notification from ${APP_NAME}.
     </p>
   </div>
 </body>
