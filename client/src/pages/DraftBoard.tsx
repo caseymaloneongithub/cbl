@@ -1017,7 +1017,6 @@ export default function DraftBoard() {
               <CardHeader className="pb-3 space-y-3">
                 <div className="flex flex-row items-center justify-between gap-2">
                   <CardTitle className="text-lg flex items-center gap-2">
-                    <ListOrdered className="h-5 w-5" />
                     Auto-Draft List
                   </CardTitle>
                   <div className="flex items-center gap-2">
@@ -1175,7 +1174,6 @@ export default function DraftBoard() {
               <CardHeader className="pb-3 space-y-3">
                 <div className="flex flex-row items-center justify-between gap-2">
                   <CardTitle className="text-lg flex items-center gap-2">
-                    <Building2 className="h-5 w-5" />
                     Team Auto-Draft List
                   </CardTitle>
                   <div className="flex items-center gap-2">
