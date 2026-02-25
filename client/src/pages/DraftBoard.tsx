@@ -386,6 +386,7 @@ export default function DraftBoard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "auto-draft-list"] });
+      setAutoDraftSearch("");
       toast({ title: "Added to auto-draft list", description: `Queued as ${autoDraftRosterType.toUpperCase()}` });
     },
     onError: (error: Error) => {
