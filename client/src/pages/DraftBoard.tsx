@@ -684,7 +684,7 @@ export default function DraftBoard() {
                   {filledPicks.map((pick) => (
                     <TableRow key={pick.id} data-testid={`row-pick-${pick.id}`}>
                       <TableCell className="font-mono">{pick.overallPickNumber}</TableCell>
-                      <TableCell className="font-mono">{getRoundLabel(pick.round, pick.roundPickIndex)}</TableCell>
+                      <TableCell className="font-mono text-xs">{getRoundLabel(pick.round, pick.roundPickIndex)}{draftRounds?.find(r => r.roundNumber === pick.round)?.isTeamDraft ? "*" : ""}</TableCell>
                       <TableCell className="font-medium">{pick.user.teamName || `${pick.user.firstName} ${pick.user.lastName}`}</TableCell>
                       <TableCell className="font-medium">{pick.player?.fullName || pick.selectedOrgName || "-"}</TableCell>
                       <TableCell>{pick.player?.primaryPosition || (pick.selectedOrgName ? "Org Claim" : "-")}</TableCell>
@@ -695,6 +695,9 @@ export default function DraftBoard() {
                   ))}
                 </TableBody>
               </Table>
+              {draftRounds?.some(r => r.isTeamDraft) && (
+                <div className="px-4 py-2 text-xs text-muted-foreground border-t">* Team Draft round</div>
+              )}
             </div>
           </CardContent>
         </Card>
