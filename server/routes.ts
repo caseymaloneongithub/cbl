@@ -26,7 +26,7 @@ import { fromZonedTime } from "date-fns-tz";
 import { parse, isValid, format } from "date-fns";
 import crypto from "crypto";
 import { syncPlayerStatsFromMLB, testMLBConnection, fetchAllAffiliatedPlayers } from "./mlb-api";
-import { sendDraftRoundSummaryEmail, sendDraftPickNotificationEmail, type DraftPickNotification } from "./email";
+import { sendDraftPickNotificationEmail, type DraftPickNotification } from "./email";
 import fs from "fs/promises";
 import path from "path";
 
@@ -9653,7 +9653,6 @@ export async function registerRoutes(
         setTimeout(() => processAutoDraft(id, storage), 500);
       }
 
-      checkAndSendRoundSummaryEmail(id, slot.round, storage).catch(() => {});
       sendPickNotificationEmails(id, slot.id, storage).catch(() => {});
 
       res.status(201).json(pickResponse);
@@ -9812,7 +9811,6 @@ export async function registerRoutes(
         if (allSlots.length > 0 && allSlots.every((s) => !!s.madeAt || !!s.skippedAt)) {
           await storage.updateDraft(id, { status: "completed" });
         }
-        checkAndSendRoundSummaryEmail(id, slot.round, storage).catch(() => {});
         sendPickNotificationEmails(id, slot.id, storage).catch(() => {});
         return res.status(201).json({
           teamDraft: true,
@@ -9839,7 +9837,6 @@ export async function registerRoutes(
       } else {
         setTimeout(() => processAutoDraft(id, storage), 500);
       }
-      checkAndSendRoundSummaryEmail(id, slot.round, storage).catch(() => {});
       sendPickNotificationEmails(id, slot.id, storage).catch(() => {});
       res.status(201).json(updatedSlot);
     } catch (error) {
@@ -10125,64 +10122,6 @@ export async function registerRoutes(
   return httpServer;
 }
 
-const sentRoundEmails = new Set<string>();
-
-async function checkAndSendRoundSummaryEmail(draftId: number, completedPickRound: number, storage: any): Promise<void> {
-  try {
-    const emailKey = `${draftId}-${completedPickRound}`;
-    if (sentRoundEmails.has(emailKey)) return;
-
-    const allSlots = await storage.getDraftPicks(draftId);
-    const roundSlots = allSlots.filter((s: any) => s.round === completedPickRound);
-    const allRoundComplete = roundSlots.length > 0 && roundSlots.every((s: any) => !!s.madeAt || !!s.skippedAt);
-    if (!allRoundComplete) return;
-
-    sentRoundEmails.add(emailKey);
-
-    const draft = await storage.getDraft(draftId);
-    if (!draft) return;
-
-    const isDev = process.env.NODE_ENV === "development";
-
-    let recipients: Array<{ email: string; firstName: string | null; userId: string }> = [];
-    if (isDev) {
-      const allSuperAdmins = await storage.getAllSuperAdmins();
-      recipients = allSuperAdmins
-        .filter((sa: any) => sa.email && !sa.email.includes("@example.com"))
-        .map((sa: any) => ({ email: sa.email, firstName: sa.firstName, userId: sa.id }));
-    } else {
-      const allMembers = await storage.getLeagueMembersEmails(draft.leagueId);
-      const optedOut = await storage.getDraftOptedOutUserIds(draftId);
-      const optedOutSet = new Set(optedOut);
-      recipients = allMembers.filter((m: any) => !optedOutSet.has(m.userId));
-    }
-
-    if (recipients.length === 0) return;
-
-    const picks = roundSlots
-      .sort((a: any, b: any) => a.overallPickNumber - b.overallPickNumber)
-      .map((s: any) => ({
-        overallPickNumber: s.overallPickNumber,
-        playerName: s.player?.fullName || "Unknown",
-        position: s.player?.primaryPosition || "-",
-        mlbTeam: s.player?.parentOrgName || "-",
-        ownerTeamName: s.user?.teamName || `${s.user?.firstName || ""} ${s.user?.lastName || ""}`.trim() || "Unknown",
-        ownerName: `${s.user?.firstName || ""} ${s.user?.lastName || ""}`.trim() || "Unknown",
-        rosterType: s.rosterType || "milb",
-        isOrgPick: !!s.selectedOrgName,
-        orgName: s.selectedOrgName || undefined,
-      }));
-
-    console.log(`[DraftEmail] Round ${completedPickRound} of draft ${draftId} complete. Sending summary to ${recipients.length} recipient(s)${isDev ? " (dev mode - super admin only)" : ""}`);
-
-    for (const recipient of recipients) {
-      const name = recipient.firstName || "Owner";
-      await sendDraftRoundSummaryEmail(recipient.email, name, draft.name, completedPickRound, picks);
-    }
-  } catch (error) {
-    console.error("[DraftEmail] Error sending round summary email:", error);
-  }
-}
 
 async function sendPickNotificationEmails(
   draftId: number,
@@ -10302,7 +10241,6 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
             .where(eq(draftPicks.id, slot.id));
           console.log(`[AutoDraft] Auto-skipped expired pick #${slot.overallPickNumber} for user ${slot.userId} in draft ${draftId} (no team auto-draft list)`);
           sendPickNotificationEmails(draftId, slot.id, storage, { isSkipped: true }).catch(() => {});
-          checkAndSendRoundSummaryEmail(draftId, slot.round, storage).catch(() => {});
           const updatedSlots = await storage.getDraftPicks(draftId);
           if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt || !!s.skippedAt)) {
             await storage.updateDraft(draftId, { status: "completed" });
@@ -10323,7 +10261,6 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
         setTimeout(() => processAutoDraft(draftId, storage), 500);
       }
 
-      checkAndSendRoundSummaryEmail(draftId, slot.round, storage).catch(() => {});
       sendPickNotificationEmails(draftId, slot.id, storage).catch(() => {});
       console.log(`[AutoDraft] Auto-drafted org "${topTeamPick.orgName}" for user ${slot.userId} in draft ${draftId}`);
       return true;
@@ -10337,7 +10274,6 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
           .where(eq(draftPicks.id, slot.id));
         console.log(`[AutoDraft] Auto-skipped expired pick #${slot.overallPickNumber} for user ${slot.userId} in draft ${draftId} (no auto-draft list)`);
         sendPickNotificationEmails(draftId, slot.id, storage, { isSkipped: true }).catch(() => {});
-        checkAndSendRoundSummaryEmail(draftId, slot.round, storage).catch(() => {});
         const updatedSlots = await storage.getDraftPicks(draftId);
         if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt || !!s.skippedAt)) {
           await storage.updateDraft(draftId, { status: "completed" });
@@ -10358,7 +10294,6 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
       setTimeout(() => processAutoDraft(draftId, storage), 500);
     }
 
-    checkAndSendRoundSummaryEmail(draftId, slot.round, storage).catch(() => {});
     sendPickNotificationEmails(draftId, slot.id, storage).catch(() => {});
 
     console.log(`[AutoDraft] Auto-drafted player ${topPick.mlbPlayerId} for user ${slot.userId} in draft ${draftId}`);
