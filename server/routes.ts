@@ -9647,7 +9647,7 @@ export async function registerRoutes(
         );
       }
 
-      if (allSlots.length > 0 && allSlots.filter((s) => s.id !== slot.id).every((s) => !!s.madeAt || !!s.skippedAt)) {
+      if (allSlots.length > 0 && allSlots.filter((s) => s.id !== slot.id).every((s) => !!s.madeAt)) {
         await storage.updateDraft(id, { status: "completed" });
       } else {
         setTimeout(() => processAutoDraft(id, storage), 500);
@@ -9808,7 +9808,7 @@ export async function registerRoutes(
         }
         const result = await storage.fillSlotWithOrg(slot.id, targetUserId, selectedOrgName, selectedOrgId, rosterType, now);
         const allSlots = await storage.getDraftPicks(id);
-        if (allSlots.length > 0 && allSlots.every((s) => !!s.madeAt || !!s.skippedAt)) {
+        if (allSlots.length > 0 && allSlots.every((s) => !!s.madeAt)) {
           await storage.updateDraft(id, { status: "completed" });
         }
         sendPickNotificationEmails(id, slot.id, storage).catch(() => {});
@@ -9832,7 +9832,7 @@ export async function registerRoutes(
 
       const updatedSlot = await storage.fillSlotWithPlayer(slot.id, targetUserId, mlbPlayerId, rosterType, now);
       const allSlots = await storage.getDraftPicks(id);
-      if (allSlots.length > 0 && allSlots.every((s) => !!s.madeAt || !!s.skippedAt)) {
+      if (allSlots.length > 0 && allSlots.every((s) => !!s.madeAt)) {
         await storage.updateDraft(id, { status: "completed" });
       } else {
         setTimeout(() => processAutoDraft(id, storage), 500);
@@ -10252,7 +10252,7 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
           console.log(`[AutoDraft] Auto-skipped expired pick #${slot.overallPickNumber} for user ${slot.userId} in draft ${draftId} (no team auto-draft list)`);
           sendPickNotificationEmails(draftId, slot.id, storage, { isSkipped: true }).catch(() => {});
           const updatedSlots = await storage.getDraftPicks(draftId);
-          if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt || !!s.skippedAt)) {
+          if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt)) {
             await storage.updateDraft(draftId, { status: "completed" });
           } else {
             setTimeout(() => processAutoDraft(draftId, storage), 500);
@@ -10265,7 +10265,7 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
       await storage.fillSlotWithOrg(slot.id, slot.userId, topTeamPick.orgName, null, topTeamPick.rosterType as "mlb" | "milb", now);
 
       const updatedSlots = await storage.getDraftPicks(draftId);
-      if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt || !!s.skippedAt)) {
+      if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt)) {
         await storage.updateDraft(draftId, { status: "completed" });
       } else {
         setTimeout(() => processAutoDraft(draftId, storage), 500);
@@ -10285,7 +10285,7 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
         console.log(`[AutoDraft] Auto-skipped expired pick #${slot.overallPickNumber} for user ${slot.userId} in draft ${draftId} (no auto-draft list)`);
         sendPickNotificationEmails(draftId, slot.id, storage, { isSkipped: true }).catch(() => {});
         const updatedSlots = await storage.getDraftPicks(draftId);
-        if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt || !!s.skippedAt)) {
+        if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt)) {
           await storage.updateDraft(draftId, { status: "completed" });
         } else {
           setTimeout(() => processAutoDraft(draftId, storage), 500);
@@ -10298,7 +10298,7 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
     await storage.fillSlotWithPlayer(slot.id, slot.userId, topPick.mlbPlayerId, topPick.rosterType, now);
 
     const updatedSlots = await storage.getDraftPicks(draftId);
-    if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt || !!s.skippedAt)) {
+    if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt)) {
       await storage.updateDraft(draftId, { status: "completed" });
     } else {
       setTimeout(() => processAutoDraft(draftId, storage), 500);
