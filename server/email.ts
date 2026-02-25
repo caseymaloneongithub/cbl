@@ -484,3 +484,117 @@ You can opt out of these emails from the Draft Board.
     text,
   });
 }
+
+export interface DraftPickNotification {
+  draftName: string;
+  pickNumber: number;
+  roundName: string;
+  roundPickIndex: number;
+  pickedByTeamName: string;
+  pickedByOwnerName: string;
+  isOrgPick: boolean;
+  orgName?: string;
+  playerName?: string;
+  playerPosition?: string;
+  playerMlbTeam?: string;
+  rosterType: string;
+  isSkipped: boolean;
+  nextPickTeamName?: string;
+  nextPickOwnerName?: string;
+  nextPickRoundName?: string;
+  nextPickNumber?: number;
+}
+
+export async function sendDraftPickNotificationEmail(
+  to: string,
+  recipientName: string,
+  notification: DraftPickNotification,
+): Promise<{ success: boolean; error?: string }> {
+  const { draftName } = notification;
+
+  let pickDescription: string;
+  if (notification.isSkipped) {
+    pickDescription = `<span style="color: #d9534f;">Skipped</span>`;
+  } else if (notification.isOrgPick) {
+    pickDescription = `<em>${notification.orgName}</em> <span style="color: #666;">(Team Draft)</span>`;
+  } else {
+    pickDescription = `<strong>${notification.playerName}</strong> <span style="color: #666;">(${notification.playerPosition}, ${notification.playerMlbTeam})</span>`;
+  }
+
+  const rosterBadge = notification.isSkipped ? '' : `
+    <span style="background: ${notification.rosterType === 'mlb' ? '#1a5f2a' : '#666'}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 8px;">
+      ${notification.rosterType === 'mlb' ? 'MLB' : 'MiLB'}
+    </span>`;
+
+  let upNextHtml = '';
+  let upNextText = '';
+  if (notification.nextPickTeamName) {
+    upNextHtml = `
+      <div style="background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 6px; padding: 15px; margin: 15px 0;">
+        <p style="margin: 0; font-weight: bold; color: #1a5f2a;">Up Next</p>
+        <p style="margin: 5px 0 0 0;">Pick #${notification.nextPickNumber} (${notification.nextPickRoundName}) - <strong>${notification.nextPickTeamName}</strong> (${notification.nextPickOwnerName})</p>
+      </div>`;
+    upNextText = `\nUp Next: Pick #${notification.nextPickNumber} (${notification.nextPickRoundName}) - ${notification.nextPickTeamName} (${notification.nextPickOwnerName})`;
+  } else {
+    upNextHtml = `
+      <div style="background: #fff3e0; border: 1px solid #ffe0b2; border-radius: 6px; padding: 15px; margin: 15px 0;">
+        <p style="margin: 0; font-weight: bold; color: #e65100;">Draft Complete</p>
+        <p style="margin: 5px 0 0 0;">All picks have been made or skipped.</p>
+      </div>`;
+    upNextText = `\nDraft Complete - All picks have been made or skipped.`;
+  }
+
+  const subjectPick = notification.isSkipped
+    ? `Pick #${notification.pickNumber} Skipped (${notification.pickedByTeamName})`
+    : notification.isOrgPick
+      ? `Pick #${notification.pickNumber}: ${notification.orgName} to ${notification.pickedByTeamName}`
+      : `Pick #${notification.pickNumber}: ${notification.playerName} to ${notification.pickedByTeamName}`;
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Draft Pick - ${draftName}</title>
+</head>
+<body style="font-family: 'Roboto', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <div style="background: linear-gradient(135deg, #1a5f2a 0%, #2d8f4a 100%); padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+    <h1 style="color: white; margin: 0; font-size: 20px;">CBL Auctions</h1>
+    <p style="color: rgba(255,255,255,0.9); margin: 5px 0 0 0; font-size: 13px;">${draftName}</p>
+  </div>
+  
+  <div style="background: #f9f9f9; padding: 25px; border-radius: 0 0 8px 8px;">
+    <div style="background: white; border: 1px solid #ddd; border-radius: 6px; padding: 15px; margin-bottom: 15px;">
+      <p style="margin: 0 0 5px 0; color: #666; font-size: 12px;">Pick #${notification.pickNumber} &middot; ${notification.roundName}.${notification.roundPickIndex + 1}</p>
+      <p style="margin: 0 0 8px 0; font-size: 16px;">${pickDescription}${rosterBadge}</p>
+      <p style="margin: 0; color: #666; font-size: 13px;">${notification.pickedByTeamName} (${notification.pickedByOwnerName})</p>
+    </div>
+
+    ${upNextHtml}
+    
+    <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
+    
+    <p style="color: #999; font-size: 11px; text-align: center;">
+      This is an automated draft notification from CBL Auctions.
+    </p>
+  </div>
+</body>
+</html>
+  `;
+
+  const pickTextLine = notification.isSkipped
+    ? `Pick #${notification.pickNumber} (${notification.roundName}.${notification.roundPickIndex + 1}) - SKIPPED by ${notification.pickedByTeamName}`
+    : notification.isOrgPick
+      ? `Pick #${notification.pickNumber} (${notification.roundName}.${notification.roundPickIndex + 1}) - ${notification.orgName} (Team Draft) to ${notification.pickedByTeamName} [${notification.rosterType.toUpperCase()}]`
+      : `Pick #${notification.pickNumber} (${notification.roundName}.${notification.roundPickIndex + 1}) - ${notification.playerName} (${notification.playerPosition}, ${notification.playerMlbTeam}) to ${notification.pickedByTeamName} [${notification.rosterType.toUpperCase()}]`;
+
+  const text = `${draftName}\n\n${pickTextLine}${upNextText}\n`;
+
+  return sendEmail({
+    to,
+    subject: `${draftName} - ${subjectPick}`,
+    html,
+    text,
+  });
+}
