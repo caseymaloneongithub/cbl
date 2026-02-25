@@ -1250,7 +1250,11 @@ export async function registerRoutes(
       }
 
       const leagueId = parseInt(req.params.leagueId);
-      const assignments = await storage.getLeagueRosterAssignments(leagueId);
+      const rosterType = req.query.rosterType as string | undefined;
+
+      const assignments = await storage.getLeagueRosterAssignments(leagueId, undefined, {
+        rosterType: rosterType || undefined,
+      });
 
       const members = await storage.getLeagueMembers(leagueId);
       const memberLookup = new Map(members.map(m => [m.userId, m]));
@@ -1258,8 +1262,7 @@ export async function registerRoutes(
       const exportData = assignments.map(a => ({
         mlbPlayerId: a.mlbPlayerId,
         playerName: a.player?.fullName || "Unknown",
-        userId: a.userId,
-        teamName: memberLookup.get(a.userId)?.teamName || a.userId,
+        teamName: memberLookup.get(a.userId)?.teamName || "",
         teamAbbreviation: memberLookup.get(a.userId)?.teamAbbreviation || "",
         rosterType: a.rosterType,
         contractStatus: a.contractStatus,
@@ -1273,7 +1276,7 @@ export async function registerRoutes(
 
       res.json({
         leagueName: league?.name || `League ${leagueId}`,
-        leagueId,
+        rosterType: rosterType || "all",
         exportedAt: new Date().toISOString(),
         totalAssignments: exportData.length,
         assignments: exportData,
@@ -1293,7 +1296,7 @@ export async function registerRoutes(
       }
 
       const leagueId = parseInt(req.params.leagueId);
-      const { assignments, clearExisting } = req.body;
+      const { assignments, clearExisting, clearRosterType } = req.body;
 
       if (!Array.isArray(assignments) || assignments.length === 0) {
         return res.status(400).json({ message: "assignments array is required" });
@@ -1306,23 +1309,18 @@ export async function registerRoutes(
         if (m.teamName) teamNameToUserId.set(m.teamName.toLowerCase(), m.userId);
         if (m.teamAbbreviation) teamAbbrToUserId.set(m.teamAbbreviation.toLowerCase(), m.userId);
       }
-      const validUserIds = new Set(members.map(m => m.userId));
 
       const resolved: any[] = [];
       const errors: string[] = [];
 
       for (let i = 0; i < assignments.length; i++) {
         const a = assignments[i];
-        let resolvedUserId = a.userId;
-
-        if (!validUserIds.has(resolvedUserId)) {
-          const byName = a.teamName ? teamNameToUserId.get(a.teamName.toLowerCase()) : undefined;
-          const byAbbr = a.teamAbbreviation ? teamAbbrToUserId.get(a.teamAbbreviation.toLowerCase()) : undefined;
-          resolvedUserId = byName || byAbbr;
-          if (!resolvedUserId) {
-            errors.push(`Row ${i + 1}: Could not resolve team "${a.teamName || a.teamAbbreviation}" to a league member`);
-            continue;
-          }
+        const byName = a.teamName ? teamNameToUserId.get(a.teamName.toLowerCase()) : undefined;
+        const byAbbr = a.teamAbbreviation ? teamAbbrToUserId.get(a.teamAbbreviation.toLowerCase()) : undefined;
+        const resolvedUserId = byName || byAbbr;
+        if (!resolvedUserId) {
+          errors.push(`Row ${i + 1}: Could not resolve team "${a.teamName || a.teamAbbreviation}" to a league member`);
+          continue;
         }
 
         if (!a.mlbPlayerId) {
@@ -1348,7 +1346,11 @@ export async function registerRoutes(
       }
 
       if (clearExisting) {
-        await storage.deleteAllRosterAssignments(leagueId);
+        if (clearRosterType) {
+          await storage.deleteRosterAssignmentsByType(leagueId, clearRosterType);
+        } else {
+          await storage.deleteAllRosterAssignments(leagueId);
+        }
       }
 
       let imported = 0;
@@ -1371,6 +1373,40 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("Error importing roster assignments:", error);
       res.status(500).json({ message: "Failed to import roster assignments" });
+    }
+  });
+
+  app.post("/api/admin/roster-assignments/wipe/:leagueId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      if (!user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Super Admin access required" });
+      }
+
+      const leagueId = parseInt(req.params.leagueId);
+      const { rosterType, confirmText } = req.body;
+
+      const league = (await db.select().from(leagues).where(eq(leagues.id, leagueId)))[0];
+      if (!league) {
+        return res.status(404).json({ message: "League not found" });
+      }
+
+      if (confirmText !== league.name) {
+        return res.status(400).json({ message: "Confirmation text does not match league name" });
+      }
+
+      let deleted: number;
+      if (rosterType) {
+        deleted = await storage.deleteRosterAssignmentsByType(leagueId, rosterType);
+      } else {
+        deleted = await storage.deleteAllRosterAssignments(leagueId);
+      }
+
+      res.json({ deleted, rosterType: rosterType || "all" });
+    } catch (error: any) {
+      console.error("Error wiping roster assignments:", error);
+      res.status(500).json({ message: "Failed to wipe roster assignments" });
     }
   });
 

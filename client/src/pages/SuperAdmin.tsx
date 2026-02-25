@@ -236,7 +236,10 @@ function RosterDataTransfer({ leagues }: { leagues: League[] }) {
   const { toast } = useToast();
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>("");
   const [importing, setImporting] = useState(false);
-  const [clearExisting, setClearExisting] = useState(false);
+  const [importRosterType, setImportRosterType] = useState<string>("mlb");
+  const [clearOnImport, setClearOnImport] = useState(false);
+  const [wipeConfirmText, setWipeConfirmText] = useState("");
+  const [wipeType, setWipeType] = useState<string>("all");
   const [importResult, setImportResult] = useState<{
     imported: number;
     skipped: number;
@@ -244,26 +247,25 @@ function RosterDataTransfer({ leagues }: { leagues: League[] }) {
     errors: string[];
   } | null>(null);
 
-  const exportMutation = useMutation({
-    mutationFn: async (leagueId: number) => {
-      const res = await fetch(`/api/admin/roster-assignments/export/${leagueId}`, { credentials: "include" });
+  const selectedLeagueName = leagues.find(l => String(l.id) === selectedLeagueId)?.name || "";
+
+  const doExport = async (rosterType: string) => {
+    try {
+      const res = await fetch(`/api/admin/roster-assignments/export/${selectedLeagueId}?rosterType=${rosterType}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to export");
-      return res.json();
-    },
-    onSuccess: (data) => {
+      const data = await res.json();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `roster-assignments-${data.leagueName.replace(/\s+/g, "-").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `roster-${rosterType}-${data.leagueName.replace(/\s+/g, "-").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      toast({ title: "Export complete", description: `${data.totalAssignments} assignments exported` });
-    },
-    onError: (error: Error) => {
+      toast({ title: "Export complete", description: `${data.totalAssignments} ${rosterType.toUpperCase()} assignments exported` });
+    } catch (error: any) {
       toast({ title: "Export failed", description: error.message, variant: "destructive" });
-    },
-  });
+    }
+  };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -284,7 +286,11 @@ function RosterDataTransfer({ leagues }: { leagues: League[] }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ assignments, clearExisting }),
+        body: JSON.stringify({
+          assignments,
+          clearExisting: clearOnImport,
+          clearRosterType: clearOnImport ? importRosterType : undefined,
+        }),
       });
 
       if (!res.ok) {
@@ -306,11 +312,37 @@ function RosterDataTransfer({ leagues }: { leagues: League[] }) {
     }
   };
 
+  const wipeMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/admin/roster-assignments/wipe/${selectedLeagueId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          rosterType: wipeType === "all" ? undefined : wipeType,
+          confirmText: wipeConfirmText,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Wipe failed");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setWipeConfirmText("");
+      toast({ title: "Roster wiped", description: `${data.deleted} ${data.rosterType} assignments deleted` });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Wipe failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   return (
     <div className="space-y-4">
       <div className="space-y-2">
         <Label>Select League</Label>
-        <Select value={selectedLeagueId} onValueChange={setSelectedLeagueId}>
+        <Select value={selectedLeagueId} onValueChange={(v) => { setSelectedLeagueId(v); setImportResult(null); setWipeConfirmText(""); }}>
           <SelectTrigger data-testid="select-transfer-league">
             <SelectValue placeholder="Choose a league..." />
           </SelectTrigger>
@@ -323,79 +355,137 @@ function RosterDataTransfer({ leagues }: { leagues: League[] }) {
       </div>
 
       {selectedLeagueId && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2 p-4 border rounded-lg">
-            <h4 className="font-medium">Export</h4>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-3 p-4 border rounded-lg">
+              <h4 className="font-medium">Export</h4>
+              <p className="text-sm text-muted-foreground">
+                Download roster assignments as JSON. Teams matched by name/abbreviation across environments.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={() => doExport("mlb")}
+                  variant="outline"
+                  data-testid="button-export-mlb"
+                >
+                  Export MLB Roster
+                </Button>
+                <Button
+                  onClick={() => doExport("milb")}
+                  variant="outline"
+                  data-testid="button-export-milb"
+                >
+                  Export MiLB Roster
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-3 p-4 border rounded-lg">
+              <h4 className="font-medium">Import</h4>
+              <p className="text-sm text-muted-foreground">
+                Upload a previously exported JSON file. Teams matched by name or abbreviation.
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="clear-on-import"
+                  checked={clearOnImport}
+                  onChange={(e) => setClearOnImport(e.target.checked)}
+                  className="rounded"
+                  data-testid="checkbox-clear-on-import"
+                />
+                <Label htmlFor="clear-on-import" className="text-sm font-normal cursor-pointer">
+                  Clear matching roster type before import
+                </Label>
+              </div>
+              {clearOnImport && (
+                <Select value={importRosterType} onValueChange={setImportRosterType}>
+                  <SelectTrigger className="w-40" data-testid="select-import-roster-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="mlb">MLB only</SelectItem>
+                    <SelectItem value="milb">MiLB only</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+              <Input
+                type="file"
+                accept=".json"
+                onChange={handleImport}
+                disabled={importing}
+                data-testid="input-import-file"
+              />
+              {importing && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Importing...
+                </div>
+              )}
+            </div>
+          </div>
+
+          {importResult && (
+            <div className="p-4 border rounded-lg space-y-2">
+              <h4 className="font-medium">Import Results</h4>
+              <div className="flex gap-4 text-sm">
+                <Badge variant="default">{importResult.imported} imported</Badge>
+                {importResult.skipped > 0 && <Badge variant="secondary">{importResult.skipped} skipped</Badge>}
+                {importResult.duplicateErrors > 0 && <Badge variant="destructive">{importResult.duplicateErrors} duplicates</Badge>}
+              </div>
+              {importResult.errors.length > 0 && (
+                <div className="text-sm text-destructive mt-2 max-h-40 overflow-auto">
+                  {importResult.errors.map((err, i) => (
+                    <div key={i}>{err}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="p-4 border border-destructive/30 rounded-lg space-y-3">
+            <h4 className="font-medium text-destructive">Wipe Roster Assignments</h4>
             <p className="text-sm text-muted-foreground">
-              Download all roster assignments as a JSON file. Includes player names, team names, contract details, and minor league status.
+              Permanently delete roster assignments for this league. This cannot be undone.
             </p>
+            <Select value={wipeType} onValueChange={setWipeType}>
+              <SelectTrigger className="w-48" data-testid="select-wipe-type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All roster types</SelectItem>
+                <SelectItem value="mlb">MLB only</SelectItem>
+                <SelectItem value="milb">MiLB only</SelectItem>
+                <SelectItem value="draft">Draft only</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="space-y-1">
+              <Label className="text-sm">Type the league name to confirm: <span className="font-semibold">{selectedLeagueName}</span></Label>
+              <Input
+                value={wipeConfirmText}
+                onChange={(e) => setWipeConfirmText(e.target.value)}
+                placeholder={selectedLeagueName}
+                className="max-w-sm"
+                data-testid="input-wipe-confirm"
+              />
+            </div>
             <Button
-              onClick={() => exportMutation.mutate(parseInt(selectedLeagueId))}
-              disabled={exportMutation.isPending}
-              data-testid="button-export-roster"
+              variant="destructive"
+              onClick={() => wipeMutation.mutate()}
+              disabled={wipeConfirmText !== selectedLeagueName || wipeMutation.isPending}
+              data-testid="button-wipe-roster"
             >
-              {exportMutation.isPending ? (
+              {wipeMutation.isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Exporting...
+                  Wiping...
                 </>
               ) : (
-                "Export Roster Assignments"
+                `Wipe ${wipeType === "all" ? "All" : wipeType.toUpperCase()} Assignments`
               )}
             </Button>
           </div>
-
-          <div className="space-y-2 p-4 border rounded-lg">
-            <h4 className="font-medium">Import</h4>
-            <p className="text-sm text-muted-foreground">
-              Upload a previously exported JSON file. Teams are matched by name, abbreviation, or user ID.
-            </p>
-            <div className="flex items-center gap-2 mb-2">
-              <input
-                type="checkbox"
-                id="clear-existing"
-                checked={clearExisting}
-                onChange={(e) => setClearExisting(e.target.checked)}
-                className="rounded"
-                data-testid="checkbox-clear-existing"
-              />
-              <Label htmlFor="clear-existing" className="text-sm font-normal cursor-pointer">
-                Clear existing assignments before import
-              </Label>
-            </div>
-            <Input
-              type="file"
-              accept=".json"
-              onChange={handleImport}
-              disabled={importing}
-              data-testid="input-import-file"
-            />
-            {importing && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Importing...
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {importResult && (
-        <div className="p-4 border rounded-lg space-y-2">
-          <h4 className="font-medium">Import Results</h4>
-          <div className="flex gap-4 text-sm">
-            <Badge variant="default">{importResult.imported} imported</Badge>
-            {importResult.skipped > 0 && <Badge variant="secondary">{importResult.skipped} skipped</Badge>}
-            {importResult.duplicateErrors > 0 && <Badge variant="destructive">{importResult.duplicateErrors} duplicates</Badge>}
-          </div>
-          {importResult.errors.length > 0 && (
-            <div className="text-sm text-destructive mt-2 max-h-40 overflow-auto">
-              {importResult.errors.map((err, i) => (
-                <div key={i}>{err}</div>
-              ))}
-            </div>
-          )}
-        </div>
+        </>
       )}
     </div>
   );
