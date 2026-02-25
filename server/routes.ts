@@ -19,6 +19,7 @@ import {
   draftOrder,
   draftPicks,
   autoDraftLists,
+  mlbPlayers,
 } from "@shared/schema";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -1096,6 +1097,97 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/admin/mlb-players/sync-range", isAuthenticated, async (req: any, res) => {
+    req.setTimeout(600000);
+    res.setTimeout(600000);
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      if (!user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Super Admin access required" });
+      }
+
+      const { startSeason, endSeason } = req.body;
+      const currentYear = new Date().getFullYear();
+      const start = typeof startSeason === "number" && startSeason >= 2000 ? startSeason : 2019;
+      const end = typeof endSeason === "number" && endSeason <= currentYear + 1 ? endSeason : currentYear;
+
+      if (start > end) {
+        return res.status(400).json({ message: "startSeason must be <= endSeason" });
+      }
+
+      console.log(`[MLB Sync] Starting bulk sync for seasons ${start}–${end}`);
+      const results: { season: number; playerCount: number }[] = [];
+
+      for (let season = start; season <= end; season++) {
+        console.log(`[MLB Sync] Syncing season ${season}...`);
+        const players = await fetchAllAffiliatedPlayers(season);
+        const upserted = await storage.upsertMlbPlayers(
+          players.map(p => ({
+            mlbId: p.mlbId,
+            fullName: p.fullName,
+            fullFmlName: p.fullFmlName,
+            firstName: p.firstName,
+            middleName: p.middleName,
+            lastName: p.lastName,
+            primaryPosition: p.primaryPosition,
+            positionName: p.positionName,
+            positionType: p.positionType,
+            batSide: p.batSide,
+            throwHand: p.throwHand,
+            currentTeamId: p.currentTeamId,
+            currentTeamName: p.currentTeamName,
+            parentOrgId: p.parentOrgId,
+            parentOrgName: p.parentOrgName,
+            sportId: p.sportId,
+            sportLevel: p.sportLevel,
+            birthDate: p.birthDate,
+            age: p.age,
+            isActive: p.isActive,
+            hadHittingStats: p.hadHittingStats,
+            hadPitchingStats: p.hadPitchingStats,
+            hittingAtBats: p.hittingAtBats,
+            hittingWalks: p.hittingWalks,
+            hittingSingles: p.hittingSingles,
+            hittingDoubles: p.hittingDoubles,
+            hittingTriples: p.hittingTriples,
+            hittingHomeRuns: p.hittingHomeRuns,
+            hittingAvg: p.hittingAvg,
+            hittingObp: p.hittingObp,
+            hittingSlg: p.hittingSlg,
+            hittingOps: p.hittingOps,
+            pitchingGames: p.pitchingGames,
+            pitchingGamesStarted: p.pitchingGamesStarted,
+            pitchingStrikeouts: p.pitchingStrikeouts,
+            pitchingWalks: p.pitchingWalks,
+            pitchingHits: p.pitchingHits,
+            pitchingHomeRuns: p.pitchingHomeRuns,
+            pitchingEra: p.pitchingEra,
+            pitchingInningsPitched: p.pitchingInningsPitched,
+            hittingGamesStarted: p.hittingGamesStarted,
+            hittingPlateAppearances: p.hittingPlateAppearances,
+            isTwoWayQualified: p.isTwoWayQualified,
+            season: p.season,
+          }))
+        );
+        results.push({ season, playerCount: upserted });
+        console.log(`[MLB Sync] Season ${season}: ${upserted} players synced`);
+      }
+
+      const totalPlayers = results.reduce((sum, r) => sum + r.playerCount, 0);
+      console.log(`[MLB Sync] Bulk sync complete: ${totalPlayers} total players across ${results.length} seasons`);
+
+      res.json({
+        message: `Synced ${totalPlayers} players across seasons ${start}–${end}`,
+        results,
+        totalPlayers,
+      });
+    } catch (error: any) {
+      console.error("Error in bulk MLB sync:", error);
+      res.status(500).json({ message: error.message || "Failed to sync MLB players" });
+    }
+  });
+
   // Super admin: Get MLB player counts/status
   app.get("/api/admin/mlb-players/status", isAuthenticated, async (req: any, res) => {
     try {
@@ -1137,7 +1229,12 @@ export async function registerRoutes(
         byLevel[level] = { total: levelTotal, hitters, pitchers, twoWayQualified: levelTwoWayQualified };
       }
 
-      res.json({ total, byLevel, twoWayQualified, season });
+      const seasonCounts = await db.select({
+        season: mlbPlayers.season,
+        count: sql<number>`COUNT(*)::int`,
+      }).from(mlbPlayers).groupBy(mlbPlayers.season).orderBy(mlbPlayers.season);
+
+      res.json({ total, byLevel, twoWayQualified, season, seasonCounts });
     } catch (error: any) {
       console.error("Error fetching MLB player status:", error);
       res.status(500).json({ message: "Failed to fetch MLB player status" });

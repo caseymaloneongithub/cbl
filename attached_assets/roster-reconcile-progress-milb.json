@@ -1,0 +1,11 @@
+{
+  "leagueId": 1,
+  "season": 2026,
+  "updatedAt": "2026-02-25T17:25:02.184Z",
+  "running": false,
+  "processed": 3990,
+  "totalRows": 3990,
+  "percent": 100,
+  "stage": "awaiting_resolution",
+  "message": "2941 imported, 1040 unresolved"
+}

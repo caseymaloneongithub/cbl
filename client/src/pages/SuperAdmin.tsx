@@ -105,8 +105,35 @@ function MlbPlayerSync() {
     },
   });
 
+  const syncRangeMutation = useMutation({
+    mutationFn: async ({ startSeason, endSeason }: { startSeason: number; endSeason: number }) => {
+      const res = await apiRequest("POST", "/api/admin/mlb-players/sync-range", { startSeason, endSeason });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Bulk Sync Complete",
+        description: data.message,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/mlb-players/status"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Bulk Sync Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const currentYear = new Date().getFullYear();
-  const seasonOptions = Array.from({ length: 11 }, (_, i) => currentYear - 1 - i);
+  const seasonOptions = Array.from({ length: currentYear - 2018 }, (_, i) => currentYear - i);
+  const isSyncing = syncMutation.isPending || syncRangeMutation.isPending;
+
+  const seasonCounts: { season: number; count: number }[] = status?.seasonCounts || [];
+  const syncedSeasons = new Set(seasonCounts.map((s: { season: number }) => s.season));
+  const missingSeasonsFrom2019 = Array.from({ length: currentYear - 2019 + 1 }, (_, i) => 2019 + i)
+    .filter(yr => !syncedSeasons.has(yr));
 
   return (
     <div className="space-y-4">
@@ -121,29 +148,59 @@ function MlbPlayerSync() {
           <SelectContent>
             {seasonOptions.map((yr) => (
               <SelectItem key={yr} value={yr.toString()}>
-                {yr}
+                {yr}{syncedSeasons.has(yr) ? " \u2713" : ""}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
         <Button
           onClick={() => syncMutation.mutate(syncSeason)}
-          disabled={syncMutation.isPending}
+          disabled={isSyncing}
           data-testid="button-sync-mlb-players"
         >
           {syncMutation.isPending ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Syncing...
+              Syncing {syncSeason}...
             </>
           ) : (
             <>
               <RefreshCw className="mr-2 h-4 w-4" />
-              Sync {syncSeason} Players
+              Sync {syncSeason}
             </>
           )}
         </Button>
+        {missingSeasonsFrom2019.length > 0 && (
+          <Button
+            variant="outline"
+            onClick={() => syncRangeMutation.mutate({ startSeason: 2019, endSeason: currentYear })}
+            disabled={isSyncing}
+            data-testid="button-sync-mlb-range"
+          >
+            {syncRangeMutation.isPending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Syncing 2019–{currentYear}...
+              </>
+            ) : (
+              <>
+                <Database className="mr-2 h-4 w-4" />
+                Sync All (2019–{currentYear})
+              </>
+            )}
+          </Button>
+        )}
       </div>
+
+      {seasonCounts.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {seasonCounts.map((sc: { season: number; count: number }) => (
+            <Badge key={sc.season} variant="secondary" data-testid={`badge-season-${sc.season}`}>
+              {sc.season}: {sc.count.toLocaleString()}
+            </Badge>
+          ))}
+        </div>
+      )}
 
       {loadingStatus ? (
         <Skeleton className="h-20 w-full" />
