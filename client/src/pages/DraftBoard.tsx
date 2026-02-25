@@ -902,9 +902,9 @@ export default function DraftBoard() {
               </TableHeader>
               <TableBody>
                 {picks.map((slot) => (
-                  <TableRow key={slot.id} className={currentSlot?.id === slot.id ? "bg-primary/10" : ""}>
+                  <TableRow key={slot.id} className={`${currentSlot?.id === slot.id ? "bg-primary/10" : slot.userId === user?.id ? "bg-accent/50" : ""}`}>
                     <TableCell className="font-mono text-xs">{getRoundLabel(slot.round, slot.roundPickIndex)}</TableCell>
-                    <TableCell className="text-sm">{slot.user.teamName || slot.user.firstName || slot.user.lastName || slot.user.id}</TableCell>
+                    <TableCell className={`text-sm ${slot.userId === user?.id ? "font-semibold" : ""}`}>{slot.user.teamName || slot.user.firstName || slot.user.lastName || slot.user.id}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{new Date(slot.scheduledAt).toLocaleString()}</TableCell>
                     <TableCell>
                       {slot.madeAt
@@ -925,105 +925,6 @@ export default function DraftBoard() {
         </Card>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Pick History</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              {!filledPicks.length ? (
-                <div className="p-6 text-center text-muted-foreground text-sm">No picks made yet.</div>
-              ) : (
-                <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-                  <Table>
-                    <TableHeader className="sticky top-0 z-10 bg-background">
-                      <TableRow className="bg-muted/50">
-                        <TableHead className="font-semibold">#</TableHead>
-                        <TableHead className="font-semibold">Team</TableHead>
-                        <TableHead className="font-semibold">Player</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {[...filledPicks].reverse().map((pick) => (
-                        <TableRow key={pick.id} data-testid={`row-pick-${pick.id}`}>
-                          <TableCell className="font-mono text-xs">
-                            {getRoundLabel(pick.round, pick.roundPickIndex)}
-                          </TableCell>
-                          <TableCell className="text-sm font-medium">
-                            {pick.user.teamName || `${pick.user.firstName}`}
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm font-medium">{pick.player?.fullName || pick.selectedOrgName || "-"}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {pick.player
-                                ? `${pick.player.primaryPosition} - ${getMlbAffiliationAbbreviation(pick.player.parentOrgName) || pick.player.parentOrgName || "-"}`
-                                : pick.selectedOrgName
-                                  ? `Organization claim (${pick.selectedOrgPlayerIds?.length || 0} players)`
-                                  : "-"}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {myPicks.length > 0 && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg" data-testid="title-your-picks">Your Picks</CardTitle>
-              </CardHeader>
-              <CardContent className="p-0 max-h-[300px] overflow-y-auto">
-                <Table>
-                  <TableHeader className="sticky top-0 z-10 bg-background">
-                    <TableRow className="bg-muted/50">
-                      <TableHead className="w-[50px]">#</TableHead>
-                      <TableHead>Pick</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {myPicks.map((slot) => (
-                      <TableRow key={slot.id} data-testid={`row-my-pick-${slot.id}`}>
-                        <TableCell className="font-mono text-xs">{getRoundLabel(slot.round, slot.roundPickIndex)}</TableCell>
-                        <TableCell>
-                          {slot.madeAt ? (
-                            <>
-                              <div className="text-sm font-medium">{slot.player?.fullName || slot.selectedOrgName || "-"}</div>
-                              <div className="text-xs text-muted-foreground">
-                                {slot.player
-                                  ? `${slot.player.primaryPosition} - ${getMlbAffiliationAbbreviation(slot.player.parentOrgName) || slot.player.parentOrgName || "-"}`
-                                  : slot.selectedOrgName
-                                    ? `Organization (${slot.selectedOrgPlayerIds?.length || 0} players)`
-                                    : "-"}
-                              </div>
-                            </>
-                          ) : (
-                            <div className="text-sm text-muted-foreground">-</div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {slot.madeAt
-                            ? <Badge variant="secondary" className="text-xs">Picked</Badge>
-                            : slot.skippedAt
-                              ? <Badge variant="destructive" className="text-xs">Skipped</Badge>
-                              : currentSlot?.id === slot.id
-                                ? <Badge variant="default" className="text-xs">On Clock</Badge>
-                                : new Date(slot.scheduledAt).getTime() <= nowMs
-                                  ? <Badge className="text-xs bg-amber-500">Open</Badge>
-                                  : <Badge variant="outline" className="text-xs">Upcoming</Badge>}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          )}
-      </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
           {draft.status !== "completed" && (
