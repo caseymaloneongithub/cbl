@@ -1045,24 +1045,8 @@ export default function DraftBoard() {
                     })()}
                   </div>
                 </div>
-                <div className="flex items-center justify-between">
-                  <div className="text-xs text-muted-foreground">
-                    Set your priority order here. When you are on the clock, the system takes the highest available player in this list.
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-xs shrink-0 ml-2"
-                    onClick={() => toggleEmailOptOut.mutate(!emailOptOut?.optedOut)}
-                    disabled={toggleEmailOptOut.isPending}
-                    data-testid="button-toggle-draft-email"
-                  >
-                    {emailOptOut?.optedOut ? (
-                      <><BellOff className="h-3.5 w-3.5 mr-1" /> Emails Off</>
-                    ) : (
-                      <><Bell className="h-3.5 w-3.5 mr-1" /> Round Emails</>
-                    )}
-                  </Button>
+                <div className="text-xs text-muted-foreground">
+                  Set your priority order here. When you are on the clock, the system takes the highest available player in this list.
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="relative min-w-[220px] flex-1">
