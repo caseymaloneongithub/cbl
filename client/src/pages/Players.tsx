@@ -267,8 +267,8 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
     setPitcherPage(0);
   };
 
-  const hs = (key: HitterSortKey) => (hitterSort.key === key ? (hitterSort.dir === "asc" ? " ?" : " ?") : "");
-  const ps = (key: PitcherSortKey) => (pitcherSort.key === key ? (pitcherSort.dir === "asc" ? " ?" : " ?") : "");
+  const hs = (key: HitterSortKey) => (hitterSort.key === key ? (hitterSort.dir === "asc" ? " ▲" : " ▼") : "");
+  const ps = (key: PitcherSortKey) => (pitcherSort.key === key ? (pitcherSort.dir === "asc" ? " ▲" : " ▼") : "");
 
   const title = level === "mlb" ? "MLB Players" : "MiLB Players";
   const showMilbLevel = level === "milb";

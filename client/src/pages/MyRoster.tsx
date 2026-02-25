@@ -173,8 +173,8 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
     return rows;
   }, [pitchersBase, pSort]);
 
-  const hs = (k: HitterSortKey) => (hSort.key === k ? (hSort.dir === "asc" ? " ?" : " ?") : "");
-  const ps = (k: PitcherSortKey) => (pSort.key === k ? (pSort.dir === "asc" ? " ?" : " ?") : "");
+  const hs = (k: HitterSortKey) => (hSort.key === k ? (hSort.dir === "asc" ? " ▲" : " ▼") : "");
+  const ps = (k: PitcherSortKey) => (pSort.key === k ? (pSort.dir === "asc" ? " ▲" : " ▼") : "");
 
   const title = level === "mlb" ? "MLB Roster" : "MiLB Roster";
   const limit = level === "mlb" ? (currentLeague as any)?.mlRosterLimit || 40 : (currentLeague as any)?.milbRosterLimit || 125;
