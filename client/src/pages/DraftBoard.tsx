@@ -850,6 +850,46 @@ export default function DraftBoard() {
         </Card>
       )}
 
+      {!!picks?.length && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Slot Board</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0 max-h-[360px] overflow-y-auto">
+            <Table>
+              <TableHeader className="sticky top-0 z-10 bg-background">
+                <TableRow className="bg-muted/50">
+                  <TableHead>Pick</TableHead>
+                  <TableHead>Team</TableHead>
+                  <TableHead>Scheduled</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {picks.map((slot) => (
+                  <TableRow key={slot.id} className={currentSlot?.id === slot.id ? "bg-primary/10" : ""}>
+                    <TableCell className="font-mono text-xs">{getRoundLabel(slot.round, slot.roundPickIndex)}</TableCell>
+                    <TableCell className="text-sm">{slot.user.teamName || slot.user.firstName || slot.user.lastName || slot.user.id}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{new Date(slot.scheduledAt).toLocaleString()}</TableCell>
+                    <TableCell>
+                      {slot.madeAt
+                        ? <Badge variant="secondary" className="text-xs">Filled</Badge>
+                        : slot.skippedAt
+                          ? <Badge variant="destructive" className="text-xs">Skipped</Badge>
+                          : currentSlot?.id === slot.id
+                            ? <Badge variant="default" className="text-xs">On Clock</Badge>
+                            : (new Date(slot.scheduledAt).getTime() <= nowMs
+                              ? <Badge variant="default" className="text-xs">Open</Badge>
+                              : <Badge variant="outline" className="text-xs">Upcoming</Badge>)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-2">
           <Card>
             <CardHeader className="pb-3">
@@ -1297,45 +1337,6 @@ export default function DraftBoard() {
             </Card>
           )}
 
-          {!!picks?.length && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg">Slot Board</CardTitle>
-              </CardHeader>
-              <CardContent className="p-0 max-h-[360px] overflow-y-auto">
-                <Table>
-                  <TableHeader className="sticky top-0 z-10 bg-background">
-                    <TableRow className="bg-muted/50">
-                      <TableHead>Pick</TableHead>
-                      <TableHead>Team</TableHead>
-                      <TableHead>Scheduled</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {picks.map((slot) => (
-                      <TableRow key={slot.id} className={currentSlot?.id === slot.id ? "bg-primary/10" : ""}>
-                        <TableCell className="font-mono text-xs">{getRoundLabel(slot.round, slot.roundPickIndex)}</TableCell>
-                        <TableCell className="text-sm">{slot.user.teamName || slot.user.firstName || slot.user.lastName || slot.user.id}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{new Date(slot.scheduledAt).toLocaleString()}</TableCell>
-                        <TableCell>
-                          {slot.madeAt
-                            ? <Badge variant="secondary" className="text-xs">Filled</Badge>
-                            : slot.skippedAt
-                              ? <Badge variant="destructive" className="text-xs">Skipped</Badge>
-                              : currentSlot?.id === slot.id
-                                ? <Badge variant="default" className="text-xs">On Clock</Badge>
-                                : (new Date(slot.scheduledAt).getTime() <= nowMs
-                                  ? <Badge variant="default" className="text-xs">Open</Badge>
-                                  : <Badge variant="outline" className="text-xs">Upcoming</Badge>)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          )}
       </div>
 
         <div>
