@@ -926,7 +926,6 @@ export default function DraftBoard() {
         <Card className="mb-6 border-primary">
           <CardContent className="py-4">
             <div className="flex flex-wrap items-center gap-3">
-              <Clock className="h-5 w-5 text-primary" />
               <span className="font-semibold text-lg" data-testid="text-draft-starts">
                 {draft.status === "setup" ? "Draft Starts:" : "First Pick:"}
               </span>
@@ -943,14 +942,12 @@ export default function DraftBoard() {
                   className="ml-auto text-sm font-mono"
                   data-testid="badge-start-countdown"
                 >
-                  <Clock className="h-3.5 w-3.5 mr-1" />
                   {startCountdown}
                 </Badge>
               )}
             </div>
             {firstPickTeam ? (
               <div className="mt-2 flex items-center gap-2 text-muted-foreground">
-                <Trophy className="h-4 w-4" />
                 <span className="text-sm">
                   First pick: <span className="font-semibold text-foreground">{firstPickTeam.user.teamName || `${firstPickTeam.user.firstName} ${firstPickTeam.user.lastName}`}</span>
                   {firstPickTeam.userId === user?.id && <Badge variant="default" className="ml-2 text-xs">You</Badge>}
@@ -958,7 +955,6 @@ export default function DraftBoard() {
               </div>
             ) : draftOrderData && draftOrderData.length > 0 ? (
               <div className="mt-2 flex items-center gap-2 text-muted-foreground">
-                <Trophy className="h-4 w-4" />
                 <span className="text-sm">
                   First pick: <span className="font-semibold text-foreground">{draftOrderData[0].user.teamName || `${draftOrderData[0].user.firstName} ${draftOrderData[0].user.lastName}`}</span>
                   {draftOrderData[0].userId === user?.id && <Badge variant="default" className="ml-2 text-xs">You</Badge>}
