@@ -851,7 +851,6 @@ export default function DraftBoard() {
       )}
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <div className="space-y-4">
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">Pick History</CardTitle>
@@ -955,7 +954,9 @@ export default function DraftBoard() {
               </CardContent>
             </Card>
           )}
+      </div>
 
+      <div className="grid gap-6 lg:grid-cols-2">
           {draft.status !== "completed" && (
             <Card>
               <CardHeader className="pb-3 space-y-3">
@@ -973,18 +974,6 @@ export default function DraftBoard() {
                         </Badge>
                       );
                     })()}
-                    {!!autoDraftList?.length && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => clearAutoDraft.mutate()}
-                        disabled={clearAutoDraft.isPending}
-                        data-testid="button-auto-draft-clear"
-                      >
-                        {clearAutoDraft.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
-                        Clear
-                      </Button>
-                    )}
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
@@ -1159,18 +1148,6 @@ export default function DraftBoard() {
                         </Badge>
                       );
                     })()}
-                    {!!teamAutoDraftList?.length && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => clearTeamAutoDraft.mutate()}
-                        disabled={clearTeamAutoDraft.isPending}
-                        data-testid="button-team-auto-draft-clear"
-                      >
-                        {clearTeamAutoDraft.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
-                        Clear
-                      </Button>
-                    )}
                   </div>
                 </div>
                 <div className="text-xs text-muted-foreground">
@@ -1359,10 +1336,10 @@ export default function DraftBoard() {
               </CardContent>
             </Card>
           )}
-        </div>
+      </div>
 
-        <div className="lg:self-stretch">
-          <Card className="h-full flex flex-col">
+        <div>
+          <Card className="flex flex-col">
             <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
               <CardTitle className="text-lg">
                 {isTeamDraftRound ? "Available Organizations" : "Available Players"}
@@ -1501,7 +1478,6 @@ export default function DraftBoard() {
             </CardContent>
           </Card>
         </div>
-      </div>
 
       <Dialog open={pickDialogOpen} onOpenChange={setPickDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
