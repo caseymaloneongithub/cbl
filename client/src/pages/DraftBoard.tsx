@@ -218,12 +218,25 @@ export default function DraftBoard() {
     return () => clearInterval(interval);
   }, [currentSlot]);
 
+  const draftStartTime = useMemo(() => {
+    if (!draftRounds || draftRounds.length === 0) return null;
+    const sorted = [...draftRounds].sort((a, b) => a.roundNumber - b.roundNumber);
+    return sorted[0]?.startTime ? new Date(sorted[0].startTime) : null;
+  }, [draftRounds]);
+
+  const showPreDraftBanner = useMemo(() => {
+    if (!draft) return false;
+    if (draft.status === "setup") return true;
+    if (draft.status === "active" && !currentSlot) return true;
+    return false;
+  }, [draft, currentSlot]);
+
   useEffect(() => {
-    if (!draft || draft.status !== "setup" || !draft.startTime) {
+    if (!showPreDraftBanner || !draftStartTime) {
       setStartCountdown("");
       return;
     }
-    const startMs = new Date(draft.startTime).getTime();
+    const startMs = draftStartTime.getTime();
     const updateStartCountdown = () => {
       const now = Date.now();
       const diff = startMs - now;
@@ -248,7 +261,7 @@ export default function DraftBoard() {
     updateStartCountdown();
     const interval = setInterval(updateStartCountdown, 1000);
     return () => clearInterval(interval);
-  }, [draft]);
+  }, [showPreDraftBanner, draftStartTime]);
 
   const firstPickTeam = useMemo(() => {
     if (!picks || picks.length === 0) return null;
@@ -756,7 +769,7 @@ export default function DraftBoard() {
             {draft.status === "active" ? "Live" : draft.status === "paused" ? "Paused" : draft.status}
           </Badge>
           <span className="text-muted-foreground text-sm" data-testid="text-round-info">
-            {currentSlot ? (() => { const rn = draftRounds?.find(r => r.roundNumber === currentSlot.round)?.name; const label = rn ? (/^\d+$/.test(rn) ? `Round ${rn}` : rn) : `Round ${currentSlot.round}`; return `${label}, Pick ${currentSlot.roundPickIndex + 1}, Overall ${currentSlot.overallPickNumber}`; })() : "Waiting for first slot to open"}
+            {currentSlot ? (() => { const rn = draftRounds?.find(r => r.roundNumber === currentSlot.round)?.name; const label = rn ? (/^\d+$/.test(rn) ? `Round ${rn}` : rn) : `Round ${currentSlot.round}`; return `${label}, Pick ${currentSlot.roundPickIndex + 1}, Overall ${currentSlot.overallPickNumber}`; })() : draftStartTime ? `Starts ${draftStartTime.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "Waiting to start"}
           </span>
           {isTeamDraftRound && (
             <Badge variant="secondary" data-testid="badge-team-draft-round">
@@ -909,25 +922,21 @@ export default function DraftBoard() {
         </Card>
       )}
 
-      {draft.status === "active" && !currentTeam && (!picks || picks.length === 0) && (
-        <Card className="mb-6">
-          <CardContent className="py-8 text-center">
-            <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-lg font-medium mb-2">Draft Slots Not Generated</h3>
-            <p className="text-muted-foreground">The commissioner must start the draft after configuring rounds and order.</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {draft.status === "setup" && (
+      {showPreDraftBanner && (
         <Card className="mb-6 border-primary">
           <CardContent className="py-4">
             <div className="flex flex-wrap items-center gap-3">
               <Clock className="h-5 w-5 text-primary" />
-              <span className="font-semibold text-lg" data-testid="text-draft-starts">Draft Starts:</span>
-              <span className="text-lg font-bold text-primary" data-testid="text-start-time">
-                {new Date(draft.startTime).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+              <span className="font-semibold text-lg" data-testid="text-draft-starts">
+                {draft.status === "setup" ? "Draft Starts:" : "First Pick:"}
               </span>
+              {draftStartTime ? (
+                <span className="text-lg font-bold text-primary" data-testid="text-start-time">
+                  {draftStartTime.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                </span>
+              ) : (
+                <span className="text-lg text-muted-foreground">Not scheduled yet</span>
+              )}
               {startCountdown && (
                 <Badge
                   variant="outline"
@@ -939,7 +948,7 @@ export default function DraftBoard() {
                 </Badge>
               )}
             </div>
-            {firstPickTeam && (
+            {firstPickTeam ? (
               <div className="mt-2 flex items-center gap-2 text-muted-foreground">
                 <Trophy className="h-4 w-4" />
                 <span className="text-sm">
@@ -947,8 +956,15 @@ export default function DraftBoard() {
                   {firstPickTeam.userId === user?.id && <Badge variant="default" className="ml-2 text-xs">You</Badge>}
                 </span>
               </div>
-            )}
-            {!firstPickTeam && picks && picks.length === 0 && (
+            ) : draftOrderData && draftOrderData.length > 0 ? (
+              <div className="mt-2 flex items-center gap-2 text-muted-foreground">
+                <Trophy className="h-4 w-4" />
+                <span className="text-sm">
+                  First pick: <span className="font-semibold text-foreground">{draftOrderData[0].user.teamName || `${draftOrderData[0].user.firstName} ${draftOrderData[0].user.lastName}`}</span>
+                  {draftOrderData[0].userId === user?.id && <Badge variant="default" className="ml-2 text-xs">You</Badge>}
+                </span>
+              </div>
+            ) : (
               <p className="text-sm text-muted-foreground mt-2">Draft order has not been configured yet.</p>
             )}
           </CardContent>
