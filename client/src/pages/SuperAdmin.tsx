@@ -232,6 +232,175 @@ function MlbPlayerSync() {
   );
 }
 
+function RosterDataTransfer({ leagues }: { leagues: League[] }) {
+  const { toast } = useToast();
+  const [selectedLeagueId, setSelectedLeagueId] = useState<string>("");
+  const [importing, setImporting] = useState(false);
+  const [clearExisting, setClearExisting] = useState(false);
+  const [importResult, setImportResult] = useState<{
+    imported: number;
+    skipped: number;
+    duplicateErrors: number;
+    errors: string[];
+  } | null>(null);
+
+  const exportMutation = useMutation({
+    mutationFn: async (leagueId: number) => {
+      const res = await fetch(`/api/admin/roster-assignments/export/${leagueId}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to export");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `roster-assignments-${data.leagueName.replace(/\s+/g, "-").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "Export complete", description: `${data.totalAssignments} assignments exported` });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Export failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedLeagueId) return;
+
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const assignments = data.assignments || data;
+
+      if (!Array.isArray(assignments)) {
+        throw new Error("Invalid file format: expected an assignments array");
+      }
+
+      const res = await fetch(`/api/admin/roster-assignments/import/${selectedLeagueId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ assignments, clearExisting }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Import failed");
+      }
+
+      const result = await res.json();
+      setImportResult(result);
+      toast({
+        title: "Import complete",
+        description: `${result.imported} assigned, ${result.skipped} skipped, ${result.duplicateErrors} duplicates`,
+      });
+    } catch (error: any) {
+      toast({ title: "Import failed", description: error.message, variant: "destructive" });
+    } finally {
+      setImporting(false);
+      e.target.value = "";
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Label>Select League</Label>
+        <Select value={selectedLeagueId} onValueChange={setSelectedLeagueId}>
+          <SelectTrigger data-testid="select-transfer-league">
+            <SelectValue placeholder="Choose a league..." />
+          </SelectTrigger>
+          <SelectContent>
+            {leagues.map((l) => (
+              <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {selectedLeagueId && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2 p-4 border rounded-lg">
+            <h4 className="font-medium">Export</h4>
+            <p className="text-sm text-muted-foreground">
+              Download all roster assignments as a JSON file. Includes player names, team names, contract details, and minor league status.
+            </p>
+            <Button
+              onClick={() => exportMutation.mutate(parseInt(selectedLeagueId))}
+              disabled={exportMutation.isPending}
+              data-testid="button-export-roster"
+            >
+              {exportMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Exporting...
+                </>
+              ) : (
+                "Export Roster Assignments"
+              )}
+            </Button>
+          </div>
+
+          <div className="space-y-2 p-4 border rounded-lg">
+            <h4 className="font-medium">Import</h4>
+            <p className="text-sm text-muted-foreground">
+              Upload a previously exported JSON file. Teams are matched by name, abbreviation, or user ID.
+            </p>
+            <div className="flex items-center gap-2 mb-2">
+              <input
+                type="checkbox"
+                id="clear-existing"
+                checked={clearExisting}
+                onChange={(e) => setClearExisting(e.target.checked)}
+                className="rounded"
+                data-testid="checkbox-clear-existing"
+              />
+              <Label htmlFor="clear-existing" className="text-sm font-normal cursor-pointer">
+                Clear existing assignments before import
+              </Label>
+            </div>
+            <Input
+              type="file"
+              accept=".json"
+              onChange={handleImport}
+              disabled={importing}
+              data-testid="input-import-file"
+            />
+            {importing && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Importing...
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {importResult && (
+        <div className="p-4 border rounded-lg space-y-2">
+          <h4 className="font-medium">Import Results</h4>
+          <div className="flex gap-4 text-sm">
+            <Badge variant="default">{importResult.imported} imported</Badge>
+            {importResult.skipped > 0 && <Badge variant="secondary">{importResult.skipped} skipped</Badge>}
+            {importResult.duplicateErrors > 0 && <Badge variant="destructive">{importResult.duplicateErrors} duplicates</Badge>}
+          </div>
+          {importResult.errors.length > 0 && (
+            <div className="text-sm text-destructive mt-2 max-h-40 overflow-auto">
+              {importResult.errors.map((err, i) => (
+                <div key={i}>{err}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SuperAdmin() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const { toast } = useToast();
@@ -675,6 +844,20 @@ export default function SuperAdmin() {
           <MlbPlayerSync />
         </CardContent>
       </Card>
+
+      {allLeagues && allLeagues.length > 0 && (
+        <Card data-testid="card-roster-data-transfer">
+          <CardHeader>
+            <CardTitle>Roster Data Transfer</CardTitle>
+            <CardDescription>
+              Export roster assignments from one environment and import them into another. The exported file includes player IDs, team names, contract details, and minor league status.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <RosterDataTransfer leagues={allLeagues} />
+          </CardContent>
+        </Card>
+      )}
 
       <Dialog open={createLeagueDialogOpen} onOpenChange={setCreateLeagueDialogOpen}>
         <DialogContent>

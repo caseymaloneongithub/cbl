@@ -1241,6 +1241,139 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/admin/roster-assignments/export/:leagueId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      if (!user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Super Admin access required" });
+      }
+
+      const leagueId = parseInt(req.params.leagueId);
+      const assignments = await storage.getLeagueRosterAssignments(leagueId);
+
+      const members = await storage.getLeagueMembers(leagueId);
+      const memberLookup = new Map(members.map(m => [m.userId, m]));
+
+      const exportData = assignments.map(a => ({
+        mlbPlayerId: a.mlbPlayerId,
+        playerName: a.player?.fullName || "Unknown",
+        userId: a.userId,
+        teamName: memberLookup.get(a.userId)?.teamName || a.userId,
+        teamAbbreviation: memberLookup.get(a.userId)?.teamAbbreviation || "",
+        rosterType: a.rosterType,
+        contractStatus: a.contractStatus,
+        salary2026: a.salary2026,
+        minorLeagueStatus: a.minorLeagueStatus,
+        minorLeagueYears: a.minorLeagueYears,
+        season: a.season,
+      }));
+
+      const league = (await db.select().from(leagues).where(eq(leagues.id, leagueId)))[0];
+
+      res.json({
+        leagueName: league?.name || `League ${leagueId}`,
+        leagueId,
+        exportedAt: new Date().toISOString(),
+        totalAssignments: exportData.length,
+        assignments: exportData,
+      });
+    } catch (error: any) {
+      console.error("Error exporting roster assignments:", error);
+      res.status(500).json({ message: "Failed to export roster assignments" });
+    }
+  });
+
+  app.post("/api/admin/roster-assignments/import/:leagueId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      if (!user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Super Admin access required" });
+      }
+
+      const leagueId = parseInt(req.params.leagueId);
+      const { assignments, clearExisting } = req.body;
+
+      if (!Array.isArray(assignments) || assignments.length === 0) {
+        return res.status(400).json({ message: "assignments array is required" });
+      }
+
+      const members = await storage.getLeagueMembers(leagueId);
+      const teamNameToUserId = new Map<string, string>();
+      const teamAbbrToUserId = new Map<string, string>();
+      for (const m of members) {
+        if (m.teamName) teamNameToUserId.set(m.teamName.toLowerCase(), m.userId);
+        if (m.teamAbbreviation) teamAbbrToUserId.set(m.teamAbbreviation.toLowerCase(), m.userId);
+      }
+      const validUserIds = new Set(members.map(m => m.userId));
+
+      const resolved: any[] = [];
+      const errors: string[] = [];
+
+      for (let i = 0; i < assignments.length; i++) {
+        const a = assignments[i];
+        let resolvedUserId = a.userId;
+
+        if (!validUserIds.has(resolvedUserId)) {
+          const byName = a.teamName ? teamNameToUserId.get(a.teamName.toLowerCase()) : undefined;
+          const byAbbr = a.teamAbbreviation ? teamAbbrToUserId.get(a.teamAbbreviation.toLowerCase()) : undefined;
+          resolvedUserId = byName || byAbbr;
+          if (!resolvedUserId) {
+            errors.push(`Row ${i + 1}: Could not resolve team "${a.teamName || a.teamAbbreviation}" to a league member`);
+            continue;
+          }
+        }
+
+        if (!a.mlbPlayerId) {
+          errors.push(`Row ${i + 1}: Missing mlbPlayerId for ${a.playerName || "unknown player"}`);
+          continue;
+        }
+
+        resolved.push({
+          leagueId,
+          userId: resolvedUserId,
+          mlbPlayerId: a.mlbPlayerId,
+          rosterType: a.rosterType || "mlb",
+          contractStatus: a.contractStatus || null,
+          salary2026: a.salary2026 ?? null,
+          minorLeagueStatus: a.minorLeagueStatus || null,
+          minorLeagueYears: a.minorLeagueYears ?? null,
+          season: a.season || new Date().getFullYear(),
+        });
+      }
+
+      if (errors.length > 0 && resolved.length === 0) {
+        return res.status(400).json({ message: "All rows had errors", errors });
+      }
+
+      if (clearExisting) {
+        await storage.deleteAllRosterAssignments(leagueId);
+      }
+
+      let imported = 0;
+      const importErrors: string[] = [];
+      for (const row of resolved) {
+        try {
+          await storage.assignPlayerToRoster(row);
+          imported++;
+        } catch (e: any) {
+          importErrors.push(`Player ${row.mlbPlayerId}: ${e.message}`);
+        }
+      }
+
+      res.json({
+        imported,
+        skipped: assignments.length - resolved.length,
+        duplicateErrors: importErrors.length,
+        errors: [...errors, ...importErrors].slice(0, 50),
+      });
+    } catch (error: any) {
+      console.error("Error importing roster assignments:", error);
+      res.status(500).json({ message: "Failed to import roster assignments" });
+    }
+  });
+
   // Search MLB players reference database (available to all authenticated users)
   app.get("/api/mlb-players", isAuthenticated, async (req: any, res) => {
     try {
