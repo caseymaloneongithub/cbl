@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useLeague } from "@/hooks/useLeague";
-import { Globe, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Globe } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -168,11 +168,11 @@ export default function Results() {
 
   const SortIcon = ({ column }: { column: SortColumn }) => {
     if (sortColumn !== column) {
-      return <ArrowUpDown className="h-4 w-4 ml-1 opacity-50" />;
+      return <span className="ml-1 opacity-50 text-xs">⇅</span>;
     }
     return sortDirection === "asc" 
-      ? <ArrowUp className="h-4 w-4 ml-1" />
-      : <ArrowDown className="h-4 w-4 ml-1" />;
+      ? <span className="ml-1 text-xs">▲</span>
+      : <span className="ml-1 text-xs">▼</span>;
   };
 
   // Fetch bid history when a player is selected
