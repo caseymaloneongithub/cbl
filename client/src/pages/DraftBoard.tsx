@@ -121,6 +121,18 @@ export default function DraftBoard() {
     refetchInterval: DRAFT_POLL_INTERVAL,
   });
 
+  const { data: allAvailablePlayers } = useQuery<DraftPlayerWithDetails[]>({
+    queryKey: ["/api/drafts", draftIdNum, "players", { status: "available" }],
+    queryFn: async () => {
+      const params = new URLSearchParams({ status: "available" });
+      const res = await fetch(`/api/drafts/${draftIdNum}/players?${params}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch players");
+      return res.json();
+    },
+    enabled: !!draftIdNum,
+    refetchInterval: DRAFT_POLL_INTERVAL,
+  });
+
   const { data: timingInfo } = useQuery<TimingInfo>({
     queryKey: ["/api/drafts", draftIdNum, "timing"],
     queryFn: async () => {
@@ -429,11 +441,10 @@ export default function DraftBoard() {
 
   const autoDraftCandidatePlayers = useMemo(() => {
     const needle = stripAccents(autoDraftSearch.trim().toLowerCase());
-    if (!availablePlayers?.length) return [] as DraftPlayerWithDetails[];
-    return availablePlayers
+    if (!needle || !allAvailablePlayers?.length) return [] as DraftPlayerWithDetails[];
+    return allAvailablePlayers
       .filter((dp) => !autoDraftListIds.has(dp.mlbPlayerId))
       .filter((dp) => {
-        if (!needle) return true;
         const abbr = getMlbAffiliationAbbreviation(dp.player.parentOrgName)?.toLowerCase() || "";
         return [
           dp.player.fullName,
@@ -443,7 +454,7 @@ export default function DraftBoard() {
         ].some((value) => stripAccents((value || "").toLowerCase()).includes(needle)) || abbr.includes(needle);
       })
       .slice(0, 8);
-  }, [availablePlayers, autoDraftListIds, autoDraftSearch]);
+  }, [allAvailablePlayers, autoDraftListIds, autoDraftSearch]);
 
   const addToAutoDraft = useMutation({
     mutationFn: async ({ mlbPlayerId, rosterType }: { mlbPlayerId: number; rosterType: string }) => {
@@ -570,10 +581,10 @@ export default function DraftBoard() {
   }, [picks]);
 
   const teamAutoDraftCandidateOrgs = useMemo(() => {
-    if (!availablePlayers) return [] as string[];
+    if (!allAvailablePlayers) return [] as string[];
     const seen: Record<string, boolean> = {};
     const orgs: string[] = [];
-    availablePlayers.forEach(dp => {
+    allAvailablePlayers.forEach(dp => {
       if (dp.player.parentOrgName && !claimedOrgs.has(dp.player.parentOrgName) && !teamAutoDraftOrgNames.has(dp.player.parentOrgName) && !seen[dp.player.parentOrgName]) {
         seen[dp.player.parentOrgName] = true;
         orgs.push(dp.player.parentOrgName);
@@ -588,7 +599,7 @@ export default function DraftBoard() {
       }).sort();
     }
     return orgs.sort();
-  }, [availablePlayers, claimedOrgs, teamAutoDraftOrgNames, teamAutoDraftSearch]);
+  }, [allAvailablePlayers, claimedOrgs, teamAutoDraftOrgNames, teamAutoDraftSearch]);
 
   const addToTeamAutoDraft = useMutation({
     mutationFn: async ({ orgName, rosterType }: { orgName: string; rosterType: string }) => {
