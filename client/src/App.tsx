@@ -60,7 +60,7 @@ function AuthenticatedHome() {
     return <Redirect to={`/draft/${activeDraft.id}`} />;
   }
 
-  return <Home />;
+  return <Redirect to="/drafts" />;
 }
 
 function CommissionerRoute({ component: Component }: { component: React.ComponentType<any> }) {
