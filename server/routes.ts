@@ -9507,6 +9507,10 @@ export async function registerRoutes(
       }
       const skippedTeams = Array.from(skippedTeamMap.entries()).map(([userId, teamName]) => ({ userId, teamName }));
 
+      if (currentSlot && currentSlot.deadlineAt && new Date(currentSlot.deadlineAt).getTime() <= now.getTime() && currentSlot.round > 1) {
+        processAutoDraft(id, storage).catch(() => {});
+      }
+
       res.json({
         hasTiming: slots.length > 0,
         now: now.toISOString(),
@@ -10283,12 +10287,32 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
     const roundConfig = rounds.find((r: any) => r.roundNumber === nextSlot.round);
     const slot = nextSlot;
 
+    const deadlinePassed = slot.deadlineAt && new Date(slot.deadlineAt).getTime() <= now.getTime();
+    const isFirstRound = slot.round === 1;
+
     if (roundConfig?.isTeamDraft) {
       const claimedOrgs = new Set(
         slots.filter((s: any) => !!s.selectedOrgName).map((s: any) => s.selectedOrgName as string)
       );
       const topTeamPick = await storage.getTopAvailableTeamAutoDraftPick(draftId, slot.userId, claimedOrgs);
-      if (!topTeamPick) return false;
+      if (!topTeamPick) {
+        if (deadlinePassed && !isFirstRound) {
+          await db.update(draftPicks)
+            .set({ skippedAt: now, skippedByUserId: null })
+            .where(eq(draftPicks.id, slot.id));
+          console.log(`[AutoDraft] Auto-skipped expired pick #${slot.overallPickNumber} for user ${slot.userId} in draft ${draftId} (no team auto-draft list)`);
+          sendPickNotificationEmails(draftId, slot.id, storage, { isSkipped: true }).catch(() => {});
+          checkAndSendRoundSummaryEmail(draftId, slot.round, storage).catch(() => {});
+          const updatedSlots = await storage.getDraftPicks(draftId);
+          if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt || !!s.skippedAt)) {
+            await storage.updateDraft(draftId, { status: "completed" });
+          } else {
+            setTimeout(() => processAutoDraft(draftId, storage), 500);
+          }
+          return true;
+        }
+        return false;
+      }
 
       await storage.fillSlotWithOrg(slot.id, slot.userId, topTeamPick.orgName, null, topTeamPick.rosterType as "mlb" | "milb", now);
 
@@ -10306,7 +10330,24 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
     }
 
     const topPick = await storage.getTopAvailableAutoDraftPick(draftId, slot.userId);
-    if (!topPick) return false;
+    if (!topPick) {
+      if (deadlinePassed && !isFirstRound) {
+        await db.update(draftPicks)
+          .set({ skippedAt: now, skippedByUserId: null })
+          .where(eq(draftPicks.id, slot.id));
+        console.log(`[AutoDraft] Auto-skipped expired pick #${slot.overallPickNumber} for user ${slot.userId} in draft ${draftId} (no auto-draft list)`);
+        sendPickNotificationEmails(draftId, slot.id, storage, { isSkipped: true }).catch(() => {});
+        checkAndSendRoundSummaryEmail(draftId, slot.round, storage).catch(() => {});
+        const updatedSlots = await storage.getDraftPicks(draftId);
+        if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt || !!s.skippedAt)) {
+          await storage.updateDraft(draftId, { status: "completed" });
+        } else {
+          setTimeout(() => processAutoDraft(draftId, storage), 500);
+        }
+        return true;
+      }
+      return false;
+    }
 
     await storage.fillSlotWithPlayer(slot.id, slot.userId, topPick.mlbPlayerId, topPick.rosterType, now);
 
