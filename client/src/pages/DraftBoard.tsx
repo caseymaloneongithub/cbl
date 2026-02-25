@@ -56,6 +56,7 @@ export default function DraftBoard() {
   const [selectedOrg, setSelectedOrg] = useState<string>("");
   const [teamDraftRosterType, setTeamDraftRosterType] = useState<string>("milb");
   const [countdown, setCountdown] = useState<string>("");
+  const [startCountdown, setStartCountdown] = useState<string>("");
   const [autoDraftSearch, setAutoDraftSearch] = useState("");
   const [teamAutoDraftSearch, setTeamAutoDraftSearch] = useState("");
   const [teamAutoDraftRosterType, setTeamAutoDraftRosterType] = useState<string>("milb");
@@ -216,6 +217,44 @@ export default function DraftBoard() {
     const interval = setInterval(updateCountdown, 1000);
     return () => clearInterval(interval);
   }, [currentSlot]);
+
+  useEffect(() => {
+    if (!draft || draft.status !== "setup" || !draft.startTime) {
+      setStartCountdown("");
+      return;
+    }
+    const startMs = new Date(draft.startTime).getTime();
+    const updateStartCountdown = () => {
+      const now = Date.now();
+      const diff = startMs - now;
+      if (diff <= 0) {
+        setStartCountdown("Starting soon...");
+        return;
+      }
+      const days = Math.floor(diff / 86400000);
+      const hours = Math.floor((diff % 86400000) / 3600000);
+      const minutes = Math.floor((diff % 3600000) / 60000);
+      const seconds = Math.floor((diff % 60000) / 1000);
+      if (days > 0) {
+        setStartCountdown(`${days}d ${hours}h ${minutes}m ${seconds}s`);
+      } else if (hours > 0) {
+        setStartCountdown(`${hours}h ${minutes}m ${seconds}s`);
+      } else if (minutes > 0) {
+        setStartCountdown(`${minutes}m ${seconds}s`);
+      } else {
+        setStartCountdown(`${seconds}s`);
+      }
+    };
+    updateStartCountdown();
+    const interval = setInterval(updateStartCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [draft]);
+
+  const firstPickTeam = useMemo(() => {
+    if (!picks || picks.length === 0) return null;
+    const sorted = [...picks].sort((a, b) => a.overallPickNumber - b.overallPickNumber);
+    return sorted[0] || null;
+  }, [picks]);
 
   const filledPicks = useMemo(() => {
     return (picks || []).filter((slot) => !!slot.madeAt);
@@ -881,11 +920,37 @@ export default function DraftBoard() {
       )}
 
       {draft.status === "setup" && (
-        <Card className="mb-6">
-          <CardContent className="py-8 text-center">
-            <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-lg font-medium mb-2">Draft Not Started</h3>
-            <p className="text-muted-foreground">The commissioner has not started this draft yet.</p>
+        <Card className="mb-6 border-primary">
+          <CardContent className="py-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <Clock className="h-5 w-5 text-primary" />
+              <span className="font-semibold text-lg" data-testid="text-draft-starts">Draft Starts:</span>
+              <span className="text-lg font-bold text-primary" data-testid="text-start-time">
+                {new Date(draft.startTime).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+              </span>
+              {startCountdown && (
+                <Badge
+                  variant="outline"
+                  className="ml-auto text-sm font-mono"
+                  data-testid="badge-start-countdown"
+                >
+                  <Clock className="h-3.5 w-3.5 mr-1" />
+                  {startCountdown}
+                </Badge>
+              )}
+            </div>
+            {firstPickTeam && (
+              <div className="mt-2 flex items-center gap-2 text-muted-foreground">
+                <Trophy className="h-4 w-4" />
+                <span className="text-sm">
+                  First pick: <span className="font-semibold text-foreground">{firstPickTeam.user.teamName || `${firstPickTeam.user.firstName} ${firstPickTeam.user.lastName}`}</span>
+                  {firstPickTeam.userId === user?.id && <Badge variant="default" className="ml-2 text-xs">You</Badge>}
+                </span>
+              </div>
+            )}
+            {!firstPickTeam && picks && picks.length === 0 && (
+              <p className="text-sm text-muted-foreground mt-2">Draft order has not been configured yet.</p>
+            )}
           </CardContent>
         </Card>
       )}
