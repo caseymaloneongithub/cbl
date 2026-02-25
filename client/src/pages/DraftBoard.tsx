@@ -150,8 +150,6 @@ export default function DraftBoard() {
     return draftRounds.find(r => r.roundNumber === currentSlot.round) || null;
   }, [currentSlot, draftRounds]);
 
-  const isTeamDraftRound = currentRoundConfig?.isTeamDraft === true;
-
   const currentTeam = useMemo(() => {
     if (!currentSlot || !picks) return null;
     return picks.find((p) => p.id === currentSlot.id) || null;
@@ -161,6 +159,21 @@ export default function DraftBoard() {
     if (!currentTeam || !user) return false;
     return currentTeam.userId === user.id;
   }, [currentTeam, user]);
+
+  const mySkippedPick = useMemo(() => {
+    if (!user || !picks || !draftRounds) return null;
+    return picks
+      .filter(p => p.userId === user.id && p.skippedAt && !p.madeAt)
+      .sort((a, b) => a.overallPickNumber - b.overallPickNumber)[0] || null;
+  }, [user, picks, draftRounds]);
+
+  const isTeamDraftRound = useMemo(() => {
+    if (mySkippedPick && !isMyTurn) {
+      const roundConfig = draftRounds?.find(r => r.roundNumber === mySkippedPick.round);
+      return roundConfig?.isTeamDraft === true;
+    }
+    return currentRoundConfig?.isTeamDraft === true;
+  }, [currentRoundConfig, mySkippedPick, draftRounds, isMyTurn]);
 
   const isEligibleByTiming = useMemo(() => {
     if (!timingInfo?.hasTiming || !user) return false;
