@@ -903,7 +903,7 @@ export default function DraftBoard() {
               <TableBody>
                 {picks.map((slot) => (
                   <TableRow key={slot.id} className={`${currentSlot?.id === slot.id ? "bg-primary/10" : slot.userId === user?.id ? "bg-accent/50" : ""}`}>
-                    <TableCell className="font-mono text-xs">{getRoundLabel(slot.round, slot.roundPickIndex)}</TableCell>
+                    <TableCell className="font-mono text-xs">{getRoundLabel(slot.round, slot.roundPickIndex)}{draftRounds?.find(r => r.roundNumber === slot.round)?.isTeamDraft ? "*" : ""}</TableCell>
                     <TableCell className={`text-sm ${slot.userId === user?.id ? "font-semibold" : ""}`}>{slot.user.teamName || slot.user.firstName || slot.user.lastName || slot.user.id}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{new Date(slot.scheduledAt).toLocaleString()}</TableCell>
                     <TableCell>
@@ -921,6 +921,9 @@ export default function DraftBoard() {
                 ))}
               </TableBody>
             </Table>
+            {draftRounds?.some(r => r.isTeamDraft) && (
+              <div className="px-4 py-2 text-xs text-muted-foreground border-t">* Team Draft round</div>
+            )}
           </CardContent>
         </Card>
       )}
