@@ -125,7 +125,7 @@ export function Header() {
   };
 
   const freeAgencyItems = [
-    { href: "/", label: "Free Agents" },
+    { href: "/free-agents", label: "Free Agents" },
     { href: "/my-bids", label: "My Bids" },
     { href: "/results", label: "Results" },
   ];

@@ -131,6 +131,9 @@ function Router() {
       <Route path="/">
         {() => isAuthenticated ? <AuthenticatedHome /> : <Landing />}
       </Route>
+      <Route path="/free-agents">
+        {() => <ProtectedRoute component={Home} />}
+      </Route>
       <Route path="/my-bids">
         {() => <ProtectedRoute component={MyBids} />}
       </Route>
