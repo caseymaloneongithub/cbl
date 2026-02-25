@@ -23,7 +23,7 @@ const MLB_TEAM_ALIASES: TeamAlias[] = [
   { abbr: "MIN", aliases: ["minnesota twins", "twins"] },
   { abbr: "NYM", aliases: ["new york mets", "mets"] },
   { abbr: "NYY", aliases: ["new york yankees", "yankees"] },
-  { abbr: "ATH", aliases: ["athletics", "oakland athletics", "oakland a's", "as"] },
+  { abbr: "ATH", aliases: ["athletics", "oakland athletics", "oakland a's", "a's"] },
   { abbr: "PHI", aliases: ["philadelphia phillies", "phillies"] },
   { abbr: "PIT", aliases: ["pittsburgh pirates", "pirates"] },
   { abbr: "SD", aliases: ["san diego padres", "padres"] },
