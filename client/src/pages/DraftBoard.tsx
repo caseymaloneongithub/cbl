@@ -903,7 +903,6 @@ export default function DraftBoard() {
                         <TableHead className="font-semibold">#</TableHead>
                         <TableHead className="font-semibold">Team</TableHead>
                         <TableHead className="font-semibold">Player</TableHead>
-                        <TableHead className="font-semibold">Roster</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -924,11 +923,6 @@ export default function DraftBoard() {
                                   ? `Organization claim (${pick.selectedOrgPlayerIds?.length || 0} players)`
                                   : "-"}
                             </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={pick.rosterType === "mlb" ? "default" : "outline"} className="text-xs">
-                              {pick.rosterType === "mlb" ? "MLB" : "MiLB"}
-                            </Badge>
                           </TableCell>
                         </TableRow>
                       ))}
