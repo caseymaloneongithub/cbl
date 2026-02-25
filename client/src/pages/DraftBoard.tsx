@@ -678,7 +678,6 @@ export default function DraftBoard() {
                     <TableHead className="font-semibold">Player</TableHead>
                     <TableHead className="font-semibold">Pos</TableHead>
                     <TableHead className="font-semibold">MLB Team</TableHead>
-                    <TableHead className="font-semibold">Roster</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -697,11 +696,6 @@ export default function DraftBoard() {
                               sportLevel: pick.player.sportLevel,
                             })
                           : (pick.selectedOrgName || "-")}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={pick.rosterType === "mlb" ? "default" : "outline"}>
-                          {pick.rosterType === "mlb" ? "MLB" : "MiLB"}
-                        </Badge>
                       </TableCell>
                     </TableRow>
                   ))}
