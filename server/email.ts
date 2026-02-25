@@ -1,7 +1,7 @@
 // Email service using Resend
 import { Resend } from 'resend';
 
-const APP_NAME = "CBL Auctions";
+const APP_NAME = "CBL Strat";
 
 function getResendClient() {
   const apiKey = process.env.RESEND_API_KEY;
