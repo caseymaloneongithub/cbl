@@ -237,7 +237,11 @@ export default function DraftBoard() {
   const filteredOrgs = useMemo(() => {
     const needle = stripAccents(orgSearch.trim().toLowerCase());
     if (!needle) return availableOrgs;
-    return availableOrgs.filter((org) => stripAccents(org.toLowerCase()).includes(needle));
+    return availableOrgs.filter((org) => {
+      const orgLower = stripAccents(org.toLowerCase());
+      const abbr = getMlbAffiliationAbbreviation(org)?.toLowerCase() || "";
+      return orgLower.includes(needle) || abbr.includes(needle);
+    });
   }, [availableOrgs, orgSearch]);
 
   const makePick = useMutation({
@@ -336,12 +340,13 @@ export default function DraftBoard() {
       .filter((dp) => !autoDraftListIds.has(dp.mlbPlayerId))
       .filter((dp) => {
         if (!needle) return true;
+        const abbr = getMlbAffiliationAbbreviation(dp.player.parentOrgName)?.toLowerCase() || "";
         return [
           dp.player.fullName,
           dp.player.primaryPosition,
           dp.player.currentTeamName,
           dp.player.parentOrgName,
-        ].some((value) => stripAccents((value || "").toLowerCase()).includes(needle));
+        ].some((value) => stripAccents((value || "").toLowerCase()).includes(needle)) || abbr.includes(needle);
       })
       .slice(0, 8);
   }, [availablePlayers, autoDraftListIds, autoDraftSearch]);
@@ -481,7 +486,11 @@ export default function DraftBoard() {
     });
     const needle = stripAccents(teamAutoDraftSearch.trim().toLowerCase());
     if (needle) {
-      return orgs.filter(org => stripAccents(org.toLowerCase()).includes(needle)).sort();
+      return orgs.filter(org => {
+        const orgLower = stripAccents(org.toLowerCase());
+        const abbr = getMlbAffiliationAbbreviation(org)?.toLowerCase() || "";
+        return orgLower.includes(needle) || abbr.includes(needle);
+      }).sort();
     }
     return orgs.sort();
   }, [availablePlayers, claimedOrgs, teamAutoDraftOrgNames, teamAutoDraftSearch]);

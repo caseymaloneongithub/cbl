@@ -3504,7 +3504,13 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(draftPlayers.status, filters.status));
     }
     if (filters?.search) {
-      conditions.push(sql`LOWER(unaccent(${mlbPlayers.fullName})) LIKE LOWER(unaccent(${'%' + filters.search + '%'}))`);
+      const searchPattern = '%' + filters.search + '%';
+      conditions.push(sql`(
+        LOWER(unaccent(${mlbPlayers.fullName})) LIKE LOWER(unaccent(${searchPattern}))
+        OR LOWER(unaccent(COALESCE(${mlbPlayers.parentOrgName}, ''))) LIKE LOWER(unaccent(${searchPattern}))
+        OR LOWER(unaccent(COALESCE(${mlbPlayers.currentTeamName}, ''))) LIKE LOWER(unaccent(${searchPattern}))
+        OR LOWER(COALESCE(${mlbPlayers.primaryPosition}, '')) LIKE LOWER(${searchPattern})
+      )`);
     }
     const rows = await db.select({
       draftPlayer: draftPlayers,
