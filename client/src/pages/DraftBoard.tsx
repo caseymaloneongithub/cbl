@@ -689,13 +689,7 @@ export default function DraftBoard() {
                       <TableCell className="font-medium">{pick.player?.fullName || pick.selectedOrgName || "-"}</TableCell>
                       <TableCell>{pick.player?.primaryPosition || (pick.selectedOrgName ? "Org Claim" : "-")}</TableCell>
                       <TableCell className="text-muted-foreground">
-                        {pick.player
-                          ? formatAffiliatedTeamLabel({
-                              currentTeamName: pick.player.currentTeamName,
-                              parentOrgName: pick.player.parentOrgName,
-                              sportLevel: pick.player.sportLevel,
-                            })
-                          : (pick.selectedOrgName || "-")}
+                        {pick.player?.parentOrgName || pick.selectedOrgName || "-"}
                       </TableCell>
                     </TableRow>
                   ))}
