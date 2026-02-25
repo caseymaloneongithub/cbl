@@ -75,12 +75,10 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
   const [tab, setTab] = useState<"hitters" | "pitchers">("hitters");
   const [hSort, setHSort] = useState<{ key: HitterSortKey; dir: SortDir }>({ key: "name", dir: "asc" });
   const [pSort, setPSort] = useState<{ key: PitcherSortKey; dir: SortDir }>({ key: "name", dir: "asc" });
-  const season = 2025;
-
   const { data, isLoading } = useQuery<{ assignments: RosterAssignment[]; counts: any[] }>({
-    queryKey: ["/api/leagues", selectedLeagueId, "roster-assignments", season, user?.id, level],
+    queryKey: ["/api/leagues", selectedLeagueId, "roster-assignments", user?.id, level],
     queryFn: async () => {
-      const params = new URLSearchParams({ season: String(season), userId: user!.id, rosterType: level });
+      const params = new URLSearchParams({ userId: user!.id, rosterType: level });
       const res = await fetch(`/api/leagues/${selectedLeagueId}/roster-assignments?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch roster");
       return res.json();

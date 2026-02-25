@@ -168,7 +168,7 @@ interface DuplicateMlbAssignmentsResponse {
 
 export default function RosterManagement({ leagueId, league, members, isCommissioner, rosterLevel, showOnboardingTools = false, onboardingScope }: RosterManagementProps) {
   const { toast } = useToast();
-  const [season] = useState(2025);
+  const season = new Date().getFullYear();
   const [selectedTeamId, setSelectedTeamId] = useState<string>("all");
   const [selectedRosterType, setSelectedRosterType] = useState<string>(rosterLevel || "all");
   const [rosterSearch, setRosterSearch] = useState("");
@@ -259,9 +259,9 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
     assignments: RosterAssignment[];
     counts: RosterCount[];
   }>({
-    queryKey: ["/api/leagues", leagueId, "roster-assignments", season, selectedTeamId, selectedRosterType],
+    queryKey: ["/api/leagues", leagueId, "roster-assignments", selectedTeamId, selectedRosterType],
     queryFn: async () => {
-      const params = new URLSearchParams({ season: String(season) });
+      const params = new URLSearchParams();
       if (selectedTeamId !== "all") params.set("userId", selectedTeamId);
       if (selectedRosterType !== "all") params.set("rosterType", selectedRosterType);
       const res = await fetch(`/api/leagues/${leagueId}/roster-assignments?${params}`, { credentials: "include" });
@@ -274,10 +274,9 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
     players: MlbPlayer[];
     total: number;
   }>({
-    queryKey: ["/api/leagues", leagueId, "unassigned-players", season, faSearch, faLevel, faPage],
+    queryKey: ["/api/leagues", leagueId, "unassigned-players", faSearch, faLevel, faPage],
     queryFn: async () => {
       const params = new URLSearchParams({
-        season: String(season),
         limit: String(FA_PAGE_SIZE),
         offset: String(faPage * FA_PAGE_SIZE),
       });
@@ -329,7 +328,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
       toast({ title: "Player removed from roster" });
       queryClient.invalidateQueries({ queryKey: ["/api/leagues", leagueId, "roster-assignments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/leagues", leagueId, "unassigned-players"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/leagues", leagueId, "roster-assignments", "duplicates", season, reconciliationScope] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues", leagueId, "roster-assignments", "duplicates", reconciliationScope] });
     },
     onError: (error: any) => {
       toast({ title: "Failed to remove", description: error.message, variant: "destructive" });
@@ -378,9 +377,9 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
     },
   });
   const duplicateAssignmentsQuery = useQuery<DuplicateMlbAssignmentsResponse>({
-    queryKey: ["/api/leagues", leagueId, "roster-assignments", "duplicates", season, reconciliationScope],
+    queryKey: ["/api/leagues", leagueId, "roster-assignments", "duplicates", reconciliationScope],
     queryFn: async () => {
-      const res = await fetch(`/api/leagues/${leagueId}/roster-assignments/duplicates?season=${season}&rosterType=${encodeURIComponent(reconciliationScope)}`, { credentials: "include" });
+      const res = await fetch(`/api/leagues/${leagueId}/roster-assignments/duplicates?rosterType=${encodeURIComponent(reconciliationScope)}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load duplicate assignments");
       return res.json();
     },

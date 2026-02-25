@@ -326,8 +326,8 @@ export interface IStorage {
   clearMlbPlayers(season?: number): Promise<number>;
   
   // League Roster Assignments
-  getLeagueRosterAssignments(leagueId: number, season: number, filters?: { userId?: string; rosterType?: string }): Promise<(LeagueRosterAssignment & { player: MlbPlayer })[]>;
-  getRosterAssignmentCounts(leagueId: number, season: number): Promise<{ userId: string; rosterType: string; count: number }[]>;
+  getLeagueRosterAssignments(leagueId: number, season?: number, filters?: { userId?: string; rosterType?: string }): Promise<(LeagueRosterAssignment & { player: MlbPlayer })[]>;
+  getRosterAssignmentCounts(leagueId: number, season?: number): Promise<{ userId: string; rosterType: string; count: number }[]>;
   assignPlayerToRoster(assignment: InsertLeagueRosterAssignment): Promise<LeagueRosterAssignment>;
   updateRosterAssignment(id: number, updates: { rosterType?: string; userId?: string }): Promise<LeagueRosterAssignment | undefined>;
   executeRosterTrade(params: {
@@ -340,8 +340,8 @@ export interface IStorage {
   }): Promise<{ movedFromA: number; movedFromB: number }>;
   removeRosterAssignment(id: number): Promise<void>;
   removeAllRosterAssignments(leagueId: number, season: number): Promise<number>;
-  getUnassignedPlayers(leagueId: number, season: number, filters?: { search?: string; sportLevel?: string; limit?: number; offset?: number }): Promise<MlbPlayer[]>;
-  getUnassignedPlayerCount(leagueId: number, season: number, filters?: { search?: string; sportLevel?: string }): Promise<number>;
+  getUnassignedPlayers(leagueId: number, season?: number, filters?: { search?: string; sportLevel?: string; limit?: number; offset?: number }): Promise<MlbPlayer[]>;
+  getUnassignedPlayerCount(leagueId: number, season?: number, filters?: { search?: string; sportLevel?: string }): Promise<number>;
   bulkAssignPlayers(assignments: InsertLeagueRosterAssignment[]): Promise<number>;
   
   // Draft operations
@@ -3289,11 +3289,13 @@ export class DatabaseStorage implements IStorage {
     return result.rowCount || 0;
   }
 
-  async getLeagueRosterAssignments(leagueId: number, season: number, filters?: { userId?: string; rosterType?: string }): Promise<(LeagueRosterAssignment & { player: MlbPlayer })[]> {
+  async getLeagueRosterAssignments(leagueId: number, season?: number, filters?: { userId?: string; rosterType?: string }): Promise<(LeagueRosterAssignment & { player: MlbPlayer })[]> {
     const conditions = [
       eq(leagueRosterAssignments.leagueId, leagueId),
-      eq(leagueRosterAssignments.season, season),
     ];
+    if (season) {
+      conditions.push(eq(leagueRosterAssignments.season, season));
+    }
     if (filters?.userId) {
       conditions.push(eq(leagueRosterAssignments.userId, filters.userId));
     }
@@ -3309,7 +3311,11 @@ export class DatabaseStorage implements IStorage {
     return rows.map(r => ({ ...r.league_roster_assignments, player: r.mlb_players }));
   }
 
-  async getRosterAssignmentCounts(leagueId: number, season: number): Promise<{ userId: string; rosterType: string; count: number }[]> {
+  async getRosterAssignmentCounts(leagueId: number, season?: number): Promise<{ userId: string; rosterType: string; count: number }[]> {
+    const conditions = [eq(leagueRosterAssignments.leagueId, leagueId)];
+    if (season) {
+      conditions.push(eq(leagueRosterAssignments.season, season));
+    }
     const rows = await db
       .select({
         userId: leagueRosterAssignments.userId,
@@ -3317,10 +3323,7 @@ export class DatabaseStorage implements IStorage {
         count: sql<number>`COUNT(*)::int`,
       })
       .from(leagueRosterAssignments)
-      .where(and(
-        eq(leagueRosterAssignments.leagueId, leagueId),
-        eq(leagueRosterAssignments.season, season),
-      ))
+      .where(and(...conditions))
       .groupBy(leagueRosterAssignments.userId, leagueRosterAssignments.rosterType);
     return rows;
   }
@@ -3399,11 +3402,13 @@ export class DatabaseStorage implements IStorage {
     return result.rowCount || 0;
   }
 
-  async getUnassignedPlayers(leagueId: number, season: number, filters?: { search?: string; sportLevel?: string; limit?: number; offset?: number }): Promise<MlbPlayer[]> {
+  async getUnassignedPlayers(leagueId: number, season?: number, filters?: { search?: string; sportLevel?: string; limit?: number; offset?: number }): Promise<MlbPlayer[]> {
     const conditions: any[] = [
-      eq(mlbPlayers.season, season),
-      sql`NOT EXISTS (SELECT 1 FROM league_roster_assignments lra WHERE lra.mlb_player_id = ${mlbPlayers.id} AND lra.league_id = ${leagueId} AND lra.season = ${season})`,
+      sql`NOT EXISTS (SELECT 1 FROM league_roster_assignments lra WHERE lra.mlb_player_id = ${mlbPlayers.id} AND lra.league_id = ${leagueId})`,
     ];
+    if (season) {
+      conditions.push(eq(mlbPlayers.season, season));
+    }
     if (filters?.search) {
       conditions.push(sql`LOWER(unaccent(${mlbPlayers.fullName})) LIKE LOWER(unaccent(${'%' + filters.search + '%'}))`);
     }
@@ -3427,11 +3432,13 @@ export class DatabaseStorage implements IStorage {
     return await query;
   }
 
-  async getUnassignedPlayerCount(leagueId: number, season: number, filters?: { search?: string; sportLevel?: string }): Promise<number> {
+  async getUnassignedPlayerCount(leagueId: number, season?: number, filters?: { search?: string; sportLevel?: string }): Promise<number> {
     const conditions: any[] = [
-      eq(mlbPlayers.season, season),
-      sql`NOT EXISTS (SELECT 1 FROM league_roster_assignments lra WHERE lra.mlb_player_id = ${mlbPlayers.id} AND lra.league_id = ${leagueId} AND lra.season = ${season})`,
+      sql`NOT EXISTS (SELECT 1 FROM league_roster_assignments lra WHERE lra.mlb_player_id = ${mlbPlayers.id} AND lra.league_id = ${leagueId})`,
     ];
+    if (season) {
+      conditions.push(eq(mlbPlayers.season, season));
+    }
     if (filters?.search) {
       conditions.push(sql`LOWER(unaccent(${mlbPlayers.fullName})) LIKE LOWER(unaccent(${'%' + filters.search + '%'}))`);
     }

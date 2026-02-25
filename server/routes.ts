@@ -1196,7 +1196,7 @@ export async function registerRoutes(
         if (!member) return res.status(403).json({ message: "League membership required" });
       }
 
-      const season = parseInt(req.query.season as string) || 2025;
+      const season = req.query.season ? parseInt(req.query.season as string) : undefined;
       const filterUserId = req.query.userId as string | undefined;
       const rosterType = req.query.rosterType as string | undefined;
 
@@ -1224,7 +1224,7 @@ export async function registerRoutes(
         const member = await storage.getLeagueMember(leagueId, userId);
         if (!member) return res.status(403).json({ message: "League membership required" });
       }
-      const season = parseInt(req.query.season as string) || 2025;
+      const season = req.query.season ? parseInt(req.query.season as string) : undefined;
       const search = req.query.search as string | undefined;
       const sportLevel = req.query.sportLevel as string | undefined;
       const limit = parseInt(req.query.limit as string) || 50;
@@ -1381,7 +1381,7 @@ export async function registerRoutes(
     try {
       const userId = req.session.originalUserId || req.session.userId!;
       const leagueId = parseInt(req.params.id);
-      const season = parseInt(req.query.season as string) || 2025;
+      const season = req.query.season ? parseInt(req.query.season as string) : undefined;
       const rosterType = String(req.query.rosterType || "mlb").toLowerCase();
 
       if (!await hasLeagueCommissionerAccess(userId, leagueId)) {
@@ -9701,10 +9701,7 @@ export async function registerRoutes(
 
       const existingAssignments = await db.select({ mlbPlayerId: leagueRosterAssignments.mlbPlayerId })
         .from(leagueRosterAssignments)
-        .where(and(
-          eq(leagueRosterAssignments.leagueId, draft.leagueId),
-          eq(leagueRosterAssignments.season, draft.season),
-        ));
+        .where(eq(leagueRosterAssignments.leagueId, draft.leagueId));
       const alreadyAssigned = new Set(existingAssignments.map(a => a.mlbPlayerId));
 
       const draftPoolPlayers = await storage.getDraftPlayers(id);

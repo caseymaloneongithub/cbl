@@ -81,7 +81,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
   const [activeTab, setActiveTab] = useState<"hitters" | "pitchers">("hitters");
   const [hitterSort, setHitterSort] = useState<{ key: HitterSortKey; dir: SortDir }>({ key: "name", dir: "asc" });
   const [pitcherSort, setPitcherSort] = useState<{ key: PitcherSortKey; dir: SortDir }>({ key: "name", dir: "asc" });
-  const season = 2025;
+  const [season] = useState(new Date().getFullYear());
 
   const sportLevel = level === "mlb" ? "MLB" : "minors";
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -142,9 +142,9 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
   });
 
   const { data: rosterData } = useQuery<{ assignments: RosterAssignment[] }>({
-    queryKey: ["/api/leagues", selectedLeagueId, "roster-assignments", season, "all-for-players", level],
+    queryKey: ["/api/leagues", selectedLeagueId, "roster-assignments", "all-for-players", level],
     queryFn: async () => {
-      const params = new URLSearchParams({ season: String(season), rosterType: level });
+      const params = new URLSearchParams({ rosterType: level });
       const res = await fetch(`/api/leagues/${selectedLeagueId}/roster-assignments?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch roster assignments");
       return res.json();
