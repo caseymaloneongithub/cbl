@@ -453,7 +453,7 @@ export default function DraftBoard() {
           dp.player.parentOrgName,
         ].some((value) => stripAccents((value || "").toLowerCase()).includes(needle)) || abbr.includes(needle);
       })
-      .slice(0, 8);
+      .slice(0, 25);
   }, [allAvailablePlayers, autoDraftListIds, autoDraftSearch]);
 
   const addToAutoDraft = useMutation({
