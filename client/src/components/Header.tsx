@@ -202,18 +202,22 @@ export function Header() {
                   Draft
                 </Button>
               </Link>
-              <NavDropdown
-                label="My Roster"
-                items={myRosterItems}
-                location={location}
-                testId="nav-my-roster"
-              />
-              <NavDropdown
-                label="Players"
-                items={playersItems}
-                location={location}
-                testId="nav-players"
-              />
+              {user?.isSuperAdmin && (
+                <NavDropdown
+                  label="My Roster"
+                  items={myRosterItems}
+                  location={location}
+                  testId="nav-my-roster"
+                />
+              )}
+              {user?.isSuperAdmin && (
+                <NavDropdown
+                  label="Players"
+                  items={playersItems}
+                  location={location}
+                  testId="nav-players"
+                />
+              )}
               <NavDropdown
                 label="Free Agency"
                 items={freeAgencyItems}
@@ -294,42 +298,46 @@ export function Header() {
                           Draft
                         </Button>
                       </Link>
-                      <div className="border-b my-2" />
-                      <div className="px-2 py-1">
-                        <span className="text-xs text-muted-foreground font-medium">My Roster</span>
-                      </div>
-                      {myRosterItems.map((link) => {
-                        const isActive = location === link.href;
-                        return (
-                          <Link key={link.href} href={link.href} onClick={() => setMobileMenuOpen(false)}>
-                            <Button
-                              variant={isActive ? "secondary" : "ghost"}
-                              className="w-full justify-start"
-                              size="sm"
-                            >
-                              {link.label}
-                            </Button>
-                          </Link>
-                        );
-                      })}
-                      <div className="border-b my-2" />
-                      <div className="px-2 py-1">
-                        <span className="text-xs text-muted-foreground font-medium">Players</span>
-                      </div>
-                      {playersItems.map((link) => {
-                        const isActive = location === link.href;
-                        return (
-                          <Link key={link.href} href={link.href} onClick={() => setMobileMenuOpen(false)}>
-                            <Button
-                              variant={isActive ? "secondary" : "ghost"}
-                              className="w-full justify-start"
-                              size="sm"
-                            >
-                              {link.label}
-                            </Button>
-                          </Link>
-                        );
-                      })}
+                      {user?.isSuperAdmin && (
+                        <>
+                          <div className="border-b my-2" />
+                          <div className="px-2 py-1">
+                            <span className="text-xs text-muted-foreground font-medium">My Roster</span>
+                          </div>
+                          {myRosterItems.map((link) => {
+                            const isActive = location === link.href;
+                            return (
+                              <Link key={link.href} href={link.href} onClick={() => setMobileMenuOpen(false)}>
+                                <Button
+                                  variant={isActive ? "secondary" : "ghost"}
+                                  className="w-full justify-start"
+                                  size="sm"
+                                >
+                                  {link.label}
+                                </Button>
+                              </Link>
+                            );
+                          })}
+                          <div className="border-b my-2" />
+                          <div className="px-2 py-1">
+                            <span className="text-xs text-muted-foreground font-medium">Players</span>
+                          </div>
+                          {playersItems.map((link) => {
+                            const isActive = location === link.href;
+                            return (
+                              <Link key={link.href} href={link.href} onClick={() => setMobileMenuOpen(false)}>
+                                <Button
+                                  variant={isActive ? "secondary" : "ghost"}
+                                  className="w-full justify-start"
+                                  size="sm"
+                                >
+                                  {link.label}
+                                </Button>
+                              </Link>
+                            );
+                          })}
+                        </>
+                      )}
                       <div className="border-b my-2" />
                       <div className="px-2 py-1">
                         <span className="text-xs text-muted-foreground font-medium">Free Agency</span>
