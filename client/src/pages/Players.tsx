@@ -196,11 +196,11 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
   }, [playersData?.players, leagueTeamFilter, rosterMap]);
 
   const baseHitters = useMemo(
-    () => filteredPlayers.filter((p) => p.isTwoWayQualified || p.hadHittingStats || !p.hadPitchingStats),
+    () => filteredPlayers.filter((p) => p.isTwoWayQualified || p.positionType !== "Pitcher"),
     [filteredPlayers],
   );
   const basePitchers = useMemo(
-    () => filteredPlayers.filter((p) => p.isTwoWayQualified || p.hadPitchingStats),
+    () => filteredPlayers.filter((p) => p.isTwoWayQualified || p.positionType === "Pitcher"),
     [filteredPlayers],
   );
 
