@@ -445,13 +445,7 @@ export default function DraftBoard() {
     return allAvailablePlayers
       .filter((dp) => !autoDraftListIds.has(dp.mlbPlayerId))
       .filter((dp) => {
-        const abbr = getMlbAffiliationAbbreviation(dp.player.parentOrgName)?.toLowerCase() || "";
-        return [
-          dp.player.fullName,
-          dp.player.primaryPosition,
-          dp.player.currentTeamName,
-          dp.player.parentOrgName,
-        ].some((value) => stripAccents((value || "").toLowerCase()).includes(needle)) || abbr.includes(needle);
+        return stripAccents((dp.player.fullName || "").toLowerCase()).includes(needle);
       })
       .slice(0, 25);
   }, [allAvailablePlayers, autoDraftListIds, autoDraftSearch]);
