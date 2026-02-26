@@ -91,9 +91,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
     if (search) {
       const s = stripAccents(search.toLowerCase());
       result = result.filter((a) =>
-        stripAccents(a.player.fullName.toLowerCase()).includes(s) ||
-        stripAccents((a.player.primaryPosition || "").toLowerCase()).includes(s) ||
-        stripAccents((a.player.currentTeamName || "").toLowerCase()).includes(s)
+        stripAccents(a.player.fullName.toLowerCase()).includes(s)
       );
     }
     return result;

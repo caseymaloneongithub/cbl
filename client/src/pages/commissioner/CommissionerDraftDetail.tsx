@@ -662,9 +662,7 @@ export default function CommissionerDraftDetail() {
   const availablePlayers = draftPlayers?.filter(dp => dp.status === "available") || [];
   const filteredPlayers = playerSearchText.trim()
     ? availablePlayers.filter(dp =>
-        stripAccents(dp.player.fullName.toLowerCase()).includes(stripAccents(playerSearchText.toLowerCase())) ||
-        stripAccents((dp.player.currentTeamName || "").toLowerCase()).includes(stripAccents(playerSearchText.toLowerCase())) ||
-        stripAccents((dp.player.primaryPosition || "").toLowerCase()).includes(stripAccents(playerSearchText.toLowerCase()))
+        stripAccents(dp.player.fullName.toLowerCase()).includes(stripAccents(playerSearchText.toLowerCase()))
       )
     : availablePlayers;
   const nowMs = Date.now();
