@@ -573,100 +573,9 @@ export async function fetchAllAffiliatedPlayers(
   console.log(`[MLB Sync] Found ${dslTeamIds.size} DSL teams to exclude`);
 
   const playerMap = new Map<number, AffiliatedPlayerRecord>();
-  const statsCoveragePlayerIds = new Set<number>();
 
-  // 1) Primary source: team rosters (full-season/active) across all professional levels.
-  for (const sportId of sportIds) {
-    const levelName = SPORT_LEVELS[sportId] || `Sport${sportId}`;
-    const levelTeams = Array.from(teamMap.values()).filter(
-      (team) => team.sport?.id === sportId && !dslTeamIds.has(team.id),
-    );
-    let levelCount = 0;
-
-    for (const team of levelTeams) {
-      const roster = await fetchTeamRoster(team.id, season);
-      for (const entry of roster) {
-        const person = entry.person;
-        const playerId = person?.id;
-        if (!playerId) continue;
-
-        const primaryPosition = person.primaryPosition?.abbreviation || entry.position?.abbreviation || null;
-        const positionName = person.primaryPosition?.name || entry.position?.name || null;
-        const positionType = person.primaryPosition?.type || entry.position?.type || null;
-        const isPitcher = (positionType || "").toLowerCase() === "pitcher";
-        const isHitter = !isPitcher;
-
-        const existing = playerMap.get(playerId);
-        if (existing) {
-          const existingSportPriority = sportIds.indexOf(existing.sportId);
-          const newSportPriority = sportIds.indexOf(sportId);
-          if (newSportPriority <= existingSportPriority) {
-            continue;
-          }
-        }
-
-        const fullName = person?.fullName || "";
-        const firstName = person?.firstName || (fullName ? fullName.split(" ").slice(0, -1).join(" ") : null);
-        const middleName = person?.middleName || null;
-        const lastName = person?.lastName || (fullName ? fullName.split(" ").slice(-1).join(" ") : null);
-        const fullFmlName = person?.fullFMLName || composeFullFmlName(fullName, firstName, middleName, lastName);
-
-        playerMap.set(playerId, {
-          mlbId: playerId,
-          fullName,
-          fullFmlName,
-          firstName,
-          middleName,
-          lastName,
-          primaryPosition,
-          positionName,
-          positionType,
-          batSide: person?.batSide?.code || null,
-          throwHand: person?.pitchHand?.code || null,
-          currentTeamId: team.id,
-          currentTeamName: team.name,
-          parentOrgId: team.parentOrgId || null,
-          parentOrgName: team.parentOrgName || null,
-          sportId,
-          sportLevel: levelName,
-          birthDate: person?.birthDate || null,
-          age: person?.currentAge || null,
-          isActive: person?.active !== false,
-          hadHittingStats: false,
-          hadPitchingStats: false,
-          hittingAtBats: 0,
-          hittingWalks: 0,
-          hittingSingles: 0,
-          hittingDoubles: 0,
-          hittingTriples: 0,
-          hittingHomeRuns: 0,
-          hittingAvg: null,
-          hittingObp: null,
-          hittingSlg: null,
-          hittingOps: null,
-          pitchingGames: 0,
-          pitchingGamesStarted: 0,
-          pitchingStrikeouts: 0,
-          pitchingWalks: 0,
-          pitchingHits: 0,
-          pitchingHomeRuns: 0,
-          pitchingEra: null,
-          pitchingInningsPitched: 0,
-          hittingGamesStarted: 0,
-          hittingPlateAppearances: 0,
-          isTwoWayQualified: false,
-          season,
-        });
-        levelCount++;
-      }
-    }
-
-    console.log(`[MLB Sync] ${levelName}: ${levelCount} players from roster endpoints`);
-    onProgress?.({ level: levelName, playerCount: levelCount });
-    await new Promise(resolve => setTimeout(resolve, 250));
-  }
-
-  // 2) Supplemental source: season stats to fill in players who appeared but are absent from team rosters.
+  // 1) Primary source: season stats — determines who played and at what level.
+  //    Stats for completed seasons are final and deterministic.
   for (const sportId of sportIds) {
     const levelName = SPORT_LEVELS[sportId] || `Sport${sportId}`;
     const [hittingResult, pitchingResult] = await Promise.all([
@@ -754,13 +663,13 @@ export async function fetchAllAffiliatedPlayers(
     }
     const allSplits = [...hittingSplits, ...pitchingSplits];
     const seen = new Set<number>();
+    let levelCount = 0;
 
     for (const split of allSplits) {
       const playerId = split.player.id;
       if (seen.has(playerId)) continue;
       seen.add(playerId);
       if (sportId === 16 && split.team?.id && dslTeamIds.has(split.team.id)) continue;
-      statsCoveragePlayerIds.add(playerId);
 
       const isHitter = hitterIds.has(playerId);
       const isPitcher = pitcherIds.has(playerId);
@@ -795,11 +704,9 @@ export async function fetchAllAffiliatedPlayers(
         const existingPriority = sportIds.indexOf(existing.sportId);
         const incomingPriority = sportIds.indexOf(sportId);
         if (incomingPriority < existingPriority) {
-          // Keep stats scoped to the highest level we've seen for this player.
           continue;
         }
         if (incomingPriority > existingPriority) {
-          // Promote to the higher level and reset accumulated stats to that level only.
           existing.sportId = sportId;
           existing.sportLevel = levelName;
           existing.currentTeamId = split.team?.id || null;
@@ -917,16 +824,86 @@ export async function fetchAllAffiliatedPlayers(
         isTwoWayQualified: qualifiesTwoWay(playerPitchingInnings, playerHittingPlateAppearances),
         season,
       });
+      levelCount++;
     }
+
+    console.log(`[MLB Sync] ${levelName}: ${levelCount} new players from stats`);
+    onProgress?.({ level: levelName, playerCount: playerMap.size });
+    await new Promise(resolve => setTimeout(resolve, 250));
   }
 
-  // Hard safety check: if we parsed stats coverage for more unique players than we ended up
-  // with in the final map, the sync is incomplete/corrupted and should fail loudly.
-  if (playerMap.size < statsCoveragePlayerIds.size) {
-    throw new Error(
-      `Incomplete MLB sync: final player map ${playerMap.size} is smaller than stats coverage ${statsCoveragePlayerIds.size}`,
+  const statsPlayerCount = playerMap.size;
+  console.log(`[MLB Sync] Total players from stats: ${statsPlayerCount}`);
+
+  // 2) Supplemental source: team rosters — updates team affiliation info for players
+  //    already found via stats. Does NOT add new players (only stats determine inclusion).
+  let rosterUpdated = 0;
+  for (const sportId of sportIds) {
+    const levelName = SPORT_LEVELS[sportId] || `Sport${sportId}`;
+    const levelTeams = Array.from(teamMap.values()).filter(
+      (team) => team.sport?.id === sportId && !dslTeamIds.has(team.id),
     );
+
+    for (const team of levelTeams) {
+      const roster = await fetchTeamRoster(team.id, season);
+      for (const entry of roster) {
+        const person = entry.person;
+        const playerId = person?.id;
+        if (!playerId) continue;
+
+        const existing = playerMap.get(playerId);
+        if (!existing) continue;
+
+        existing.currentTeamId = team.id;
+        existing.currentTeamName = team.name;
+        existing.parentOrgId = team.parentOrgId || null;
+        existing.parentOrgName = team.parentOrgName || null;
+
+        if (person.primaryPosition?.abbreviation) {
+          existing.primaryPosition = person.primaryPosition.abbreviation;
+        }
+        if (person.primaryPosition?.name) {
+          existing.positionName = person.primaryPosition.name;
+        }
+        if (person.primaryPosition?.type) {
+          existing.positionType = person.primaryPosition.type;
+        }
+        if (person.batSide?.code) {
+          existing.batSide = person.batSide.code;
+        }
+        if (person.pitchHand?.code) {
+          existing.throwHand = person.pitchHand.code;
+        }
+        if (person.birthDate) {
+          existing.birthDate = person.birthDate;
+        }
+        if (person.currentAge != null) {
+          existing.age = person.currentAge;
+        }
+        if (person.fullName) {
+          existing.fullName = person.fullName;
+        }
+        if (person.firstName) {
+          existing.firstName = person.firstName;
+        }
+        if (person.middleName) {
+          existing.middleName = person.middleName;
+        }
+        if (person.lastName) {
+          existing.lastName = person.lastName;
+        }
+        const fullFml = (person as any).fullFMLName || composeFullFmlName(person.fullName || null, person.firstName || null, person.middleName || null, person.lastName || null);
+        if (fullFml) {
+          existing.fullFmlName = fullFml;
+        }
+        rosterUpdated++;
+      }
+    }
+
+    console.log(`[MLB Sync] ${levelName}: roster enrichment pass complete`);
   }
+
+  console.log(`[MLB Sync] Roster enrichment updated ${rosterUpdated} player records`);
 
   return Array.from(playerMap.values());
 }
