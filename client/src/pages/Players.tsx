@@ -81,7 +81,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
   const [activeTab, setActiveTab] = useState<"hitters" | "pitchers">("hitters");
   const [hitterSort, setHitterSort] = useState<{ key: HitterSortKey; dir: SortDir }>({ key: "name", dir: "asc" });
   const [pitcherSort, setPitcherSort] = useState<{ key: PitcherSortKey; dir: SortDir }>({ key: "name", dir: "asc" });
-  const [season, setSeason] = useState<number | null>(null);
+  const [seasonOverride, setSeasonOverride] = useState<number | null>(null);
 
   const { data: availableSeasons } = useQuery<number[]>({
     queryKey: ["/api/mlb-players/seasons"],
@@ -92,13 +92,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
     },
   });
 
-  useEffect(() => {
-    if (season === null && availableSeasons?.length) {
-      setSeason(availableSeasons[0]);
-    }
-  }, [availableSeasons, season]);
-
-  const effectiveSeason = season ?? availableSeasons?.[0] ?? new Date().getFullYear();
+  const effectiveSeason = seasonOverride ?? availableSeasons?.[0] ?? null;
 
   const sportLevel = level === "mlb" ? "MLB" : "minors";
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -125,6 +119,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
       if (!res.ok) throw new Error("Failed to fetch teams");
       return res.json();
     },
+    enabled: effectiveSeason != null,
   });
 
   // Pull full filtered pool; sorting/pagination are applied client-side across whole pool.
@@ -146,6 +141,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
       if (!res.ok) throw new Error("Failed to fetch players");
       return res.json();
     },
+    enabled: effectiveSeason != null,
   });
 
   const { data: membersData } = useQuery<(LeagueMember & { user: any })[]>({
