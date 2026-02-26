@@ -81,7 +81,24 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
   const [activeTab, setActiveTab] = useState<"hitters" | "pitchers">("hitters");
   const [hitterSort, setHitterSort] = useState<{ key: HitterSortKey; dir: SortDir }>({ key: "name", dir: "asc" });
   const [pitcherSort, setPitcherSort] = useState<{ key: PitcherSortKey; dir: SortDir }>({ key: "name", dir: "asc" });
-  const [season] = useState(new Date().getFullYear());
+  const [season, setSeason] = useState<number | null>(null);
+
+  const { data: availableSeasons } = useQuery<number[]>({
+    queryKey: ["/api/mlb-players/seasons"],
+    queryFn: async () => {
+      const res = await fetch("/api/mlb-players/seasons", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch seasons");
+      return res.json();
+    },
+  });
+
+  useEffect(() => {
+    if (season === null && availableSeasons?.length) {
+      setSeason(availableSeasons[0]);
+    }
+  }, [availableSeasons, season]);
+
+  const effectiveSeason = season ?? availableSeasons?.[0] ?? new Date().getFullYear();
 
   const sportLevel = level === "mlb" ? "MLB" : "minors";
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -101,9 +118,9 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
   }, []);
 
   const { data: teamsData } = useQuery<string[]>({
-    queryKey: ["/api/mlb-players/teams", season, sportLevel],
+    queryKey: ["/api/mlb-players/teams", effectiveSeason, sportLevel],
     queryFn: async () => {
-      const params = new URLSearchParams({ season: String(season), sportLevel });
+      const params = new URLSearchParams({ season: String(effectiveSeason), sportLevel });
       const res = await fetch(`/api/mlb-players/teams?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch teams");
       return res.json();
@@ -112,10 +129,10 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
 
   // Pull full filtered pool; sorting/pagination are applied client-side across whole pool.
   const { data: playersData, isLoading } = useQuery<{ players: MlbPlayer[]; total: number }>({
-    queryKey: ["/api/mlb-players", debouncedSearch, sportLevel, mlbTeamFilter, season, "full-pool"],
+    queryKey: ["/api/mlb-players", debouncedSearch, sportLevel, mlbTeamFilter, effectiveSeason, "full-pool"],
     queryFn: async () => {
       const params = new URLSearchParams({
-        season: String(season),
+        season: String(effectiveSeason),
         sportLevel,
         limit: "10000",
         offset: "0",

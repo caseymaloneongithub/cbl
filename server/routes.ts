@@ -21,7 +21,7 @@ import {
   autoDraftLists,
   mlbPlayers,
 } from "@shared/schema";
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray, sql, desc } from "drizzle-orm";
 import { z } from "zod";
 import { fromZonedTime } from "date-fns-tz";
 import { parse, isValid, format } from "date-fns";
@@ -1431,6 +1431,16 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("Error searching MLB players:", error);
       res.status(500).json({ message: "Failed to search MLB players" });
+    }
+  });
+
+  app.get("/api/mlb-players/seasons", isAuthenticated, async (req: any, res) => {
+    try {
+      const rows = await db.selectDistinct({ season: mlbPlayers.season }).from(mlbPlayers).orderBy(desc(mlbPlayers.season));
+      res.json(rows.map(r => r.season));
+    } catch (error: any) {
+      console.error("Error fetching MLB seasons:", error);
+      res.status(500).json({ message: "Failed to fetch seasons" });
     }
   });
 
