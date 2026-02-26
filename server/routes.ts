@@ -1211,14 +1211,14 @@ export async function registerRoutes(
         const levelTotal = await storage.getMlbPlayerCount({ sportLevel: level, season });
         const hitters = await storage.getMlbPlayerCount({
           sportLevel: level,
-          hadHittingStats: true,
+          positionTypeNot: "Pitcher",
           isTwoWayQualified: false,
           season,
         });
         const pitchers = await storage.getMlbPlayerCount({
           sportLevel: level,
-          hadPitchingStats: true,
-          hadHittingStats: false,
+          positionType: "Pitcher",
+          isTwoWayQualified: false,
           season,
         });
         const levelTwoWayQualified = await storage.getMlbPlayerCount({

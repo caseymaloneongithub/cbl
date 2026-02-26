@@ -317,7 +317,7 @@ export interface IStorage {
   // MLB Players reference database
   upsertMlbPlayers(players: InsertMlbPlayer[]): Promise<number>;
   getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number; currentTeamName?: string; parentOrgName?: string; season?: number; sortBy?: string; sortDir?: string }): Promise<MlbPlayer[]>;
-  getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; isTwoWayQualified?: boolean; currentTeamName?: string; parentOrgName?: string; season?: number }): Promise<number>;
+  getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; positionTypeNot?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; isTwoWayQualified?: boolean; currentTeamName?: string; parentOrgName?: string; season?: number }): Promise<number>;
   getMlbPlayerTeams(season?: number, sportLevel?: string): Promise<string[]>;
   getMlbPlayerByMlbId(mlbId: number): Promise<MlbPlayer | undefined>;
   getMlbPlayersByMlbIds(mlbIds: number[], season: number): Promise<MlbPlayer[]>;
@@ -3171,7 +3171,7 @@ export class DatabaseStorage implements IStorage {
     return await query;
   }
 
-  async getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; isTwoWayQualified?: boolean; currentTeamName?: string; parentOrgName?: string; season?: number }): Promise<number> {
+  async getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; positionTypeNot?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; isTwoWayQualified?: boolean; currentTeamName?: string; parentOrgName?: string; season?: number }): Promise<number> {
     const conditions = [];
     if (filters?.sportLevel) {
       if (filters.sportLevel === 'MLB') {
@@ -3184,6 +3184,12 @@ export class DatabaseStorage implements IStorage {
     }
     if (filters?.search) {
       conditions.push(sql`LOWER(unaccent(${mlbPlayers.fullName})) LIKE LOWER(unaccent(${'%' + filters.search + '%'}))`);
+    }
+    if (filters?.positionType) {
+      conditions.push(eq(mlbPlayers.positionType, filters.positionType));
+    }
+    if (filters?.positionTypeNot) {
+      conditions.push(sql`${mlbPlayers.positionType} != ${filters.positionTypeNot}`);
     }
     if (filters?.hadHittingStats !== undefined) {
       conditions.push(eq(mlbPlayers.hadHittingStats, filters.hadHittingStats));
