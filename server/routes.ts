@@ -9753,26 +9753,39 @@ export async function registerRoutes(
       let currentSlot: typeof nextUnskipped = null;
       if (nextUnskipped) {
         const isFirstPick = nextUnskipped.overallPickNumber === 1;
-        const allPreviousResolved = sortedSlots
-          .filter(s => s.overallPickNumber < nextUnskipped.overallPickNumber)
-          .every(s => !!s.madeAt || !!s.skippedAt);
+        const isRound1 = nextUnskipped.round === 1;
 
         if (isFirstPick) {
           if (new Date(nextUnskipped.scheduledAt).getTime() <= now.getTime()) {
             currentSlot = nextUnskipped;
           }
-        } else if (allPreviousResolved) {
-          currentSlot = nextUnskipped;
+        } else if (isRound1) {
+          const allPreviousResolved = sortedSlots
+            .filter(s => s.overallPickNumber < nextUnskipped.overallPickNumber)
+            .every(s => !!s.madeAt || !!s.skippedAt);
+          if (allPreviousResolved) {
+            currentSlot = nextUnskipped;
+          }
+        } else {
+          const previousSlot = sortedSlots.find(s => s.overallPickNumber === nextUnskipped.overallPickNumber - 1);
+          if (previousSlot && previousSlot.deadlineAt && new Date(previousSlot.deadlineAt).getTime() <= now.getTime()) {
+            currentSlot = nextUnskipped;
+          }
         }
       }
 
-      const openSlots = unmadeSlots
-        .filter((slot) => new Date(slot.scheduledAt).getTime() <= now.getTime());
-
       const allSkippedSlots = unmadeSlots.filter(slot => !!slot.skippedAt);
+
+      const deadlinePassedSlots = unmadeSlots.filter(slot =>
+        !slot.skippedAt && slot.round > 1 && slot.deadlineAt &&
+        new Date(slot.deadlineAt).getTime() <= now.getTime() &&
+        slot !== (nextUnskipped === currentSlot ? nextUnskipped : null)
+      );
+
       const eligiblePickerIds = Array.from(new Set([
         ...(currentSlot ? [currentSlot.userId] : []),
         ...allSkippedSlots.map(slot => slot.userId),
+        ...deadlinePassedSlots.map(slot => slot.userId),
       ]));
 
       const skippedTeamMap = new Map<string, string>();
@@ -9792,7 +9805,7 @@ export async function registerRoutes(
         now: now.toISOString(),
         currentSlot,
         eligiblePickerIds,
-        openSlotCount: openSlots.filter(s => !s.skippedAt).length + allSkippedSlots.length,
+        openSlotCount: (currentSlot ? 1 : 0) + allSkippedSlots.length + deadlinePassedSlots.length,
         skippedTeams,
       });
     } catch (error) {
@@ -9917,9 +9930,20 @@ export async function registerRoutes(
         return res.status(400).json({ message: "The draft has not started yet" });
       }
 
-      const previousUnmade = allSlots.find((s) => s.overallPickNumber < slot.overallPickNumber && !s.madeAt && !s.skippedAt);
-      if (previousUnmade && !slot.skippedAt) {
-        return res.status(400).json({ message: "Previous picks must be completed before making this pick" });
+      if (!slot.skippedAt && slot.overallPickNumber > 1) {
+        if (slot.round === 1) {
+          const previousUnmade = allSlots.find((s) => s.overallPickNumber < slot.overallPickNumber && !s.madeAt && !s.skippedAt);
+          if (previousUnmade) {
+            return res.status(400).json({ message: "Previous picks must be completed before making this pick" });
+          }
+        } else {
+          const previousSlot = allSlots.find((s) => s.overallPickNumber === slot.overallPickNumber - 1);
+          const ownDeadlinePassed = slot.deadlineAt && new Date(slot.deadlineAt).getTime() <= now.getTime();
+          const prevDeadlinePassed = previousSlot?.deadlineAt && new Date(previousSlot.deadlineAt).getTime() <= now.getTime();
+          if (!ownDeadlinePassed && !prevDeadlinePassed) {
+            return res.status(400).json({ message: "Previous pick's deadline has not passed yet" });
+          }
+        }
       }
 
       const rounds = await storage.getDraftRounds(id);
@@ -10542,10 +10566,18 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
       return false;
     }
 
-    const allPreviousResolved = allSorted
-      .filter((s: any) => s.overallPickNumber < nextSlot.overallPickNumber)
-      .every((s: any) => !!s.madeAt || !!s.skippedAt);
-    if (!allPreviousResolved) return false;
+    if (nextSlot.overallPickNumber > 1) {
+      if (nextSlot.round === 1) {
+        const allPreviousResolved = allSorted
+          .filter((s: any) => s.overallPickNumber < nextSlot.overallPickNumber)
+          .every((s: any) => !!s.madeAt || !!s.skippedAt);
+        if (!allPreviousResolved) return false;
+      } else {
+        const previousSlot = allSorted.find((s: any) => s.overallPickNumber === nextSlot.overallPickNumber - 1);
+        const prevDeadlinePassed = previousSlot?.deadlineAt && new Date(previousSlot.deadlineAt).getTime() <= now.getTime();
+        if (!prevDeadlinePassed) return false;
+      }
+    }
 
     const roundConfig = rounds.find((r: any) => r.roundNumber === nextSlot.round);
     const slot = nextSlot;
