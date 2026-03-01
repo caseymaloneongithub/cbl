@@ -368,6 +368,32 @@ export default function CommissionerDraftDetail() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const { data: timingInfo } = useQuery<{ currentSlot: any; hasTiming: boolean }>({
+    queryKey: ["/api/drafts", draftId, "timing"],
+    queryFn: async () => {
+      const res = await fetch(`/api/drafts/${draftId}/timing`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch timing");
+      return res.json();
+    },
+    enabled: draft?.status === "active",
+    refetchInterval: 10000,
+  });
+
+  const picksNotStartedYet = draft?.status === "active" && timingInfo?.hasTiming && !timingInfo?.currentSlot;
+
+  const startPicksNow = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/drafts/${draftId}/start-picks-now`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Picks Started" });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "timing"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "picks"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const assignPicks = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", `/api/drafts/${draftId}/assign-picks`);
@@ -1164,6 +1190,27 @@ export default function CommissionerDraftDetail() {
                       <Button onClick={() => setCommPickDialogOpen(true)} data-testid="button-commissioner-pick">
                         <UserPlus className="h-4 w-4 mr-2" />Make Pick
                       </Button>
+                    )}
+                    {picksNotStartedYet && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="outline" data-testid="button-start-picks-now">
+                            <Clock className="h-4 w-4 mr-2" />Start Picks Now
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Start Picks Now</AlertDialogTitle>
+                            <AlertDialogDescription>This will start the first pick immediately, ahead of its scheduled time. Deadlines for subsequent picks remain unchanged.</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => startPicksNow.mutate()} data-testid="button-confirm-start-picks-now">
+                              {startPicksNow.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Starting...</> : "Start Now"}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     )}
                     <Button variant="outline" onClick={() => window.open(`/draft/${draft.id}`, '_blank')} data-testid="button-open-draft-board">
                       Open Draft Board

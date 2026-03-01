@@ -1,11 +1,11 @@
 {
   "leagueId": 1,
-  "season": 2025,
-  "updatedAt": "2026-02-23T19:52:57.451Z",
+  "season": 2026,
+  "updatedAt": "2026-02-27T17:07:54.595Z",
   "running": false,
-  "processed": 1160,
-  "totalRows": 1160,
+  "processed": 1185,
+  "totalRows": 1185,
   "percent": 100,
-  "stage": "completed",
-  "message": "Completed: 18 imported"
+  "stage": "awaiting_resolution",
+  "message": "1161 imported, 22 unresolved"
 }

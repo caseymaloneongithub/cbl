@@ -9801,6 +9801,47 @@ export async function registerRoutes(
     }
   });
 
+  // POST /api/drafts/:id/start-picks-now - Commissioner starts picks now by setting first pick's scheduledAt to now
+  app.post("/api/drafts/:id/start-picks-now", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid draft ID" });
+
+      const draft = await storage.getDraft(id);
+      if (!draft) return res.status(404).json({ message: "Draft not found" });
+      if (draft.status !== "active") return res.status(400).json({ message: "Draft must be active" });
+
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      const league = await storage.getLeague(draft.leagueId);
+      if (!user?.isSuperAdmin && league?.commissionerUserId !== userId) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const allSlots = await storage.getDraftPicks(id);
+      const sortedSlots = [...allSlots].sort((a, b) => a.overallPickNumber - b.overallPickNumber);
+      const firstUnmade = sortedSlots.find(s => !s.madeAt && !s.skippedAt);
+
+      if (!firstUnmade) {
+        return res.status(400).json({ message: "No pending picks" });
+      }
+
+      const now = new Date();
+      if (new Date(firstUnmade.scheduledAt).getTime() <= now.getTime()) {
+        return res.status(400).json({ message: "Picks have already started" });
+      }
+
+      await storage.updateDraftPick(firstUnmade.id, { scheduledAt: now });
+
+      console.log(`[Draft] Commissioner started picks now for draft ${id}, pick #${firstUnmade.overallPickNumber}`);
+
+      res.json({ message: "Picks started now", pickNumber: firstUnmade.overallPickNumber });
+    } catch (error) {
+      console.error("Error starting picks now:", error);
+      res.status(500).json({ message: "Failed to start picks now" });
+    }
+  });
+
   // POST /api/drafts/:id/skip-pick - Commissioner skips the current pick
   app.post("/api/drafts/:id/skip-pick", isAuthenticated, async (req: any, res) => {
     try {
