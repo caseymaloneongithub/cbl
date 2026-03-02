@@ -569,8 +569,7 @@ export async function sendDraftPickNotificationEmail(
 </head>
 <body style="font-family: 'Roboto', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
   <div style="background: linear-gradient(135deg, #1a5f2a 0%, #2d8f4a 100%); padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-    <h1 style="color: white; margin: 0; font-size: 20px;">${APP_NAME}</h1>
-    <p style="color: rgba(255,255,255,0.9); margin: 5px 0 0 0; font-size: 13px;">${draftName}</p>
+    <h1 style="color: white; margin: 0; font-size: 20px;">${notification.leagueName} ${draftName}</h1>
   </div>
   
   <div style="background: #f9f9f9; padding: 25px; border-radius: 0 0 8px 8px;">
