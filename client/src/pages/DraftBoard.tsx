@@ -1544,7 +1544,7 @@ export default function DraftBoard() {
           <Card className="flex flex-col">
             <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
               <CardTitle className="text-lg">
-                {isMyPickTeamDraft ? "Available Organizations" : "Available Players"}{allAvailablePlayers ? ` (${allAvailablePlayers.length})` : ""}
+                {isMyPickTeamDraft ? `Available Organizations (${filteredOrgs.length})` : `Available Players${allAvailablePlayers ? ` (${allAvailablePlayers.length})` : ""}`}
               </CardTitle>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative w-48">
