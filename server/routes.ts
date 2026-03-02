@@ -10176,6 +10176,8 @@ export async function registerRoutes(
         const allSlots = await storage.getDraftPicks(id);
         if (allSlots.length > 0 && allSlots.every((s) => !!s.madeAt || !!s.skippedAt)) {
           await storage.updateDraft(id, { status: "completed" });
+        } else {
+          setTimeout(() => processAutoDraft(id, storage), 500);
         }
         sendPickNotificationEmails(id, slot.id, storage).catch(() => {});
         return res.status(201).json({
