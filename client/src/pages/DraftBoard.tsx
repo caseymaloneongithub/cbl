@@ -239,9 +239,8 @@ export default function DraftBoard() {
   const showPreDraftBanner = useMemo(() => {
     if (!draft) return false;
     if (draft.status === "setup") return true;
-    if (draft.status === "active" && !currentSlot) {
-      const anyPickResolved = picks?.some(p => p.madeAt || p.skippedAt);
-      if (!anyPickResolved) return true;
+    if (draft.status === "active" && !currentSlot && Array.isArray(picks)) {
+      if (!picks.some(p => p.madeAt || p.skippedAt)) return true;
     }
     return false;
   }, [draft, currentSlot, picks]);

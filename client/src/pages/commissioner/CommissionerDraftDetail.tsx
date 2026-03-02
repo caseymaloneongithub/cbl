@@ -380,7 +380,7 @@ export default function CommissionerDraftDetail() {
   });
 
   const picksNotStartedYet = draft?.status === "active" && timingInfo?.hasTiming && !timingInfo?.currentSlot &&
-    !(draftPicks?.some(p => p.madeAt || p.skippedAt));
+    Array.isArray(draftPicks) && !draftPicks.some(p => p.madeAt || p.skippedAt);
 
   const startPicksNow = useMutation({
     mutationFn: async () => {

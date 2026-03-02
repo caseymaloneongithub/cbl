@@ -9825,9 +9825,7 @@ export async function registerRoutes(
       if (draft.status !== "active") return res.status(400).json({ message: "Draft must be active" });
 
       const userId = req.session.originalUserId || req.session.userId!;
-      const user = await storage.getUser(userId);
-      const league = await storage.getLeague(draft.leagueId);
-      if (!user?.isSuperAdmin && league?.commissionerUserId !== userId) {
+      if (!await hasLeagueCommissionerAccess(userId, draft.leagueId)) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
