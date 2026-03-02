@@ -10603,14 +10603,24 @@ async function sendPickNotificationEmails(
 
     let sent = 0;
     let failed = 0;
-    for (const recipient of recipients) {
-      const name = recipient.firstName || "Owner";
-      const result = await sendDraftPickNotificationEmail(recipient.email, name, notification);
-      if (result.success) {
-        sent++;
-      } else {
-        failed++;
-        console.error(`[DraftPickEmail] Failed to send to ${recipient.email}: ${result.error}`);
+    const BATCH_SIZE = 2;
+    const BATCH_DELAY_MS = 1100;
+    for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
+      if (i > 0) await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+      const batch = recipients.slice(i, i + BATCH_SIZE);
+      const results = await Promise.all(
+        batch.map(recipient => {
+          const name = recipient.firstName || "Owner";
+          return sendDraftPickNotificationEmail(recipient.email, name, notification);
+        })
+      );
+      for (let j = 0; j < results.length; j++) {
+        if (results[j].success) {
+          sent++;
+        } else {
+          failed++;
+          console.error(`[DraftPickEmail] Failed to send to ${batch[j].email}: ${results[j].error}`);
+        }
       }
     }
     console.log(`[DraftPickEmail] Done pick #${madeSlot.overallPickNumber}: ${sent} sent, ${failed} failed`);
