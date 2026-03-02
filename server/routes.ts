@@ -10460,6 +10460,73 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/drafts/:id/auto-draft-list/upload", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid draft ID" });
+
+      const { mlbIds, rosterType } = req.body;
+      if (!mlbIds || !Array.isArray(mlbIds) || mlbIds.length === 0) {
+        return res.status(400).json({ message: "mlbIds array is required" });
+      }
+
+      const draft = await storage.getDraft(id);
+      if (!draft) return res.status(404).json({ message: "Draft not found" });
+
+      const existing = await storage.getAutoDraftList(id, userId);
+      const existingMlbPlayerIds = new Set(existing.map(item => item.mlbPlayerId));
+
+      const parsedIds = mlbIds
+        .map((v: any) => parseInt(String(v)))
+        .filter((v: number) => !isNaN(v) && v > 0);
+
+      if (parsedIds.length === 0) {
+        return res.status(400).json({ message: "No valid MLB IDs provided" });
+      }
+
+      const players = await db.select().from(mlbPlayers).where(inArray(mlbPlayers.mlbId, parsedIds));
+      const mlbIdToPlayer = new Map(players.map(p => [p.mlbId, p]));
+
+      let added = 0;
+      let skipped = 0;
+      let notFound = 0;
+      const notFoundIds: number[] = [];
+      const type = rosterType || "milb";
+
+      for (const mlbId of parsedIds) {
+        const player = mlbIdToPlayer.get(mlbId);
+        if (!player) {
+          notFound++;
+          notFoundIds.push(mlbId);
+          continue;
+        }
+        if (existingMlbPlayerIds.has(player.id)) {
+          skipped++;
+          continue;
+        }
+        await storage.addAutoDraftItem(id, userId, player.id, type);
+        existingMlbPlayerIds.add(player.id);
+        added++;
+      }
+
+      if (draft.status === "active") {
+        setTimeout(() => processAutoDraft(id, storage), 500);
+      }
+
+      res.json({
+        message: `Added ${added} player${added !== 1 ? "s" : ""}, skipped ${skipped} duplicate${skipped !== 1 ? "s" : ""}, ${notFound} not found`,
+        added,
+        skipped,
+        notFound,
+        notFoundIds: notFoundIds.slice(0, 20),
+      });
+    } catch (error) {
+      console.error("Error uploading auto-draft list:", error);
+      res.status(500).json({ message: "Failed to upload auto-draft list" });
+    }
+  });
+
   // PUT /api/drafts/:id/auto-draft-list/reorder - Reorder auto-draft list
   app.put("/api/drafts/:id/auto-draft-list/reorder", isAuthenticated, async (req: any, res) => {
     try {

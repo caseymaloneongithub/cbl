@@ -25,7 +25,8 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Clock, Search, Users, Loader2, CheckCircle, Building2, AlertTriangle, ListOrdered, ArrowUp, ArrowDown, Plus, Trash2, Pause, Play, Bell, BellOff } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Clock, Search, Users, Loader2, CheckCircle, Building2, AlertTriangle, ListOrdered, ArrowUp, ArrowDown, Plus, Trash2, Pause, Play, Bell, BellOff, Upload } from "lucide-react";
 import type { Draft, DraftRound, DraftPlayerWithDetails, DraftPickWithDetails, DraftOrder, User, AutoDraftListWithPlayer, TeamAutoDraftList } from "@shared/schema";
 
 
@@ -589,6 +590,29 @@ export default function DraftBoard() {
     },
     onError: (error: Error) => {
       toast({ title: "Failed to clear list", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [uploadText, setUploadText] = useState("");
+
+  const uploadAutoDraft = useMutation({
+    mutationFn: async (mlbIds: number[]) => {
+      const res = await apiRequest("POST", `/api/drafts/${draftIdNum}/auto-draft-list/upload`, { mlbIds, rosterType: autoDraftRosterType });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "auto-draft-list"] });
+      setUploadDialogOpen(false);
+      setUploadText("");
+      const parts = [];
+      if (data.added > 0) parts.push(`${data.added} added`);
+      if (data.skipped > 0) parts.push(`${data.skipped} duplicates skipped`);
+      if (data.notFound > 0) parts.push(`${data.notFound} not found`);
+      toast({ title: "Upload complete", description: parts.join(", ") });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Upload failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -1231,6 +1255,15 @@ export default function DraftBoard() {
                         </Badge>
                       );
                     })()}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setUploadDialogOpen(true)}
+                      data-testid="button-auto-draft-upload"
+                    >
+                      <Upload className="h-3.5 w-3.5 mr-1" />
+                      Upload
+                    </Button>
                   </div>
                 </div>
                 <div className="text-xs text-muted-foreground">
@@ -1371,6 +1404,49 @@ export default function DraftBoard() {
               </CardContent>
             </Card>
           )}
+
+          <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Upload Auto-Draft List</DialogTitle>
+                <DialogDescription>
+                  Paste a list of MLB player IDs (one per line, or comma/space separated). Players will be appended to the end of your list in the order provided.
+                </DialogDescription>
+              </DialogHeader>
+              <Textarea
+                value={uploadText}
+                onChange={(e) => setUploadText(e.target.value)}
+                placeholder={"660271\n545361\n592450\n..."}
+                rows={8}
+                className="font-mono text-sm"
+                data-testid="textarea-auto-draft-upload"
+              />
+              <div className="text-xs text-muted-foreground">
+                Players will be queued as <strong>{autoDraftRosterType.toUpperCase()}</strong>. Change the roster type dropdown before uploading to use a different default.
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setUploadDialogOpen(false)} data-testid="button-auto-draft-upload-cancel">Cancel</Button>
+                <Button
+                  onClick={() => {
+                    const ids = uploadText
+                      .split(/[\n,\s]+/)
+                      .map(s => parseInt(s.trim()))
+                      .filter(n => !isNaN(n) && n > 0);
+                    if (ids.length === 0) {
+                      toast({ title: "No valid IDs", description: "Enter at least one numeric MLB player ID.", variant: "destructive" });
+                      return;
+                    }
+                    uploadAutoDraft.mutate(ids);
+                  }}
+                  disabled={uploadAutoDraft.isPending || !uploadText.trim()}
+                  data-testid="button-auto-draft-upload-submit"
+                >
+                  {uploadAutoDraft.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Upload className="h-4 w-4 mr-1" />}
+                  Upload {(() => { const c = uploadText.split(/[\n,\s]+/).filter(s => /^\d+$/.test(s.trim())).length; return c > 0 ? `(${c})` : ""; })()}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {draft.status !== "completed" && hasTeamDraftRound && (
             <Card>
