@@ -1,13 +1,7 @@
+import baseballImg from "@assets/Baseball_Png_Free_Baseball_Graphics_Image_6_2_1772417357601.png";
+
 export function BaseballIcon({ className }: { className?: string }) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" className={className} fill="none">
-      <circle cx="32" cy="32" r="30" fill="#f5f5f0" stroke="#ccc" strokeWidth="1.5"/>
-      <path d="M4 22 C14 15, 24 13, 32 13 C40 13, 50 15, 60 22" stroke="#cc0000" strokeWidth="1.5" strokeLinecap="round"/>
-      <path d="M4 18 C14 11, 24 9, 32 9 C40 9, 50 11, 60 18" stroke="#cc0000" strokeWidth="1.5" strokeLinecap="round"/>
-      <polyline points="6,18 8,22 10,18 12,22 14,18 16,22 18,17 20,21 22,16 24,20 26,15 28,19 30,14 32,18 34,14 36,19 38,15 40,20 42,16 44,21 46,17 48,22 50,18 52,22 54,18 56,22 58,18" stroke="#cc0000" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      <path d="M4 42 C14 49, 24 51, 32 51 C40 51, 50 49, 60 42" stroke="#cc0000" strokeWidth="1.5" strokeLinecap="round"/>
-      <path d="M4 46 C14 53, 24 55, 32 55 C40 55, 50 53, 60 46" stroke="#cc0000" strokeWidth="1.5" strokeLinecap="round"/>
-      <polyline points="6,46 8,42 10,46 12,42 14,46 16,42 18,47 20,43 22,48 24,44 26,49 28,45 30,50 32,46 34,50 36,45 38,49 40,44 42,48 44,43 46,47 48,42 50,46 52,42 54,46 56,42 58,46" stroke="#cc0000" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
+    <img src={baseballImg} alt="Baseball" className={className} />
   );
 }
