@@ -1713,7 +1713,7 @@ export default function DraftBoard() {
           <DialogHeader>
             <DialogTitle>Confirm Pick</DialogTitle>
             <DialogDescription>
-              Select this player for {currentTeam?.user.teamName || "your team"}.
+              Select this player for {(isMyTurn ? currentTeam?.user.teamName : myEligibleSlot?.user?.teamName) || "your team"}.
             </DialogDescription>
           </DialogHeader>
           {selectedPlayer && (
