@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
@@ -282,6 +282,20 @@ export default function DraftBoard() {
     const interval = setInterval(updateStartCountdown, 1000);
     return () => clearInterval(interval);
   }, [showPreDraftBanner, draftStartTime]);
+
+  useEffect(() => {
+    if (!currentSlot) return;
+    requestAnimationFrame(() => {
+      const container = document.getElementById("slot-board-scroll");
+      const row = container?.querySelector('[data-current-slot="true"]');
+      if (row && container) {
+        const containerRect = container.getBoundingClientRect();
+        const rowRect = row.getBoundingClientRect();
+        const scrollTarget = row.getBoundingClientRect().top - containerRect.top + container.scrollTop - containerRect.height / 2 + rowRect.height / 2;
+        container.scrollTop = Math.max(0, scrollTarget);
+      }
+    });
+  }, [currentSlot?.id]);
 
   const firstPickTeam = useMemo(() => {
     if (!picks || picks.length === 0) return null;
@@ -1196,7 +1210,7 @@ export default function DraftBoard() {
           <CardHeader className="pb-3">
             <CardTitle className="text-lg">Slot Board</CardTitle>
           </CardHeader>
-          <CardContent className="p-0 max-h-[360px] overflow-y-auto">
+          <CardContent className="p-0 max-h-[360px] overflow-y-auto" id="slot-board-scroll">
             <Table>
               <TableHeader className="sticky top-0 z-10 bg-background">
                 <TableRow className="bg-muted/50">
@@ -1208,7 +1222,7 @@ export default function DraftBoard() {
               </TableHeader>
               <TableBody>
                 {picks.map((slot) => (
-                  <TableRow key={slot.id} className={`${currentSlot?.id === slot.id ? "bg-primary/10" : slot.userId === user?.id ? "bg-accent/50" : ""}`}>
+                  <TableRow key={slot.id} data-current-slot={currentSlot?.id === slot.id ? "true" : undefined} className={`${currentSlot?.id === slot.id ? "bg-primary/10" : slot.userId === user?.id ? "bg-accent/50" : ""}`}>
                     <TableCell className="font-mono text-xs">{getRoundLabel(slot.round, slot.roundPickIndex)}{draftRounds?.find(r => r.roundNumber === slot.round)?.isTeamDraft ? "*" : ""}</TableCell>
                     <TableCell className={`text-sm ${slot.userId === user?.id ? "font-semibold" : ""}`}>{slot.user.teamName || slot.user.firstName || slot.user.lastName || slot.user.id}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{slot.madeAt ? new Date(slot.madeAt).toLocaleString() : slot.deadlineAt ? new Date(slot.deadlineAt).toLocaleString() : new Date(slot.scheduledAt).toLocaleString()}</TableCell>
