@@ -596,13 +596,12 @@ function buildRoundRecapHtml(picks: RoundRecapPick[], roundName: string): { html
     } else {
       pickDesc = `<span style="font-size: 12px;">${p.playerName}</span> <span style="color: #888; font-size: 11px;">${p.playerPosition}${p.playerMlbTeam ? `, ${p.playerMlbTeam}` : ""}</span>`;
     }
-    const rosterBadge = p.isSkipped ? '' : ` <span style="display: inline-block; background: ${p.rosterType === 'mlb' ? '#1a5f2a' : '#666'}; color: white; font-size: 9px; padding: 1px 4px; border-radius: 3px; vertical-align: middle;">${p.rosterType === 'mlb' ? 'MLB' : 'MiLB'}</span>`;
     const highlight = p.isCurrentPick ? "background: #e8f5e9; font-weight: bold;" : "";
     const marker = p.isCurrentPick ? ` <span style="color: #1a5f2a; font-size: 10px;">&#9668; NEW</span>` : "";
     return `<tr style="${highlight}">
       <td style="padding: 4px 8px; border-bottom: 1px solid #eee; font-size: 11px; color: #666; white-space: nowrap;">${roundName}.${p.roundPickIndex + 1}</td>
       <td style="padding: 4px 8px; border-bottom: 1px solid #eee; font-size: 12px; white-space: nowrap;"><strong>${p.teamAbbr}</strong></td>
-      <td style="padding: 4px 8px; border-bottom: 1px solid #eee;">${pickDesc}${rosterBadge}${marker}</td>
+      <td style="padding: 4px 8px; border-bottom: 1px solid #eee;">${pickDesc}${marker}</td>
     </tr>`;
   }).join("");
 
