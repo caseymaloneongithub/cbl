@@ -1670,7 +1670,7 @@ export default function DraftBoard() {
                           {!isMyPickTeamDraft && (
                             <TableCell className="text-right">
                               <div className="flex items-center justify-end gap-1">
-                                {canPick && (
+                                {canPick ? (
                                   <Button
                                     size="sm"
                                     onClick={() => handlePickClick(dp)}
@@ -1678,8 +1678,7 @@ export default function DraftBoard() {
                                   >
                                     Pick
                                   </Button>
-                                )}
-                                {draft?.status !== "completed" && !autoDraftListIds.has(dp.mlbPlayerId) && (
+                                ) : draft?.status !== "completed" && !autoDraftListIds.has(dp.mlbPlayerId) ? (
                                   <Button
                                     size="sm"
                                     variant="outline"
@@ -1691,13 +1690,12 @@ export default function DraftBoard() {
                                     <Plus className="h-3.5 w-3.5 mr-1" />
                                     Queue
                                   </Button>
-                                )}
-                                {autoDraftListIds.has(dp.mlbPlayerId) && (
+                                ) : autoDraftListIds.has(dp.mlbPlayerId) ? (
                                   <Badge variant="secondary" className="text-xs">
                                     <ListOrdered className="h-3 w-3 mr-1" />
                                     Queued
                                   </Badge>
-                                )}
+                                ) : null}
                               </div>
                             </TableCell>
                           )}
