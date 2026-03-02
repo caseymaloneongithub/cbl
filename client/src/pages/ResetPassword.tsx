@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Diamond, Loader2, CheckCircle, XCircle } from "lucide-react";
+import { Loader2, CheckCircle, XCircle } from "lucide-react";
+import { BaseballIcon } from "@/components/BaseballIcon";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useLocation } from "wouter";
@@ -171,7 +172,7 @@ export default function ResetPassword() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center space-y-4">
           <div className="mx-auto rounded-full bg-primary/10 p-4 w-fit">
-            <Diamond className="h-10 w-10 text-primary" />
+            <BaseballIcon className="h-10 w-10 text-primary" />
           </div>
           <CardTitle className="text-2xl">Reset Your Password</CardTitle>
           <CardDescription>

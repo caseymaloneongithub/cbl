@@ -13,7 +13,8 @@ import {
   DropdownMenuTrigger,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import { Diamond, LogOut, Menu, UserCog, X, Globe, Check, Building2, ChevronDown } from "lucide-react";
+import { LogOut, Menu, UserCog, X, Globe, Check, Building2, ChevronDown } from "lucide-react";
+import { BaseballIcon } from "@/components/BaseballIcon";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -184,7 +185,7 @@ export function Header() {
         <div className="flex h-14 items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <Link href="/" className="flex items-center gap-2 hover-elevate active-elevate-2 rounded-md px-2 py-1">
-              <Diamond className="h-6 w-6 text-primary" />
+              <BaseballIcon className="h-6 w-6 text-primary" />
               <span className="font-bold text-lg hidden sm:inline">
                 {currentLeague?.name || "CBL Strat"}
               </span>

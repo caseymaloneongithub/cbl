@@ -10,7 +10,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Diamond, Loader2, Mail, CheckCircle } from "lucide-react";
+import { Loader2, Mail, CheckCircle } from "lucide-react";
+import { BaseballIcon } from "@/components/BaseballIcon";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -86,7 +87,7 @@ export default function Landing() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center space-y-4">
           <div className="mx-auto rounded-full bg-primary/10 p-4 w-fit">
-            <Diamond className="h-10 w-10 text-primary" />
+            <BaseballIcon className="h-10 w-10 text-primary" />
           </div>
           <CardTitle className="text-2xl">CBL Strat</CardTitle>
           <CardDescription>
