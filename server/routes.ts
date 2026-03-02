@@ -27,7 +27,7 @@ import { fromZonedTime } from "date-fns-tz";
 import { parse, isValid, format } from "date-fns";
 import crypto from "crypto";
 import { syncPlayerStatsFromMLB, testMLBConnection, fetchAllAffiliatedPlayers } from "./mlb-api";
-import { sendDraftPickNotificationEmail, sendDraftCatchUpEmail, type DraftPickNotification, type DraftCatchUpPick, type UpcomingPick } from "./email";
+import { sendDraftPickNotificationEmail, sendDraftCatchUpEmail, type DraftPickNotification, type DraftCatchUpPick, type UpcomingPick, type RoundRecapPick } from "./email";
 import fs from "fs/promises";
 import path from "path";
 
@@ -10665,6 +10665,23 @@ async function sendPickNotificationEmails(
       };
     });
 
+    const roundRecap: RoundRecapPick[] = allSlots
+      .filter((s: any) => s.round === madeSlot.round && (s.madeAt || s.skippedAt))
+      .sort((a: any, b: any) => a.overallPickNumber - b.overallPickNumber)
+      .map((s: any) => ({
+        pickNumber: s.overallPickNumber,
+        roundPickIndex: s.roundPickIndex,
+        teamAbbr: s.user?.teamAbbreviation || s.user?.teamName || "???",
+        isOrgPick: !!s.selectedOrgName,
+        orgName: s.selectedOrgName || undefined,
+        playerName: s.player?.fullName || undefined,
+        playerPosition: s.player?.primaryPosition || undefined,
+        playerMlbTeam: s.player?.parentOrgName || undefined,
+        rosterType: s.rosterType || "milb",
+        isSkipped: !!s.skippedAt && !s.madeAt,
+        isCurrentPick: s.id === madeSlotId,
+      }));
+
     const skippedSlots = allSlots.filter((s: any) => s.skippedAt && !s.madeAt && s.id !== madeSlotId);
     const skippedTeamMap = new Map<string, string>();
     for (const s of skippedSlots) {
@@ -10694,6 +10711,7 @@ async function sendPickNotificationEmails(
       rosterType: madeSlot.rosterType || "milb",
       isSkipped: !!options?.isSkipped,
       upcomingPicks,
+      roundRecap,
       skippedTeams: skippedTeams.length > 0 ? skippedTeams : undefined,
     };
 

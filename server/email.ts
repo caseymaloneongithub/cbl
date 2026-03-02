@@ -512,7 +512,22 @@ export interface DraftPickNotification {
   rosterType: string;
   isSkipped: boolean;
   upcomingPicks: UpcomingPick[];
+  roundRecap: RoundRecapPick[];
   skippedTeams?: Array<{ teamName: string }>;
+}
+
+export interface RoundRecapPick {
+  pickNumber: number;
+  roundPickIndex: number;
+  teamAbbr: string;
+  isOrgPick: boolean;
+  orgName?: string;
+  playerName?: string;
+  playerPosition?: string;
+  playerMlbTeam?: string;
+  rosterType: string;
+  isSkipped: boolean;
+  isCurrentPick: boolean;
 }
 
 function formatDeadlineEST(isoDate: string): string {
@@ -569,6 +584,48 @@ function buildUpcomingPicksHtml(picks: UpcomingPick[]): { html: string; text: st
   return { html, text: `\nUpcoming Picks:\n${textLines}` };
 }
 
+function buildRoundRecapHtml(picks: RoundRecapPick[], roundName: string): { html: string; text: string } {
+  if (picks.length === 0) return { html: "", text: "" };
+
+  const rows = picks.map(p => {
+    let pickDesc: string;
+    if (p.isSkipped) {
+      pickDesc = `<span style="color: #d9534f; font-size: 12px;">Skipped</span>`;
+    } else if (p.isOrgPick) {
+      pickDesc = `<em style="font-size: 12px;">${p.orgName}</em> <span style="color: #888; font-size: 11px;">(Team Draft)</span>`;
+    } else {
+      pickDesc = `<span style="font-size: 12px;">${p.playerName}</span> <span style="color: #888; font-size: 11px;">${p.playerPosition}, ${p.playerMlbTeam}</span>`;
+    }
+    const rosterBadge = p.isSkipped ? '' : ` <span style="display: inline-block; background: ${p.rosterType === 'mlb' ? '#1a5f2a' : '#666'}; color: white; font-size: 9px; padding: 1px 4px; border-radius: 3px; vertical-align: middle;">${p.rosterType === 'mlb' ? 'MLB' : 'MiLB'}</span>`;
+    const highlight = p.isCurrentPick ? "background: #e8f5e9; font-weight: bold;" : "";
+    const marker = p.isCurrentPick ? ` <span style="color: #1a5f2a; font-size: 10px;">&#9668; NEW</span>` : "";
+    return `<tr style="${highlight}">
+      <td style="padding: 4px 8px; border-bottom: 1px solid #eee; font-size: 11px; color: #666; white-space: nowrap;">${roundName}.${p.roundPickIndex + 1}</td>
+      <td style="padding: 4px 8px; border-bottom: 1px solid #eee; font-size: 12px; white-space: nowrap;"><strong>${p.teamAbbr}</strong></td>
+      <td style="padding: 4px 8px; border-bottom: 1px solid #eee;">${pickDesc}${rosterBadge}${marker}</td>
+    </tr>`;
+  }).join("");
+
+  const html = `
+    <div style="border: 1px solid #ddd; border-radius: 6px; overflow: hidden; margin: 15px 0;">
+      <div style="background: #f5f5f5; padding: 8px 15px;">
+        <p style="margin: 0; font-weight: bold; color: #555; font-size: 13px;">${roundName} Recap</p>
+      </div>
+      <table style="width: 100%; border-collapse: collapse;">
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+
+  const textLines = picks.map(p => {
+    const marker = p.isCurrentPick ? " <-- NEW" : "";
+    if (p.isSkipped) return `${roundName}.${p.roundPickIndex + 1} ${p.teamAbbr} - SKIPPED${marker}`;
+    if (p.isOrgPick) return `${roundName}.${p.roundPickIndex + 1} ${p.teamAbbr} - ${p.orgName} (Team Draft)${marker}`;
+    return `${roundName}.${p.roundPickIndex + 1} ${p.teamAbbr} - ${p.playerName} (${p.playerPosition}, ${p.playerMlbTeam}) [${p.rosterType.toUpperCase()}]${marker}`;
+  }).join("\n");
+
+  return { html, text: `\n${roundName} Recap:\n${textLines}` };
+}
+
 export async function sendDraftPickNotificationEmail(
   to: string,
   recipientName: string,
@@ -591,6 +648,7 @@ export async function sendDraftPickNotificationEmail(
     </span>`;
 
   const { html: upNextHtml, text: upNextText } = buildUpcomingPicksHtml(notification.upcomingPicks);
+  const { html: roundRecapHtml, text: roundRecapText } = buildRoundRecapHtml(notification.roundRecap, notification.roundName);
 
   const pickLabel = `Pick ${notification.roundName}.${notification.roundPickIndex + 1}`;
   const firstUpcoming = notification.upcomingPicks[0];
@@ -623,6 +681,7 @@ export async function sendDraftPickNotificationEmail(
       <p style="margin: 0; color: #666; font-size: 13px;">${notification.pickedByTeamName} (${notification.pickedByOwnerName})</p>
     </div>
 
+    ${roundRecapHtml}
     ${upNextHtml}
     ${notification.skippedTeams && notification.skippedTeams.length > 0 ? `
       <div style="background: #fff8e1; border: 1px solid #ffe082; border-radius: 6px; padding: 15px; margin: 15px 0;">
@@ -650,7 +709,7 @@ export async function sendDraftPickNotificationEmail(
     ? `\nSkipped teams that can still pick: ${notification.skippedTeams.map(t => t.teamName).join(', ')}`
     : '';
 
-  const text = `${draftName}\n\n${pickTextLine}${upNextText}${skippedTeamsText}\n`;
+  const text = `${draftName}\n\n${pickTextLine}${roundRecapText}${upNextText}${skippedTeamsText}\n`;
 
   return sendEmail({
     to,
