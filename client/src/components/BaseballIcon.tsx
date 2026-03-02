@@ -1,27 +1,13 @@
 export function BaseballIcon({ className }: { className?: string }) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" className={className} fill="none">
-      <circle cx="32" cy="32" r="30" fill="#f5f5f0" stroke="#888" strokeWidth="2"/>
-      <path d="M4 22 C14 16, 24 14, 32 14 C40 14, 50 16, 60 22" stroke="#cc0000" strokeWidth="2.5" strokeLinecap="round"/>
-      <path d="M4 42 C14 48, 24 50, 32 50 C40 50, 50 48, 60 42" stroke="#cc0000" strokeWidth="2.5" strokeLinecap="round"/>
-      <line x1="8" y1="20" x2="6" y2="16" stroke="#cc0000" strokeWidth="1.8" strokeLinecap="round"/>
-      <line x1="14" y1="18" x2="13" y2="14" stroke="#cc0000" strokeWidth="1.8" strokeLinecap="round"/>
-      <line x1="20" y1="16" x2="20" y2="12" stroke="#cc0000" strokeWidth="1.8" strokeLinecap="round"/>
-      <line x1="26" y1="15" x2="27" y2="11" stroke="#cc0000" strokeWidth="1.8" strokeLinecap="round"/>
-      <line x1="32" y1="14" x2="33" y2="10" stroke="#cc0000" strokeWidth="1.8" strokeLinecap="round"/>
-      <line x1="38" y1="15" x2="39" y2="11" stroke="#cc0000" strokeWidth="1.8" strokeLinecap="round"/>
-      <line x1="44" y1="16" x2="45" y2="12" stroke="#cc0000" strokeWidth="1.8" strokeLinecap="round"/>
-      <line x1="50" y1="18" x2="51" y2="14" stroke="#cc0000" strokeWidth="1.8" strokeLinecap="round"/>
-      <line x1="56" y1="20" x2="58" y2="16" stroke="#cc0000" strokeWidth="1.8" strokeLinecap="round"/>
-      <line x1="8" y1="44" x2="6" y2="48" stroke="#cc0000" strokeWidth="1.8" strokeLinecap="round"/>
-      <line x1="14" y1="46" x2="13" y2="50" stroke="#cc0000" strokeWidth="1.8" strokeLinecap="round"/>
-      <line x1="20" y1="48" x2="20" y2="52" stroke="#cc0000" strokeWidth="1.8" strokeLinecap="round"/>
-      <line x1="26" y1="49" x2="27" y2="53" stroke="#cc0000" strokeWidth="1.8" strokeLinecap="round"/>
-      <line x1="32" y1="50" x2="33" y2="54" stroke="#cc0000" strokeWidth="1.8" strokeLinecap="round"/>
-      <line x1="38" y1="49" x2="39" y2="53" stroke="#cc0000" strokeWidth="1.8" strokeLinecap="round"/>
-      <line x1="44" y1="48" x2="45" y2="52" stroke="#cc0000" strokeWidth="1.8" strokeLinecap="round"/>
-      <line x1="50" y1="46" x2="51" y2="50" stroke="#cc0000" strokeWidth="1.8" strokeLinecap="round"/>
-      <line x1="56" y1="44" x2="58" y2="48" stroke="#cc0000" strokeWidth="1.8" strokeLinecap="round"/>
+      <circle cx="32" cy="32" r="30" fill="#f5f5f0" stroke="#ccc" strokeWidth="1.5"/>
+      <path d="M4 22 C14 15, 24 13, 32 13 C40 13, 50 15, 60 22" stroke="#cc0000" strokeWidth="1.5" strokeLinecap="round"/>
+      <path d="M4 18 C14 11, 24 9, 32 9 C40 9, 50 11, 60 18" stroke="#cc0000" strokeWidth="1.5" strokeLinecap="round"/>
+      <polyline points="6,18 8,22 10,18 12,22 14,18 16,22 18,17 20,21 22,16 24,20 26,15 28,19 30,14 32,18 34,14 36,19 38,15 40,20 42,16 44,21 46,17 48,22 50,18 52,22 54,18 56,22 58,18" stroke="#cc0000" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M4 42 C14 49, 24 51, 32 51 C40 51, 50 49, 60 42" stroke="#cc0000" strokeWidth="1.5" strokeLinecap="round"/>
+      <path d="M4 46 C14 53, 24 55, 32 55 C40 55, 50 53, 60 46" stroke="#cc0000" strokeWidth="1.5" strokeLinecap="round"/>
+      <polyline points="6,46 8,42 10,46 12,42 14,46 16,42 18,47 20,43 22,48 24,44 26,49 28,45 30,50 32,46 34,50 36,45 38,49 40,44 42,48 44,43 46,47 48,42 50,46 52,42 54,46 56,42 58,46" stroke="#cc0000" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
