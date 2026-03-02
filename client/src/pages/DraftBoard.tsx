@@ -25,7 +25,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Clock, Search, Trophy, Users, Loader2, CheckCircle, Building2, AlertTriangle, ListOrdered, ArrowUp, ArrowDown, Plus, Trash2, Pause, Play, Bell, BellOff, SkipForward } from "lucide-react";
+import { Clock, Search, Trophy, Users, Loader2, CheckCircle, Building2, AlertTriangle, ListOrdered, ArrowUp, ArrowDown, Plus, Trash2, Pause, Play, Bell, BellOff } from "lucide-react";
 import type { Draft, DraftRound, DraftPlayerWithDetails, DraftPickWithDetails, DraftOrder, User, AutoDraftListWithPlayer, TeamAutoDraftList } from "@shared/schema";
 
 
@@ -958,11 +958,10 @@ export default function DraftBoard() {
                   Select Organization
                 </Button>
               )}
-              {(isLeagueCommissioner || user?.isSuperAdmin) && currentSlot && (
+              {(isLeagueCommissioner || user?.isSuperAdmin) && currentSlot && currentSlot.round === 1 && (
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button variant="outline" size="sm" data-testid="button-skip-pick">
-                      <SkipForward className="h-4 w-4 mr-1" />
                       Skip Pick
                     </Button>
                   </AlertDialogTrigger>

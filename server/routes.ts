@@ -9895,6 +9895,7 @@ export async function registerRoutes(
       if (!slot) return res.status(404).json({ message: "Pick slot not found" });
       if (slot.madeAt) return res.status(400).json({ message: "This pick has already been made" });
       if (slot.skippedAt) return res.status(400).json({ message: "This pick has already been skipped" });
+      if (slot.round > 1) return res.status(400).json({ message: "Picks can only be skipped in the first round. After round 1, deadlines handle missed picks." });
 
       const now = new Date();
       const sortedSlots = [...picks].sort((a, b) => a.overallPickNumber - b.overallPickNumber);
