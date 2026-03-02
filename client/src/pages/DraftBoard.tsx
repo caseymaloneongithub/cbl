@@ -397,14 +397,26 @@ export default function DraftBoard() {
   });
 
   const commPickTeams = useMemo(() => {
-    if (!draftOrderData) return [];
+    if (!picks || !timingInfo) return [];
+    const now = timingInfo.now ? new Date(timingInfo.now).getTime() : Date.now();
+    const currentOnClockUserId = currentSlot?.userId;
     const seen = new Set<string>();
-    return draftOrderData.filter(o => {
-      if (seen.has(o.userId)) return false;
-      seen.add(o.userId);
-      return true;
-    }).map(o => ({ userId: o.userId, teamName: o.user.teamName || `${o.user.firstName} ${o.user.lastName}`, teamAbbreviation: (o.user as any).teamAbbreviation || "" }));
-  }, [draftOrderData]);
+    const teams: { userId: string; teamName: string; teamAbbreviation: string; label: string }[] = [];
+    picks.forEach(slot => {
+      if (slot.madeAt || seen.has(slot.userId)) return;
+      const isOnClock = slot.userId === currentOnClockUserId && !slot.skippedAt;
+      const deadlinePassed = slot.deadlineAt && new Date(slot.deadlineAt).getTime() <= now;
+      const isSkipped = !!slot.skippedAt;
+      if (isOnClock || deadlinePassed || isSkipped) {
+        seen.add(slot.userId);
+        const teamName = slot.user?.teamName || `${slot.user?.firstName} ${slot.user?.lastName}`;
+        const teamAbbr = (slot.user as any)?.teamAbbreviation || "";
+        const label = isOnClock ? "On Clock" : isSkipped ? "Skipped" : "Deadline Passed";
+        teams.push({ userId: slot.userId, teamName, teamAbbreviation: teamAbbr, label });
+      }
+    });
+    return teams;
+  }, [picks, timingInfo, currentSlot]);
 
   const commPickTargetSlot = useMemo(() => {
     if (!commPickUserId || !picks) return null;
@@ -985,7 +997,7 @@ export default function DraftBoard() {
         </Card>
       )}
 
-      {draft.status === "active" && (isLeagueCommissioner || user?.isSuperAdmin) && (
+      {draft.status === "active" && (isLeagueCommissioner || user?.isSuperAdmin) && commPickTeams.length > 0 && (
         <Card className="mb-6" data-testid="card-commissioner-pick">
           <CardHeader className="py-3 pb-2">
             <CardTitle className="text-base">Commissioner Pick</CardTitle>
@@ -1002,6 +1014,7 @@ export default function DraftBoard() {
                     {commPickTeams.map(t => (
                       <SelectItem key={t.userId} value={t.userId} data-testid={`option-comm-team-${t.userId}`}>
                         {t.teamAbbreviation ? `${t.teamAbbreviation} - ${t.teamName}` : t.teamName}
+                        {t.label && ` (${t.label})`}
                       </SelectItem>
                     ))}
                   </SelectContent>
