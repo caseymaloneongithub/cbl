@@ -486,11 +486,13 @@ You can opt out of these emails from the Draft Board.
 }
 
 export interface DraftPickNotification {
+  leagueName: string;
   draftName: string;
   pickNumber: number;
   roundName: string;
   roundPickIndex: number;
   pickedByTeamName: string;
+  pickedByTeamAbbr: string;
   pickedByOwnerName: string;
   isOrgPick: boolean;
   orgName?: string;
@@ -500,9 +502,11 @@ export interface DraftPickNotification {
   rosterType: string;
   isSkipped: boolean;
   nextPickTeamName?: string;
+  nextPickTeamAbbr?: string;
   nextPickOwnerName?: string;
   nextPickRoundName?: string;
   nextPickNumber?: number;
+  nextPickRoundPickIndex?: number;
   skippedTeams?: Array<{ teamName: string }>;
 }
 
@@ -545,11 +549,15 @@ export async function sendDraftPickNotificationEmail(
     upNextText = `\nDraft Complete - All picks have been made or skipped.`;
   }
 
+  const pickLabel = `Pick ${notification.roundName}.${notification.roundPickIndex + 1}`;
+  const onClockPart = notification.nextPickTeamAbbr
+    ? `; ${notification.nextPickTeamAbbr} on the clock`
+    : "";
   const subjectPick = notification.isSkipped
-    ? `Pick #${notification.pickNumber} Skipped (${notification.pickedByTeamName})`
+    ? `${pickLabel}: ${notification.pickedByTeamAbbr} skipped${onClockPart}`
     : notification.isOrgPick
-      ? `Pick #${notification.pickNumber}: ${notification.orgName} to ${notification.pickedByTeamName}`
-      : `Pick #${notification.pickNumber}: ${notification.playerName} to ${notification.pickedByTeamName}`;
+      ? `${pickLabel}: ${notification.pickedByTeamAbbr} selects ${notification.orgName}${onClockPart}`
+      : `${pickLabel}: ${notification.pickedByTeamAbbr} selects ${notification.playerName}${onClockPart}`;
 
   const html = `
 <!DOCTYPE html>
@@ -603,7 +611,7 @@ export async function sendDraftPickNotificationEmail(
 
   return sendEmail({
     to,
-    subject: `${draftName} - ${subjectPick}`,
+    subject: `${notification.leagueName} Draft - ${subjectPick}`,
     html,
     text,
   });

@@ -10531,12 +10531,17 @@ async function sendPickNotificationEmails(
     }
     const skippedTeams = Array.from(skippedTeamMap.values()).map(teamName => ({ teamName }));
 
+    const league = await storage.getLeague(draft.leagueId);
+    const leagueName = league?.name || "League";
+
     const notification: DraftPickNotification = {
+      leagueName,
       draftName: draft.name,
       pickNumber: madeSlot.overallPickNumber,
       roundName,
       roundPickIndex: madeSlot.roundPickIndex,
       pickedByTeamName: madeSlot.user?.teamName || `${madeSlot.user?.firstName || ""} ${madeSlot.user?.lastName || ""}`.trim() || "Unknown",
+      pickedByTeamAbbr: madeSlot.user?.teamAbbreviation || madeSlot.user?.teamName || "???",
       pickedByOwnerName: `${madeSlot.user?.firstName || ""} ${madeSlot.user?.lastName || ""}`.trim() || "Unknown",
       isOrgPick: !!madeSlot.selectedOrgName,
       orgName: madeSlot.selectedOrgName || undefined,
@@ -10546,9 +10551,11 @@ async function sendPickNotificationEmails(
       rosterType: madeSlot.rosterType || "milb",
       isSkipped: !!options?.isSkipped,
       nextPickTeamName: nextSlot ? (nextSlot.user?.teamName || `${nextSlot.user?.firstName || ""} ${nextSlot.user?.lastName || ""}`.trim() || "Unknown") : undefined,
+      nextPickTeamAbbr: nextSlot ? (nextSlot.user?.teamAbbreviation || nextSlot.user?.teamName || "???") : undefined,
       nextPickOwnerName: nextSlot ? (`${nextSlot.user?.firstName || ""} ${nextSlot.user?.lastName || ""}`.trim() || "Unknown") : undefined,
       nextPickRoundName,
       nextPickNumber: nextSlot?.overallPickNumber,
+      nextPickRoundPickIndex: nextSlot?.roundPickIndex,
       skippedTeams: skippedTeams.length > 0 ? skippedTeams : undefined,
     };
 
