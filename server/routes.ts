@@ -9748,8 +9748,10 @@ export async function registerRoutes(
       const sortedSlots = [...slots].sort((a, b) => a.overallPickNumber - b.overallPickNumber);
       const unmadeSlots = sortedSlots.filter((slot) => !slot.madeAt);
 
-      const isSlotResolved = (s: typeof sortedSlots[0]) => {
+      const rounds = await storage.getDraftRounds(id);
+      const isSlotResolved = (s: typeof sortedSlots[0], strictForTeamDraft: boolean) => {
         if (s.madeAt || s.skippedAt) return true;
+        if (strictForTeamDraft) return false;
         if (s.round > 1 && s.deadlineAt && new Date(s.deadlineAt).getTime() <= now.getTime()) return true;
         return false;
       };
@@ -9773,9 +9775,11 @@ export async function registerRoutes(
           break;
         }
 
+        const slotRoundConfig = rounds.find(r => r.roundNumber === slot.round);
+        const strictMode = slotRoundConfig?.isTeamDraft === true;
         const allPreviousResolved = sortedSlots
           .filter(s => s.overallPickNumber < slot.overallPickNumber)
-          .every(s => isSlotResolved(s));
+          .every(s => isSlotResolved(s, strictMode));
         if (allPreviousResolved) {
           currentSlot = slot;
         }
@@ -9885,8 +9889,10 @@ export async function registerRoutes(
       const now = new Date();
       const sortedSlots = [...picks].sort((a, b) => a.overallPickNumber - b.overallPickNumber);
       const unmadeSlots = sortedSlots.filter(p => !p.madeAt);
-      const isSlotResolved = (s: typeof sortedSlots[0]) => {
+      const draftRounds = await storage.getDraftRounds(id);
+      const isSlotResolved = (s: typeof sortedSlots[0], strictForTeamDraft: boolean) => {
         if (s.madeAt || s.skippedAt) return true;
+        if (strictForTeamDraft) return false;
         if (s.round > 1 && s.deadlineAt && new Date(s.deadlineAt).getTime() <= now.getTime()) return true;
         return false;
       };
@@ -9899,9 +9905,11 @@ export async function registerRoutes(
           if (new Date(s.scheduledAt).getTime() <= now.getTime()) currentOnClock = s;
           break;
         }
+        const sRoundConfig = draftRounds.find(r => r.roundNumber === s.round);
+        const strictMode = sRoundConfig?.isTeamDraft === true;
         const allPrevResolved = sortedSlots
           .filter(prev => prev.overallPickNumber < s.overallPickNumber)
-          .every(prev => isSlotResolved(prev));
+          .every(prev => isSlotResolved(prev, strictMode));
         if (allPrevResolved) currentOnClock = s;
         break;
       }
@@ -9949,14 +9957,19 @@ export async function registerRoutes(
         return res.status(400).json({ message: "The draft has not started yet" });
       }
 
+      const rounds = await storage.getDraftRounds(id);
+      const currentRoundConfig = rounds.find((r) => r.roundNumber === slot.round);
+      const isTeamDraftRound = currentRoundConfig?.isTeamDraft === true;
+
       if (!slot.skippedAt && slot.overallPickNumber > 1) {
         const isResolved = (s: any) => {
           if (s.madeAt || s.skippedAt) return true;
+          if (isTeamDraftRound) return false;
           if (s.round > 1 && s.deadlineAt && new Date(s.deadlineAt).getTime() <= now.getTime()) return true;
           return false;
         };
 
-        const ownDeadlinePassed = slot.round > 1 && slot.deadlineAt && new Date(slot.deadlineAt).getTime() <= now.getTime();
+        const ownDeadlinePassed = !isTeamDraftRound && slot.round > 1 && slot.deadlineAt && new Date(slot.deadlineAt).getTime() <= now.getTime();
         if (!ownDeadlinePassed) {
           const allPreviousResolved = allSlots
             .filter((s) => s.overallPickNumber < slot.overallPickNumber)
@@ -9966,10 +9979,6 @@ export async function registerRoutes(
           }
         }
       }
-
-      const rounds = await storage.getDraftRounds(id);
-      const currentRoundConfig = rounds.find((r) => r.roundNumber === slot.round);
-      const isTeamDraftRound = currentRoundConfig?.isTeamDraft === true;
       let pickResponse: any;
 
       if (isTeamDraftRound) {
@@ -10593,9 +10602,13 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
       return false;
     }
 
+    const roundConfig = rounds.find((r: any) => r.roundNumber === nextSlot.round);
+    const isTeamDraft = roundConfig?.isTeamDraft === true;
+
     if (nextSlot.overallPickNumber > 1) {
       const isResolved = (s: any) => {
         if (s.madeAt || s.skippedAt) return true;
+        if (isTeamDraft) return false;
         if (s.round > 1 && s.deadlineAt && new Date(s.deadlineAt).getTime() <= now.getTime()) return true;
         return false;
       };
@@ -10604,8 +10617,6 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
         .every((s: any) => isResolved(s));
       if (!allPreviousResolved) return false;
     }
-
-    const roundConfig = rounds.find((r: any) => r.roundNumber === nextSlot.round);
     const slot = nextSlot;
 
     const deadlinePassed = slot.deadlineAt && new Date(slot.deadlineAt).getTime() <= now.getTime();
