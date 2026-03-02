@@ -65,9 +65,7 @@ export default function DraftBoard() {
   const [commPickUserId, setCommPickUserId] = useState("");
   const [commPickSearch, setCommPickSearch] = useState("");
   const [commPickSelectedPlayer, setCommPickSelectedPlayer] = useState<DraftPlayerWithDetails | null>(null);
-  const [commPickRosterType, setCommPickRosterType] = useState<"mlb" | "milb">("milb");
   const [commPickOrgName, setCommPickOrgName] = useState("");
-  const [commPickOrgRosterType, setCommPickOrgRosterType] = useState<"mlb" | "milb">("milb");
 
   const draftIdNum = draftId ? parseInt(draftId, 10) : null;
 
@@ -473,9 +471,7 @@ export default function DraftBoard() {
       setCommPickUserId("");
       setCommPickSearch("");
       setCommPickSelectedPlayer(null);
-      setCommPickRosterType("milb");
       setCommPickOrgName("");
-      setCommPickOrgRosterType("milb");
     },
     onError: (error: Error) => {
       toast({ title: "Commissioner pick failed", description: error.message, variant: "destructive" });
@@ -1061,25 +1057,14 @@ export default function DraftBoard() {
                   <p className="text-sm text-muted-foreground">No matching available players.</p>
                 )}
                 {commPickSelectedPlayer && (
-                  <div className="flex items-center gap-3">
-                    <Select value={commPickRosterType} onValueChange={(v) => setCommPickRosterType(v as "mlb" | "milb")}>
-                      <SelectTrigger className="w-28" data-testid="select-comm-pick-roster">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="milb">MiLB</SelectItem>
-                        <SelectItem value="mlb">MLB</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      size="sm"
-                      onClick={() => commissionerPick.mutate({ userId: commPickUserId, mlbPlayerId: commPickSelectedPlayer.mlbPlayerId, rosterType: commPickRosterType })}
-                      disabled={commissionerPick.isPending}
-                      data-testid="button-comm-pick-submit"
-                    >
-                      {commissionerPick.isPending ? "Picking..." : "Make Pick"}
-                    </Button>
-                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => commissionerPick.mutate({ userId: commPickUserId, mlbPlayerId: commPickSelectedPlayer.mlbPlayerId, rosterType: "milb" })}
+                    disabled={commissionerPick.isPending}
+                    data-testid="button-comm-pick-submit"
+                  >
+                    {commissionerPick.isPending ? "Picking..." : "Make Pick"}
+                  </Button>
                 )}
               </div>
             )}
@@ -1099,20 +1084,11 @@ export default function DraftBoard() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <Select value={commPickOrgRosterType} onValueChange={(v) => setCommPickOrgRosterType(v as "mlb" | "milb")}>
-                    <SelectTrigger className="w-28" data-testid="select-comm-pick-org-roster">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="milb">MiLB</SelectItem>
-                      <SelectItem value="mlb">MLB</SelectItem>
-                    </SelectContent>
-                  </Select>
                   <Button
                     size="sm"
                     onClick={() => {
                       const orgMeta = allAvailablePlayers?.find(dp => dp.player.parentOrgName === commPickOrgName);
-                      commissionerPick.mutate({ userId: commPickUserId, selectedOrgName: commPickOrgName, selectedOrgId: orgMeta?.player.parentOrgId ?? null, rosterType: commPickOrgRosterType });
+                      commissionerPick.mutate({ userId: commPickUserId, selectedOrgName: commPickOrgName, selectedOrgId: orgMeta?.player.parentOrgId ?? null, rosterType: "milb" });
                     }}
                     disabled={!commPickOrgName || commissionerPick.isPending}
                     data-testid="button-comm-pick-org-submit"
