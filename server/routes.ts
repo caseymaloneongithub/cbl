@@ -9758,10 +9758,14 @@ export async function registerRoutes(
 
       const allSkippedSlots = unmadeSlots.filter(slot => !!slot.skippedAt);
 
-      const deadlinePassedSlots = unmadeSlots.filter(slot =>
-        !slot.skippedAt && slot.round > 1 && slot.deadlineAt &&
-        new Date(slot.deadlineAt).getTime() <= now.getTime()
-      );
+      const deadlinePassedSlots = unmadeSlots.filter(slot => {
+        if (slot.skippedAt) return false;
+        if (slot.round <= 1 || !slot.deadlineAt) return false;
+        if (new Date(slot.deadlineAt).getTime() > now.getTime()) return false;
+        const slotRoundConfig = rounds.find(r => r.roundNumber === slot.round);
+        if (slotRoundConfig?.isTeamDraft === true) return false;
+        return true;
+      });
 
       let currentSlot: typeof sortedSlots[0] | null = null;
       for (const slot of unmadeSlots) {
