@@ -1428,9 +1428,11 @@ export default function DraftBoard() {
                 <Button variant="outline" onClick={() => setUploadDialogOpen(false)} data-testid="button-auto-draft-upload-cancel">Cancel</Button>
                 <Button
                   onClick={() => {
-                    const ids = uploadText
-                      .split(/[\n,\s]+/)
-                      .map(s => parseInt(s.trim()))
+                    const ids = uploadText.trim()
+                      .split(/[\r\n,\s]+/)
+                      .map(s => s.trim())
+                      .filter(s => s.length > 0)
+                      .map(s => parseInt(s))
                       .filter(n => !isNaN(n) && n > 0);
                     if (ids.length === 0) {
                       toast({ title: "No valid IDs", description: "Enter at least one numeric MLB player ID.", variant: "destructive" });
@@ -1442,7 +1444,7 @@ export default function DraftBoard() {
                   data-testid="button-auto-draft-upload-submit"
                 >
                   {uploadAutoDraft.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Upload className="h-4 w-4 mr-1" />}
-                  Upload {(() => { const c = uploadText.split(/[\n,\s]+/).filter(s => /^\d+$/.test(s.trim())).length; return c > 0 ? `(${c})` : ""; })()}
+                  Upload {(() => { const c = uploadText.trim().split(/[\r\n,\s]+/).filter(s => /^\d+$/.test(s.trim())).length; return c > 0 ? `(${c})` : ""; })()}
                 </Button>
               </DialogFooter>
             </DialogContent>
