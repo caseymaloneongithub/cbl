@@ -595,6 +595,7 @@ export default function DraftBoard() {
 
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [uploadText, setUploadText] = useState("");
+  const [uploadResult, setUploadResult] = useState<any>(null);
 
   const uploadAutoDraft = useMutation({
     mutationFn: async (mlbIds: number[]) => {
@@ -605,11 +606,7 @@ export default function DraftBoard() {
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "auto-draft-list"] });
       setUploadDialogOpen(false);
       setUploadText("");
-      const parts = [];
-      if (data.added > 0) parts.push(`${data.added} added`);
-      if (data.skipped > 0) parts.push(`${data.skipped} duplicates skipped`);
-      if (data.notFound > 0) parts.push(`${data.notFound} not found`);
-      toast({ title: "Upload complete", description: parts.join(", ") });
+      setUploadResult(data);
     },
     onError: (error: Error) => {
       toast({ title: "Upload failed", description: error.message, variant: "destructive" });
@@ -1446,6 +1443,48 @@ export default function DraftBoard() {
                   {uploadAutoDraft.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Upload className="h-4 w-4 mr-1" />}
                   Upload {(() => { const c = uploadText.trim().split(/[\r\n,\s]+/).filter(s => /^\d+$/.test(s.trim())).length; return c > 0 ? `(${c})` : ""; })()}
                 </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={!!uploadResult} onOpenChange={(open) => { if (!open) setUploadResult(null); }}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Upload Results</DialogTitle>
+                <DialogDescription>
+                  Matched {uploadResult ? (uploadResult.added + uploadResult.alreadyInList + uploadResult.notInPool) : 0} of {uploadResult?.total || 0} IDs submitted.
+                  {uploadResult?.added > 0 && ` Added ${uploadResult.added} player${uploadResult.added !== 1 ? "s" : ""} to your list.`}
+                </DialogDescription>
+              </DialogHeader>
+              {uploadResult && (uploadResult.notFound > 0 || uploadResult.notInPool > 0 || uploadResult.inputDuplicates > 0 || uploadResult.alreadyInList > 0) && (
+                <div className="space-y-3 text-sm">
+                  {uploadResult.alreadyInList > 0 && (
+                    <div>
+                      <div className="font-medium text-muted-foreground mb-1">{uploadResult.alreadyInList} already in list (skipped):</div>
+                      <div className="text-xs text-muted-foreground">{uploadResult.alreadyInListNames.join(", ")}</div>
+                    </div>
+                  )}
+                  {uploadResult.inputDuplicates > 0 && (
+                    <div>
+                      <div className="font-medium text-muted-foreground">{uploadResult.inputDuplicates} duplicate ID{uploadResult.inputDuplicates !== 1 ? "s" : ""} in your input (ignored)</div>
+                    </div>
+                  )}
+                  {uploadResult.notInPool > 0 && (
+                    <div>
+                      <div className="font-medium text-orange-600 dark:text-orange-400 mb-1">{uploadResult.notInPool} player{uploadResult.notInPool !== 1 ? "s" : ""} not in draft pool:</div>
+                      <div className="text-xs text-muted-foreground">{uploadResult.notInPoolNames.join(", ")}</div>
+                    </div>
+                  )}
+                  {uploadResult.notFound > 0 && (
+                    <div>
+                      <div className="font-medium text-orange-600 dark:text-orange-400 mb-1">{uploadResult.notFound} ID{uploadResult.notFound !== 1 ? "s" : ""} not found in player database:</div>
+                      <div className="font-mono text-xs bg-muted p-2 rounded max-h-32 overflow-y-auto">{uploadResult.notFoundIds.join(", ")}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+              <DialogFooter>
+                <Button onClick={() => setUploadResult(null)} data-testid="button-upload-result-close">OK</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>

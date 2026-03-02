@@ -20,6 +20,7 @@ import {
   draftPicks,
   autoDraftLists,
   mlbPlayers,
+  draftPlayers,
 } from "@shared/schema";
 import { eq, and, inArray, sql, desc } from "drizzle-orm";
 import { z } from "zod";
@@ -10485,24 +10486,39 @@ export async function registerRoutes(
         return res.status(400).json({ message: "No valid MLB IDs provided" });
       }
 
-      const players = await db.select().from(mlbPlayers).where(inArray(mlbPlayers.mlbId, parsedIds));
+      const uniqueParsedIds = [...new Set(parsedIds)];
+      const inputDuplicates = parsedIds.length - uniqueParsedIds.length;
+
+      const players = await db.select().from(mlbPlayers).where(inArray(mlbPlayers.mlbId, uniqueParsedIds));
       const mlbIdToPlayer = new Map(players.map(p => [p.mlbId, p]));
 
+      const draftPool = await db.select({ mlbPlayerId: draftPlayers.mlbPlayerId }).from(draftPlayers).where(eq(draftPlayers.draftId, id));
+      const draftPoolIds = new Set(draftPool.map(dp => dp.mlbPlayerId));
+
       let added = 0;
-      let skipped = 0;
+      let alreadyInList = 0;
       let notFound = 0;
+      let notInPool = 0;
       const notFoundIds: number[] = [];
+      const notInPoolNames: string[] = [];
+      const alreadyInListNames: string[] = [];
       const type = rosterType || "milb";
 
-      for (const mlbId of parsedIds) {
+      for (const mlbId of uniqueParsedIds) {
         const player = mlbIdToPlayer.get(mlbId);
         if (!player) {
           notFound++;
           notFoundIds.push(mlbId);
           continue;
         }
+        if (!draftPoolIds.has(player.id)) {
+          notInPool++;
+          notInPoolNames.push(`${player.fullName} (${mlbId})`);
+          continue;
+        }
         if (existingMlbPlayerIds.has(player.id)) {
-          skipped++;
+          alreadyInList++;
+          alreadyInListNames.push(player.fullName);
           continue;
         }
         await storage.addAutoDraftItem(id, userId, player.id, type);
@@ -10515,11 +10531,15 @@ export async function registerRoutes(
       }
 
       res.json({
-        message: `Added ${added} player${added !== 1 ? "s" : ""}, skipped ${skipped} duplicate${skipped !== 1 ? "s" : ""}, ${notFound} not found`,
+        total: parsedIds.length,
         added,
-        skipped,
+        alreadyInList,
         notFound,
-        notFoundIds: notFoundIds.slice(0, 20),
+        notInPool,
+        inputDuplicates,
+        notFoundIds,
+        notInPoolNames,
+        alreadyInListNames,
       });
     } catch (error) {
       console.error("Error uploading auto-draft list:", error);
