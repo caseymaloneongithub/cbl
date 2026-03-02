@@ -196,10 +196,9 @@ export default function DraftBoard() {
   const canPick = useMemo(() => {
     if (!draft || draft.status !== "active") return false;
     if (isMyTurn) return true;
-    if (user?.isCommissioner || user?.isSuperAdmin) return true;
     if (isEligibleByTiming) return true;
     return false;
-  }, [draft, isMyTurn, user, isEligibleByTiming]);
+  }, [draft, isMyTurn, isEligibleByTiming]);
 
   useEffect(() => {
     if (!currentSlot) {
