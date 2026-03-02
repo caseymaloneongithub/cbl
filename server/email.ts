@@ -615,3 +615,109 @@ export async function sendDraftPickNotificationEmail(
     text,
   });
 }
+
+export interface DraftCatchUpPick {
+  pickNumber: number;
+  roundName: string;
+  roundPickIndex: number;
+  teamName: string;
+  teamAbbr: string;
+  ownerName: string;
+  isOrgPick: boolean;
+  orgName?: string;
+  playerName?: string;
+  playerPosition?: string;
+  playerMlbTeam?: string;
+  rosterType: string;
+  isSkipped: boolean;
+}
+
+export async function sendDraftCatchUpEmail(
+  to: string,
+  recipientName: string,
+  leagueName: string,
+  draftName: string,
+  picks: DraftCatchUpPick[],
+  nextPickTeamName?: string,
+  nextPickRoundName?: string,
+  nextPickNumber?: number,
+  nextPickRoundPickIndex?: number,
+): Promise<{ success: boolean; error?: string }> {
+  const pickRows = picks.map(p => {
+    let pickDesc: string;
+    if (p.isSkipped) {
+      pickDesc = `<span style="color: #d9534f;">Skipped</span>`;
+    } else if (p.isOrgPick) {
+      pickDesc = `<em>${p.orgName}</em> <span style="color: #666;">(Team Draft)</span>`;
+    } else {
+      pickDesc = `<strong>${p.playerName}</strong> <span style="color: #666;">(${p.playerPosition}, ${p.playerMlbTeam})</span>`;
+    }
+    const rosterBadge = p.isSkipped ? '' : ` <span style="display: inline-block; background: ${p.rosterType === 'mlb' ? '#1565c0' : '#6a1b9a'}; color: white; font-size: 10px; padding: 1px 5px; border-radius: 3px; vertical-align: middle;">${p.rosterType.toUpperCase()}</span>`;
+    return `<tr>
+      <td style="padding: 8px 10px; border-bottom: 1px solid #eee; font-size: 12px; color: #666; white-space: nowrap;">${p.roundName}.${p.roundPickIndex + 1}</td>
+      <td style="padding: 8px 10px; border-bottom: 1px solid #eee; font-size: 13px;">${pickDesc}${rosterBadge}</td>
+      <td style="padding: 8px 10px; border-bottom: 1px solid #eee; font-size: 13px; color: #555;">${p.teamAbbr}</td>
+    </tr>`;
+  }).join('');
+
+  const upNextHtml = nextPickTeamName ? `
+    <div style="background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 6px; padding: 15px; margin-top: 15px;">
+      <p style="margin: 0; font-weight: bold; color: #2e7d32;">Up Next</p>
+      <p style="margin: 5px 0 0 0; font-size: 14px;"><strong>${nextPickTeamName}</strong> — Pick #${nextPickNumber} (${nextPickRoundName}.${(nextPickRoundPickIndex ?? 0) + 1})</p>
+    </div>` : '';
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${leagueName} Draft Catch-Up</title>
+</head>
+<body style="font-family: 'Roboto', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <div style="background: linear-gradient(135deg, #1a5f2a 0%, #2d8f4a 100%); padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+    <h1 style="color: white; margin: 0; font-size: 20px;">${leagueName} ${draftName}</h1>
+    <p style="color: #c8e6c9; margin: 5px 0 0 0; font-size: 14px;">Draft Recap — ${picks.length} Pick${picks.length !== 1 ? 's' : ''} Made</p>
+  </div>
+  
+  <div style="background: #f9f9f9; padding: 25px; border-radius: 0 0 8px 8px;">
+    <table style="width: 100%; border-collapse: collapse; background: white; border: 1px solid #ddd; border-radius: 6px;">
+      <thead>
+        <tr style="background: #f5f5f5;">
+          <th style="padding: 8px 10px; text-align: left; font-size: 11px; color: #999; text-transform: uppercase;">Pick</th>
+          <th style="padding: 8px 10px; text-align: left; font-size: 11px; color: #999; text-transform: uppercase;">Selection</th>
+          <th style="padding: 8px 10px; text-align: left; font-size: 11px; color: #999; text-transform: uppercase;">Team</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${pickRows}
+      </tbody>
+    </table>
+
+    ${upNextHtml}
+    
+    <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
+    
+    <p style="color: #999; font-size: 11px; text-align: center;">
+      This is a catch-up recap from ${APP_NAME}.
+    </p>
+  </div>
+</body>
+</html>
+  `;
+
+  const pickLines = picks.map(p => {
+    if (p.isSkipped) return `${p.roundName}.${p.roundPickIndex + 1} - SKIPPED by ${p.teamName}`;
+    if (p.isOrgPick) return `${p.roundName}.${p.roundPickIndex + 1} - ${p.orgName} (Team Draft) to ${p.teamName} [${p.rosterType.toUpperCase()}]`;
+    return `${p.roundName}.${p.roundPickIndex + 1} - ${p.playerName} (${p.playerPosition}, ${p.playerMlbTeam}) to ${p.teamName} [${p.rosterType.toUpperCase()}]`;
+  }).join('\n');
+
+  const text = `${leagueName} ${draftName} — Catch-Up Recap\n\n${pickLines}\n`;
+
+  return sendEmail({
+    to,
+    subject: `${leagueName} Draft — Catch-Up Recap (${picks.length} Picks)`,
+    html,
+    text,
+  });
+}

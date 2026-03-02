@@ -31,7 +31,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import type { DraftWithDetails, DraftPlayerWithDetails, DraftPickWithDetails, DraftRound, DraftOrder, User, LeagueMember } from "@shared/schema";
 import {
   ArrowLeft, Loader2, Trash2, Play, Pause, Upload, Users, ListOrdered,
-  FileSpreadsheet, Clock, X, UserPlus, Download, ClipboardCheck,
+  FileSpreadsheet, Clock, X, UserPlus, Download, ClipboardCheck, Mail,
 } from "lucide-react";
 
 function RoundConfigRow({ round, roundEntries, onUpdate, onDelete, canDelete, showDelete, formatCentralInput }: {
@@ -391,6 +391,17 @@ export default function CommissionerDraftDetail() {
       toast({ title: "Picks Started" });
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "timing"] });
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "picks"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const sendCatchUpEmail = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/drafts/${draftId}/send-catchup-email`);
+      return res.json();
+    },
+    onSuccess: (data: { sent: number; failed: number; picks: number }) => {
+      toast({ title: "Catch-Up Email Sent", description: `Sent to ${data.sent} recipients (${data.picks} picks summarized)` });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -1216,6 +1227,28 @@ export default function CommissionerDraftDetail() {
                     <Button variant="outline" onClick={() => window.open(`/draft/${draft.id}`, '_blank')} data-testid="button-open-draft-board">
                       Open Draft Board
                     </Button>
+                    {Array.isArray(draftPicks) && draftPicks.some(p => p.madeAt) && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="outline" disabled={sendCatchUpEmail.isPending} data-testid="button-send-catchup-email">
+                            {sendCatchUpEmail.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Mail className="h-4 w-4 mr-2" />}
+                            Send Catch-Up Email
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Send Catch-Up Email</AlertDialogTitle>
+                            <AlertDialogDescription>This will send a recap of all {draftPicks.filter(p => p.madeAt || p.skippedAt).length} picks made so far to all league owners.</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => sendCatchUpEmail.mutate()} data-testid="button-confirm-catchup-email">
+                              Send Email
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
                     {draft.status === "active" ? (
                       <AlertDialog>
                         <AlertDialogTrigger asChild>

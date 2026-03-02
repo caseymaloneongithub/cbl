@@ -27,7 +27,7 @@ import { fromZonedTime } from "date-fns-tz";
 import { parse, isValid, format } from "date-fns";
 import crypto from "crypto";
 import { syncPlayerStatsFromMLB, testMLBConnection, fetchAllAffiliatedPlayers } from "./mlb-api";
-import { sendDraftPickNotificationEmail, type DraftPickNotification } from "./email";
+import { sendDraftPickNotificationEmail, sendDraftCatchUpEmail, type DraftPickNotification, type DraftCatchUpPick } from "./email";
 import fs from "fs/promises";
 import path from "path";
 
@@ -9866,6 +9866,108 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error starting picks now:", error);
       res.status(500).json({ message: "Failed to start picks now" });
+    }
+  });
+
+  app.post("/api/drafts/:id/send-catchup-email", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid draft ID" });
+
+      const draft = await storage.getDraft(id);
+      if (!draft) return res.status(404).json({ message: "Draft not found" });
+
+      const userId = req.session.originalUserId || req.session.userId!;
+      if (!await hasLeagueCommissionerAccess(userId, draft.leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const allSlots = await storage.getDraftPicks(id);
+      const rounds = await storage.getDraftRounds(id);
+      const league = await storage.getLeague(draft.leagueId);
+      const leagueName = league?.name || "League";
+
+      const madeSlots = allSlots
+        .filter(s => s.madeAt || s.skippedAt)
+        .sort((a, b) => a.overallPickNumber - b.overallPickNumber);
+
+      if (madeSlots.length === 0) {
+        return res.status(400).json({ message: "No picks have been made yet" });
+      }
+
+      const picks: DraftCatchUpPick[] = madeSlots.map(s => {
+        const roundConfig = rounds.find(r => r.roundNumber === s.round);
+        return {
+          pickNumber: s.overallPickNumber,
+          roundName: roundConfig?.name || `Round ${s.round}`,
+          roundPickIndex: s.roundPickIndex,
+          teamName: s.user?.teamName || `${s.user?.firstName || ""} ${s.user?.lastName || ""}`.trim() || "Unknown",
+          teamAbbr: (s.user as any)?.teamAbbreviation || s.user?.teamName || "???",
+          ownerName: `${s.user?.firstName || ""} ${s.user?.lastName || ""}`.trim() || "Unknown",
+          isOrgPick: !!s.selectedOrgName,
+          orgName: s.selectedOrgName || undefined,
+          playerName: s.player?.fullName || undefined,
+          playerPosition: s.player?.primaryPosition || undefined,
+          playerMlbTeam: s.player?.parentOrgName || undefined,
+          rosterType: s.rosterType || "milb",
+          isSkipped: !!s.skippedAt && !s.madeAt,
+        };
+      });
+
+      const nextSlot = allSlots
+        .filter(s => !s.madeAt && !s.skippedAt)
+        .sort((a, b) => a.overallPickNumber - b.overallPickNumber)[0] || null;
+      const nextRoundConfig = nextSlot ? rounds.find(r => r.roundNumber === nextSlot.round) : null;
+
+      const allMembers = await storage.getLeagueMembersEmails(draft.leagueId);
+      const optedOut = await storage.getDraftOptedOutUserIds(id);
+      const optedOutSet = new Set(optedOut);
+      const recipients = allMembers.filter(m => !optedOutSet.has(m.userId));
+
+      if (recipients.length === 0) {
+        return res.status(400).json({ message: "No recipients available" });
+      }
+
+      console.log(`[DraftCatchUp] Sending catch-up email for draft ${id} (${madeSlots.length} picks) to ${recipients.length} recipients`);
+
+      let sent = 0;
+      let failed = 0;
+      const BATCH_SIZE = 2;
+      const BATCH_DELAY_MS = 1100;
+      for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
+        if (i > 0) await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+        const batch = recipients.slice(i, i + BATCH_SIZE);
+        const results = await Promise.all(
+          batch.map(recipient => {
+            const name = recipient.firstName || "Owner";
+            return sendDraftCatchUpEmail(
+              recipient.email,
+              name,
+              leagueName,
+              draft.name,
+              picks,
+              nextSlot ? (nextSlot.user?.teamName || `${nextSlot.user?.firstName || ""} ${nextSlot.user?.lastName || ""}`.trim() || "Unknown") : undefined,
+              nextRoundConfig?.name || (nextSlot ? `Round ${nextSlot.round}` : undefined),
+              nextSlot?.overallPickNumber,
+              nextSlot?.roundPickIndex,
+            );
+          })
+        );
+        for (let j = 0; j < results.length; j++) {
+          if (results[j].success) {
+            sent++;
+          } else {
+            failed++;
+            console.error(`[DraftCatchUp] Failed to send to ${batch[j].email}: ${results[j].error}`);
+          }
+        }
+      }
+
+      console.log(`[DraftCatchUp] Done: ${sent} sent, ${failed} failed`);
+      res.json({ message: `Catch-up email sent to ${sent} recipients`, sent, failed, picks: madeSlots.length });
+    } catch (error) {
+      console.error("Error sending catch-up email:", error);
+      res.status(500).json({ message: "Failed to send catch-up email" });
     }
   });
 
