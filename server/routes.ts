@@ -9860,6 +9860,8 @@ export async function registerRoutes(
 
       console.log(`[Draft] Commissioner started picks now for draft ${id}, pick #${firstUnmade.overallPickNumber}`);
 
+      setTimeout(() => processAutoDraft(id, storage), 500);
+
       res.json({ message: "Picks started now", pickNumber: firstUnmade.overallPickNumber });
     } catch (error) {
       console.error("Error starting picks now:", error);
