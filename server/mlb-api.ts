@@ -711,8 +711,8 @@ export async function fetchAllAffiliatedPlayers(
           existing.sportLevel = levelName;
           existing.currentTeamId = split.team?.id || null;
           existing.currentTeamName = teamInfo?.name || split.team?.name || null;
-          existing.parentOrgId = teamInfo?.parentOrgId || null;
-          existing.parentOrgName = teamInfo?.parentOrgName || null;
+          existing.parentOrgId = teamInfo?.parentOrgId || teamInfo?.id || null;
+          existing.parentOrgName = teamInfo?.parentOrgName || teamInfo?.name || null;
           existing.hadHittingStats = false;
           existing.hadPitchingStats = false;
           existing.hittingAtBats = 0;
@@ -792,8 +792,8 @@ export async function fetchAllAffiliatedPlayers(
         throwHand: split.player.pitchHand?.code || null,
         currentTeamId: split.team?.id || null,
         currentTeamName: teamInfo?.name || split.team?.name || null,
-        parentOrgId: teamInfo?.parentOrgId || null,
-        parentOrgName: teamInfo?.parentOrgName || null,
+        parentOrgId: teamInfo?.parentOrgId || teamInfo?.id || null,
+        parentOrgName: teamInfo?.parentOrgName || teamInfo?.name || null,
         sportId,
         sportLevel: levelName,
         birthDate: split.player.birthDate || null,
@@ -856,8 +856,8 @@ export async function fetchAllAffiliatedPlayers(
 
         existing.currentTeamId = team.id;
         existing.currentTeamName = team.name;
-        existing.parentOrgId = team.parentOrgId || null;
-        existing.parentOrgName = team.parentOrgName || null;
+        existing.parentOrgId = team.parentOrgId || team.id || null;
+        existing.parentOrgName = team.parentOrgName || team.name || null;
 
         if (person.primaryPosition?.abbreviation) {
           existing.primaryPosition = person.primaryPosition.abbreviation;
