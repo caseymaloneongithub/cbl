@@ -1318,7 +1318,7 @@ export default function CommissionerDraftDetail() {
                         <TableHead>Round</TableHead>
                         <TableHead>Team</TableHead>
                         <TableHead>Selection</TableHead>
-                        <TableHead>Scheduled</TableHead>
+                        <TableHead>Deadline</TableHead>
                         <TableHead>Roster</TableHead>
                         {(draft.status === "active" || draft.status === "paused") && <TableHead className="w-16">Actions</TableHead>}
                       </TableRow>
@@ -1330,7 +1330,7 @@ export default function CommissionerDraftDetail() {
                           <TableCell className="font-mono">{getRoundLabel(pick.round, pick.roundPickIndex)}</TableCell>
                           <TableCell className="font-medium">{pick.user.teamName || `${pick.user.firstName} ${pick.user.lastName}`}</TableCell>
                           <TableCell>{pick.player?.fullName || pick.selectedOrgName || <span className="text-muted-foreground">Unfilled</span>}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{new Date(pick.scheduledAt).toLocaleString()}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{pick.deadlineAt ? new Date(pick.deadlineAt).toLocaleString() : new Date(pick.scheduledAt).toLocaleString()}</TableCell>
                           <TableCell>
                             {pick.rosterType ? (
                               <Badge variant={pick.rosterType === "mlb" ? "default" : "outline"}>
