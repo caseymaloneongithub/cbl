@@ -1202,7 +1202,7 @@ export default function DraftBoard() {
                 <TableRow className="bg-muted/50">
                   <TableHead>Pick</TableHead>
                   <TableHead>Team</TableHead>
-                  <TableHead>Deadline</TableHead>
+                  <TableHead>Time</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1211,7 +1211,7 @@ export default function DraftBoard() {
                   <TableRow key={slot.id} className={`${currentSlot?.id === slot.id ? "bg-primary/10" : slot.userId === user?.id ? "bg-accent/50" : ""}`}>
                     <TableCell className="font-mono text-xs">{getRoundLabel(slot.round, slot.roundPickIndex)}{draftRounds?.find(r => r.roundNumber === slot.round)?.isTeamDraft ? "*" : ""}</TableCell>
                     <TableCell className={`text-sm ${slot.userId === user?.id ? "font-semibold" : ""}`}>{slot.user.teamName || slot.user.firstName || slot.user.lastName || slot.user.id}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{slot.deadlineAt ? new Date(slot.deadlineAt).toLocaleString() : new Date(slot.scheduledAt).toLocaleString()}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{slot.madeAt ? new Date(slot.madeAt).toLocaleString() : slot.deadlineAt ? new Date(slot.deadlineAt).toLocaleString() : new Date(slot.scheduledAt).toLocaleString()}</TableCell>
                     <TableCell>
                       {slot.madeAt
                         ? <span className="text-xs font-medium">{slot.player ? `${slot.player.fullName} (${slot.player.primaryPosition}${slot.player.parentOrgName ? `, ${slot.player.parentOrgName}` : ""})` : slot.selectedOrgName || "Picked"}</span>
