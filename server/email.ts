@@ -594,7 +594,7 @@ function buildRoundRecapHtml(picks: RoundRecapPick[], roundName: string): { html
     } else if (p.isOrgPick) {
       pickDesc = `<em style="font-size: 12px;">${p.orgName}</em> <span style="color: #888; font-size: 11px;">(Team Draft)</span>`;
     } else {
-      pickDesc = `<span style="font-size: 12px;">${p.playerName}</span> <span style="color: #888; font-size: 11px;">${p.playerPosition}, ${p.playerMlbTeam}</span>`;
+      pickDesc = `<span style="font-size: 12px;">${p.playerName}</span> <span style="color: #888; font-size: 11px;">${p.playerPosition}${p.playerMlbTeam ? `, ${p.playerMlbTeam}` : ""}</span>`;
     }
     const rosterBadge = p.isSkipped ? '' : ` <span style="display: inline-block; background: ${p.rosterType === 'mlb' ? '#1a5f2a' : '#666'}; color: white; font-size: 9px; padding: 1px 4px; border-radius: 3px; vertical-align: middle;">${p.rosterType === 'mlb' ? 'MLB' : 'MiLB'}</span>`;
     const highlight = p.isCurrentPick ? "background: #e8f5e9; font-weight: bold;" : "";
@@ -620,7 +620,7 @@ function buildRoundRecapHtml(picks: RoundRecapPick[], roundName: string): { html
     const marker = p.isCurrentPick ? " <-- NEW" : "";
     if (p.isSkipped) return `${roundName}.${p.roundPickIndex + 1} ${p.teamAbbr} - SKIPPED${marker}`;
     if (p.isOrgPick) return `${roundName}.${p.roundPickIndex + 1} ${p.teamAbbr} - ${p.orgName} (Team Draft)${marker}`;
-    return `${roundName}.${p.roundPickIndex + 1} ${p.teamAbbr} - ${p.playerName} (${p.playerPosition}, ${p.playerMlbTeam}) [${p.rosterType.toUpperCase()}]${marker}`;
+    return `${roundName}.${p.roundPickIndex + 1} ${p.teamAbbr} - ${p.playerName} (${p.playerPosition}${p.playerMlbTeam ? `, ${p.playerMlbTeam}` : ""}) [${p.rosterType.toUpperCase()}]${marker}`;
   }).join("\n");
 
   return { html, text: `\n${roundName} Recap:\n${textLines}` };
@@ -639,7 +639,7 @@ export async function sendDraftPickNotificationEmail(
   } else if (notification.isOrgPick) {
     pickDescription = `<em>${notification.orgName}</em> <span style="color: #666;">(Team Draft)</span>`;
   } else {
-    pickDescription = `<strong>${notification.playerName}</strong> <span style="color: #666;">(${notification.playerPosition}, ${notification.playerMlbTeam})</span>`;
+    pickDescription = `<strong>${notification.playerName}</strong> <span style="color: #666;">(${notification.playerPosition}${notification.playerMlbTeam ? `, ${notification.playerMlbTeam}` : ""})</span>`;
   }
 
   const rosterBadge = notification.isSkipped ? '' : `
@@ -703,7 +703,7 @@ export async function sendDraftPickNotificationEmail(
     ? `Pick #${notification.pickNumber} (${notification.roundName}.${notification.roundPickIndex + 1}) - SKIPPED by ${notification.pickedByTeamName}`
     : notification.isOrgPick
       ? `Pick #${notification.pickNumber} (${notification.roundName}.${notification.roundPickIndex + 1}) - ${notification.orgName} (Team Draft) to ${notification.pickedByTeamName} [${notification.rosterType.toUpperCase()}]`
-      : `Pick #${notification.pickNumber} (${notification.roundName}.${notification.roundPickIndex + 1}) - ${notification.playerName} (${notification.playerPosition}, ${notification.playerMlbTeam}) to ${notification.pickedByTeamName} [${notification.rosterType.toUpperCase()}]`;
+      : `Pick #${notification.pickNumber} (${notification.roundName}.${notification.roundPickIndex + 1}) - ${notification.playerName} (${notification.playerPosition}${notification.playerMlbTeam ? `, ${notification.playerMlbTeam}` : ""}) to ${notification.pickedByTeamName} [${notification.rosterType.toUpperCase()}]`;
 
   const skippedTeamsText = notification.skippedTeams && notification.skippedTeams.length > 0
     ? `\nSkipped teams that can still pick: ${notification.skippedTeams.map(t => t.teamName).join(', ')}`
@@ -750,7 +750,7 @@ export async function sendDraftCatchUpEmail(
     } else if (p.isOrgPick) {
       pickDesc = `<em>${p.orgName}</em> <span style="color: #666;">(Team Draft)</span>`;
     } else {
-      pickDesc = `<strong>${p.playerName}</strong> <span style="color: #666;">(${p.playerPosition}, ${p.playerMlbTeam})</span>`;
+      pickDesc = `<strong>${p.playerName}</strong> <span style="color: #666;">(${p.playerPosition}${p.playerMlbTeam ? `, ${p.playerMlbTeam}` : ""})</span>`;
     }
     const rosterBadge = p.isSkipped ? '' : ` <span style="display: inline-block; background: ${p.rosterType === 'mlb' ? '#1565c0' : '#6a1b9a'}; color: white; font-size: 10px; padding: 1px 5px; border-radius: 3px; vertical-align: middle;">${p.rosterType.toUpperCase()}</span>`;
     return `<tr>
@@ -805,7 +805,7 @@ export async function sendDraftCatchUpEmail(
   const pickLines = picks.map(p => {
     if (p.isSkipped) return `${p.roundName}.${p.roundPickIndex + 1} - SKIPPED by ${p.teamName}`;
     if (p.isOrgPick) return `${p.roundName}.${p.roundPickIndex + 1} - ${p.orgName} (Team Draft) to ${p.teamName} [${p.rosterType.toUpperCase()}]`;
-    return `${p.roundName}.${p.roundPickIndex + 1} - ${p.playerName} (${p.playerPosition}, ${p.playerMlbTeam}) to ${p.teamName} [${p.rosterType.toUpperCase()}]`;
+    return `${p.roundName}.${p.roundPickIndex + 1} - ${p.playerName} (${p.playerPosition}${p.playerMlbTeam ? `, ${p.playerMlbTeam}` : ""}) to ${p.teamName} [${p.rosterType.toUpperCase()}]`;
   }).join('\n');
 
   const text = `${leagueName} ${draftName} — Catch-Up Recap\n\n${pickLines}${upNextText}\n`;

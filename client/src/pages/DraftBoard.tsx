@@ -1214,7 +1214,7 @@ export default function DraftBoard() {
                     <TableCell className="text-xs text-muted-foreground">{slot.deadlineAt ? new Date(slot.deadlineAt).toLocaleString() : new Date(slot.scheduledAt).toLocaleString()}</TableCell>
                     <TableCell>
                       {slot.madeAt
-                        ? <span className="text-xs font-medium">{slot.player ? `${slot.player.fullName} (${slot.player.primaryPosition}, ${slot.player.parentOrgName})` : slot.selectedOrgName || "Picked"}</span>
+                        ? <span className="text-xs font-medium">{slot.player ? `${slot.player.fullName} (${slot.player.primaryPosition}${slot.player.parentOrgName ? `, ${slot.player.parentOrgName}` : ""})` : slot.selectedOrgName || "Picked"}</span>
                         : slot.skippedAt
                           ? <Badge variant="destructive" className="text-xs">Skipped</Badge>
                           : currentSlot?.id === slot.id
