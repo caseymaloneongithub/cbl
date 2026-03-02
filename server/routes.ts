@@ -27,7 +27,7 @@ import { fromZonedTime } from "date-fns-tz";
 import { parse, isValid, format } from "date-fns";
 import crypto from "crypto";
 import { syncPlayerStatsFromMLB, testMLBConnection, fetchAllAffiliatedPlayers } from "./mlb-api";
-import { sendDraftPickNotificationEmail, sendDraftCatchUpEmail, type DraftPickNotification, type DraftCatchUpPick } from "./email";
+import { sendDraftPickNotificationEmail, sendDraftCatchUpEmail, type DraftPickNotification, type DraftCatchUpPick, type UpcomingPick } from "./email";
 import fs from "fs/promises";
 import path from "path";
 
@@ -9914,10 +9914,23 @@ export async function registerRoutes(
         };
       });
 
-      const nextSlot = allSlots
+      const upcomingSlots = allSlots
         .filter(s => !s.madeAt && !s.skippedAt)
-        .sort((a, b) => a.overallPickNumber - b.overallPickNumber)[0] || null;
-      const nextRoundConfig = nextSlot ? rounds.find(r => r.roundNumber === nextSlot.round) : null;
+        .sort((a, b) => a.overallPickNumber - b.overallPickNumber)
+        .slice(0, 5);
+
+      const upcomingPicks: UpcomingPick[] = upcomingSlots.map(s => {
+        const rc = rounds.find(r => r.roundNumber === s.round);
+        return {
+          pickNumber: s.overallPickNumber,
+          roundName: rc?.name || `Round ${s.round}`,
+          roundPickIndex: s.roundPickIndex,
+          teamName: s.user?.teamName || `${s.user?.firstName || ""} ${s.user?.lastName || ""}`.trim() || "Unknown",
+          teamAbbr: (s.user as any)?.teamAbbreviation || s.user?.teamName || "???",
+          ownerName: `${s.user?.firstName || ""} ${s.user?.lastName || ""}`.trim() || "Unknown",
+          deadlineAt: s.deadlineAt ? new Date(s.deadlineAt).toISOString() : undefined,
+        };
+      });
 
       const allMembers = await storage.getLeagueMembersEmails(draft.leagueId);
       const optedOut = await storage.getDraftOptedOutUserIds(id);
@@ -9946,10 +9959,7 @@ export async function registerRoutes(
               leagueName,
               draft.name,
               picks,
-              nextSlot ? (nextSlot.user?.teamName || `${nextSlot.user?.firstName || ""} ${nextSlot.user?.lastName || ""}`.trim() || "Unknown") : undefined,
-              nextRoundConfig?.name || (nextSlot ? `Round ${nextSlot.round}` : undefined),
-              nextSlot?.overallPickNumber,
-              nextSlot?.roundPickIndex,
+              upcomingPicks,
             );
           })
         );
@@ -10637,15 +10647,23 @@ async function sendPickNotificationEmails(
     const roundConfig = rounds.find((r: any) => r.roundNumber === madeSlot.round);
     const roundName = roundConfig?.name || `Round ${madeSlot.round}`;
 
-    const nextSlot = allSlots
+    const upcomingSlots = allSlots
       .filter((s: any) => !s.madeAt && !s.skippedAt && s.id !== madeSlotId)
-      .sort((a: any, b: any) => a.overallPickNumber - b.overallPickNumber)[0] || null;
+      .sort((a: any, b: any) => a.overallPickNumber - b.overallPickNumber)
+      .slice(0, 5);
 
-    let nextPickRoundName: string | undefined;
-    if (nextSlot) {
-      const nextRoundConfig = rounds.find((r: any) => r.roundNumber === nextSlot.round);
-      nextPickRoundName = nextRoundConfig?.name || `Round ${nextSlot.round}`;
-    }
+    const upcomingPicks: UpcomingPick[] = upcomingSlots.map((s: any) => {
+      const rc = rounds.find((r: any) => r.roundNumber === s.round);
+      return {
+        pickNumber: s.overallPickNumber,
+        roundName: rc?.name || `Round ${s.round}`,
+        roundPickIndex: s.roundPickIndex,
+        teamName: s.user?.teamName || `${s.user?.firstName || ""} ${s.user?.lastName || ""}`.trim() || "Unknown",
+        teamAbbr: s.user?.teamAbbreviation || s.user?.teamName || "???",
+        ownerName: `${s.user?.firstName || ""} ${s.user?.lastName || ""}`.trim() || "Unknown",
+        deadlineAt: s.deadlineAt ? new Date(s.deadlineAt).toISOString() : undefined,
+      };
+    });
 
     const skippedSlots = allSlots.filter((s: any) => s.skippedAt && !s.madeAt && s.id !== madeSlotId);
     const skippedTeamMap = new Map<string, string>();
@@ -10675,12 +10693,7 @@ async function sendPickNotificationEmails(
       playerMlbTeam: madeSlot.player?.parentOrgName || undefined,
       rosterType: madeSlot.rosterType || "milb",
       isSkipped: !!options?.isSkipped,
-      nextPickTeamName: nextSlot ? (nextSlot.user?.teamName || `${nextSlot.user?.firstName || ""} ${nextSlot.user?.lastName || ""}`.trim() || "Unknown") : undefined,
-      nextPickTeamAbbr: nextSlot ? (nextSlot.user?.teamAbbreviation || nextSlot.user?.teamName || "???") : undefined,
-      nextPickOwnerName: nextSlot ? (`${nextSlot.user?.firstName || ""} ${nextSlot.user?.lastName || ""}`.trim() || "Unknown") : undefined,
-      nextPickRoundName,
-      nextPickNumber: nextSlot?.overallPickNumber,
-      nextPickRoundPickIndex: nextSlot?.roundPickIndex,
+      upcomingPicks,
       skippedTeams: skippedTeams.length > 0 ? skippedTeams : undefined,
     };
 

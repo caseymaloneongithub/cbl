@@ -485,6 +485,16 @@ You can opt out of these emails from the Draft Board.
   });
 }
 
+export interface UpcomingPick {
+  pickNumber: number;
+  roundName: string;
+  roundPickIndex: number;
+  teamName: string;
+  teamAbbr: string;
+  ownerName: string;
+  deadlineAt?: string;
+}
+
 export interface DraftPickNotification {
   leagueName: string;
   draftName: string;
@@ -501,13 +511,62 @@ export interface DraftPickNotification {
   playerMlbTeam?: string;
   rosterType: string;
   isSkipped: boolean;
-  nextPickTeamName?: string;
-  nextPickTeamAbbr?: string;
-  nextPickOwnerName?: string;
-  nextPickRoundName?: string;
-  nextPickNumber?: number;
-  nextPickRoundPickIndex?: number;
+  upcomingPicks: UpcomingPick[];
   skippedTeams?: Array<{ teamName: string }>;
+}
+
+function formatDeadlineEST(isoDate: string): string {
+  const d = new Date(isoDate);
+  return d.toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true }) + " ET";
+}
+
+function buildUpcomingPicksHtml(picks: UpcomingPick[]): { html: string; text: string } {
+  if (picks.length === 0) {
+    return {
+      html: `
+      <div style="background: #fff3e0; border: 1px solid #ffe0b2; border-radius: 6px; padding: 15px; margin: 15px 0;">
+        <p style="margin: 0; font-weight: bold; color: #e65100;">Draft Complete</p>
+        <p style="margin: 5px 0 0 0;">All picks have been made or skipped.</p>
+      </div>`,
+      text: `\nDraft Complete - All picks have been made or skipped.`,
+    };
+  }
+
+  const rows = picks.map((p, i) => {
+    const deadlineStr = p.deadlineAt ? formatDeadlineEST(p.deadlineAt) : "";
+    const bgColor = i === 0 ? "#e8f5e9" : "white";
+    const label = i === 0 ? `<strong style="color: #1a5f2a;">ON CLOCK</strong> ` : "";
+    return `<tr style="background: ${bgColor};">
+      <td style="padding: 6px 10px; border-bottom: 1px solid #eee; font-size: 12px; color: #666; white-space: nowrap;">${p.roundName}.${p.roundPickIndex + 1}</td>
+      <td style="padding: 6px 10px; border-bottom: 1px solid #eee; font-size: 13px;">${label}<strong>${p.teamAbbr}</strong> <span style="color: #666;">(${p.ownerName})</span></td>
+      <td style="padding: 6px 10px; border-bottom: 1px solid #eee; font-size: 12px; color: #888; white-space: nowrap;">${deadlineStr}</td>
+    </tr>`;
+  }).join("");
+
+  const html = `
+    <div style="border: 1px solid #a5d6a7; border-radius: 6px; overflow: hidden; margin: 15px 0;">
+      <div style="background: #e8f5e9; padding: 10px 15px;">
+        <p style="margin: 0; font-weight: bold; color: #1a5f2a;">Upcoming Picks</p>
+      </div>
+      <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+          <tr style="background: #f5f5f5;">
+            <th style="padding: 5px 10px; text-align: left; font-size: 10px; color: #999; text-transform: uppercase;">Pick</th>
+            <th style="padding: 5px 10px; text-align: left; font-size: 10px; color: #999; text-transform: uppercase;">Team</th>
+            <th style="padding: 5px 10px; text-align: left; font-size: 10px; color: #999; text-transform: uppercase;">Deadline</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+
+  const textLines = picks.map((p, i) => {
+    const prefix = i === 0 ? "(ON CLOCK) " : "";
+    const deadline = p.deadlineAt ? ` — deadline ${formatDeadlineEST(p.deadlineAt)}` : "";
+    return `${prefix}${p.roundName}.${p.roundPickIndex + 1} - ${p.teamName} (${p.ownerName})${deadline}`;
+  }).join("\n");
+
+  return { html, text: `\nUpcoming Picks:\n${textLines}` };
 }
 
 export async function sendDraftPickNotificationEmail(
@@ -531,27 +590,12 @@ export async function sendDraftPickNotificationEmail(
       ${notification.rosterType === 'mlb' ? 'MLB' : 'MiLB'}
     </span>`;
 
-  let upNextHtml = '';
-  let upNextText = '';
-  if (notification.nextPickTeamName) {
-    upNextHtml = `
-      <div style="background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 6px; padding: 15px; margin: 15px 0;">
-        <p style="margin: 0; font-weight: bold; color: #1a5f2a;">Up Next</p>
-        <p style="margin: 5px 0 0 0;">Pick #${notification.nextPickNumber} (${notification.nextPickRoundName}) - <strong>${notification.nextPickTeamName}</strong> (${notification.nextPickOwnerName})</p>
-      </div>`;
-    upNextText = `\nUp Next: Pick #${notification.nextPickNumber} (${notification.nextPickRoundName}) - ${notification.nextPickTeamName} (${notification.nextPickOwnerName})`;
-  } else {
-    upNextHtml = `
-      <div style="background: #fff3e0; border: 1px solid #ffe0b2; border-radius: 6px; padding: 15px; margin: 15px 0;">
-        <p style="margin: 0; font-weight: bold; color: #e65100;">Draft Complete</p>
-        <p style="margin: 5px 0 0 0;">All picks have been made or skipped.</p>
-      </div>`;
-    upNextText = `\nDraft Complete - All picks have been made or skipped.`;
-  }
+  const { html: upNextHtml, text: upNextText } = buildUpcomingPicksHtml(notification.upcomingPicks);
 
   const pickLabel = `Pick ${notification.roundName}.${notification.roundPickIndex + 1}`;
-  const onClockPart = notification.nextPickTeamAbbr
-    ? `; ${notification.nextPickTeamAbbr} on the clock`
+  const firstUpcoming = notification.upcomingPicks[0];
+  const onClockPart = firstUpcoming
+    ? `; ${firstUpcoming.teamAbbr} on the clock`
     : "";
   const subjectPick = notification.isSkipped
     ? `${pickLabel}: ${notification.pickedByTeamAbbr} skipped${onClockPart}`
@@ -638,10 +682,7 @@ export async function sendDraftCatchUpEmail(
   leagueName: string,
   draftName: string,
   picks: DraftCatchUpPick[],
-  nextPickTeamName?: string,
-  nextPickRoundName?: string,
-  nextPickNumber?: number,
-  nextPickRoundPickIndex?: number,
+  upcomingPicks: UpcomingPick[],
 ): Promise<{ success: boolean; error?: string }> {
   const pickRows = picks.map(p => {
     let pickDesc: string;
@@ -660,11 +701,7 @@ export async function sendDraftCatchUpEmail(
     </tr>`;
   }).join('');
 
-  const upNextHtml = nextPickTeamName ? `
-    <div style="background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 6px; padding: 15px; margin-top: 15px;">
-      <p style="margin: 0; font-weight: bold; color: #2e7d32;">Up Next</p>
-      <p style="margin: 5px 0 0 0; font-size: 14px;"><strong>${nextPickTeamName}</strong> — Pick #${nextPickNumber} (${nextPickRoundName}.${(nextPickRoundPickIndex ?? 0) + 1})</p>
-    </div>` : '';
+  const { html: upNextHtml, text: upNextText } = buildUpcomingPicksHtml(upcomingPicks);
 
   const html = `
 <!DOCTYPE html>
@@ -712,7 +749,7 @@ export async function sendDraftCatchUpEmail(
     return `${p.roundName}.${p.roundPickIndex + 1} - ${p.playerName} (${p.playerPosition}, ${p.playerMlbTeam}) to ${p.teamName} [${p.rosterType.toUpperCase()}]`;
   }).join('\n');
 
-  const text = `${leagueName} ${draftName} — Catch-Up Recap\n\n${pickLines}\n`;
+  const text = `${leagueName} ${draftName} — Catch-Up Recap\n\n${pickLines}${upNextText}\n`;
 
   return sendEmail({
     to,
