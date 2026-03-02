@@ -10304,6 +10304,9 @@ export async function registerRoutes(
       }
 
       const item = await storage.addAutoDraftItem(id, userId, mlbPlayerId, rosterType || "milb");
+      if (draft.status === "active") {
+        setTimeout(() => processAutoDraft(id, storage), 500);
+      }
       res.status(201).json(item);
     } catch (error) {
       console.error("Error adding to auto-draft list:", error);
@@ -10405,6 +10408,10 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Organization is already in your team auto-draft list" });
       }
       const item = await storage.addTeamAutoDraftItem(draftId, userId, orgName, rosterType || "milb");
+      const draft = await storage.getDraft(draftId);
+      if (draft && draft.status === "active") {
+        setTimeout(() => processAutoDraft(draftId, storage), 500);
+      }
       res.status(201).json(item);
     } catch (error) {
       console.error("Error adding to team auto-draft list:", error);
