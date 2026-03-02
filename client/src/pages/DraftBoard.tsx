@@ -1600,7 +1600,7 @@ export default function DraftBoard() {
                         <TableRow className="bg-muted/50">
                           <TableHead className="font-semibold">Organization</TableHead>
                           <TableHead className="font-semibold text-center">Available Players</TableHead>
-                          {canPick && <TableHead className="font-semibold text-right">Action</TableHead>}
+                          <TableHead className="font-semibold text-right">Action</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1612,21 +1612,39 @@ export default function DraftBoard() {
                               <TableCell className="text-center">
                                 <Badge variant="outline">{orgPlayerCount}</Badge>
                               </TableCell>
-                              {canPick && (
-                                <TableCell className="text-right">
-                                  <Button
-                                    size="sm"
-                                    onClick={() => {
-                                      setSelectedOrg(org);
-                                      setTeamDraftRosterType("milb");
-                                      setTeamDraftDialogOpen(true);
-                                    }}
-                                    data-testid={`button-draft-org-${org.replace(/\s/g, '-')}`}
-                                  >
-                                    Draft
-                                  </Button>
-                                </TableCell>
-                              )}
+                              <TableCell className="text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  {canPick ? (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        setSelectedOrg(org);
+                                        setTeamDraftRosterType("milb");
+                                        setTeamDraftDialogOpen(true);
+                                      }}
+                                      data-testid={`button-draft-org-${org.replace(/\s/g, '-')}`}
+                                    >
+                                      Draft
+                                    </Button>
+                                  ) : draft?.status !== "completed" && !teamAutoDraftOrgNames.has(org) ? (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => addToTeamAutoDraft.mutate({ orgName: org, rosterType: teamAutoDraftRosterType })}
+                                      disabled={addToTeamAutoDraft.isPending}
+                                      data-testid={`button-queue-org-${org.replace(/\s/g, '-')}`}
+                                    >
+                                      <Plus className="h-3.5 w-3.5 mr-1" />
+                                      Queue
+                                    </Button>
+                                  ) : teamAutoDraftOrgNames.has(org) ? (
+                                    <Badge variant="secondary" className="text-xs">
+                                      <ListOrdered className="h-3 w-3 mr-1" />
+                                      Queued
+                                    </Badge>
+                                  ) : null}
+                                </div>
+                              </TableCell>
                             </TableRow>
                           );
                         })}
