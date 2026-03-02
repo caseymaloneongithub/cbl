@@ -10049,7 +10049,7 @@ export async function registerRoutes(
         .where(eq(draftPicks.id, slotId));
 
       setTimeout(() => processAutoDraft(id, storage), 500);
-      sendPickNotificationEmails(id, slotId, storage, { isSkipped: true }).catch(err => console.error("[DraftPickEmail] Unhandled rejection (skip):", err));
+      queuePickNotificationEmails(id, slotId, storage, { isSkipped: true });
 
       res.json({ message: "Pick skipped successfully" });
     } catch (error) {
@@ -10151,7 +10151,7 @@ export async function registerRoutes(
         setTimeout(() => processAutoDraft(id, storage), 500);
       }
 
-      sendPickNotificationEmails(id, slot.id, storage).catch(err => console.error("[DraftPickEmail] Unhandled rejection (pick):", err));
+      queuePickNotificationEmails(id, slot.id, storage);
 
       res.status(201).json(pickResponse);
     } catch (error) {
@@ -10308,7 +10308,7 @@ export async function registerRoutes(
         } else {
           setTimeout(() => processAutoDraft(id, storage), 500);
         }
-        sendPickNotificationEmails(id, slot.id, storage).catch(err => console.error("[DraftPickEmail] Unhandled rejection:", err));
+        queuePickNotificationEmails(id, slot.id, storage);
         return res.status(201).json({
           teamDraft: true,
           slot: result.slot,
@@ -10334,7 +10334,7 @@ export async function registerRoutes(
       } else {
         setTimeout(() => processAutoDraft(id, storage), 500);
       }
-      sendPickNotificationEmails(id, slot.id, storage).catch(err => console.error("[DraftPickEmail] Unhandled rejection:", err));
+      queuePickNotificationEmails(id, slot.id, storage);
       res.status(201).json(updatedSlot);
     } catch (error) {
       console.error("Error making commissioner pick:", error);
@@ -10713,6 +10713,20 @@ export async function registerRoutes(
 }
 
 
+const draftEmailQueues = new Map<number, Promise<void>>();
+
+function queuePickNotificationEmails(
+  draftId: number,
+  madeSlotId: number,
+  storage: any,
+  options?: { isSkipped?: boolean }
+): void {
+  const prev = draftEmailQueues.get(draftId) || Promise.resolve();
+  const next = prev.then(() => sendPickNotificationEmails(draftId, madeSlotId, storage, options))
+    .catch(err => console.error("[DraftPickEmail] Queued email error:", err));
+  draftEmailQueues.set(draftId, next);
+}
+
 async function sendPickNotificationEmails(
   draftId: number,
   madeSlotId: number,
@@ -10902,7 +10916,7 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
             .set({ skippedAt: now, skippedByUserId: null })
             .where(eq(draftPicks.id, slot.id));
           console.log(`[AutoDraft] Auto-skipped expired pick #${slot.overallPickNumber} for user ${slot.userId} in draft ${draftId} (no team auto-draft list)`);
-          sendPickNotificationEmails(draftId, slot.id, storage, { isSkipped: true }).catch(err => console.error("[DraftPickEmail] Unhandled rejection (skip):", err));
+          queuePickNotificationEmails(draftId, slot.id, storage, { isSkipped: true });
           const updatedSlots = await storage.getDraftPicks(draftId);
           if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt || !!s.skippedAt)) {
             await storage.updateDraft(draftId, { status: "completed" });
@@ -10923,7 +10937,7 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
         setTimeout(() => processAutoDraft(draftId, storage), 500);
       }
 
-      sendPickNotificationEmails(draftId, slot.id, storage).catch(err => console.error("[DraftPickEmail] Unhandled rejection (auto-draft org):", err));
+      queuePickNotificationEmails(draftId, slot.id, storage);
       console.log(`[AutoDraft] Auto-drafted org "${topTeamPick.orgName}" for user ${slot.userId} in draft ${draftId}`);
       return true;
     }
@@ -10935,7 +10949,7 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
           .set({ skippedAt: now, skippedByUserId: null })
           .where(eq(draftPicks.id, slot.id));
         console.log(`[AutoDraft] Auto-skipped expired pick #${slot.overallPickNumber} for user ${slot.userId} in draft ${draftId} (no auto-draft list)`);
-        sendPickNotificationEmails(draftId, slot.id, storage, { isSkipped: true }).catch(err => console.error("[DraftPickEmail] Unhandled rejection (skip):", err));
+        queuePickNotificationEmails(draftId, slot.id, storage, { isSkipped: true });
         const updatedSlots = await storage.getDraftPicks(draftId);
         if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt || !!s.skippedAt)) {
           await storage.updateDraft(draftId, { status: "completed" });
@@ -10956,7 +10970,7 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
       setTimeout(() => processAutoDraft(draftId, storage), 500);
     }
 
-    sendPickNotificationEmails(draftId, slot.id, storage).catch(err => console.error("[DraftPickEmail] Unhandled rejection (auto-draft player):", err));
+    queuePickNotificationEmails(draftId, slot.id, storage);
 
     console.log(`[AutoDraft] Auto-drafted player ${topPick.mlbPlayerId} for user ${slot.userId} in draft ${draftId}`);
     return true;
