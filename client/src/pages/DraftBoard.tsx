@@ -184,11 +184,15 @@ export default function DraftBoard() {
       .sort((a, b) => a.overallPickNumber - b.overallPickNumber)[0] || null;
   }, [user, picks]);
 
-  const isTeamDraftRound = useMemo(() => {
-    if (!myEligibleSlot || !draftRounds) return currentRoundConfig?.isTeamDraft === true;
+  const isCurrentRoundTeamDraft = useMemo(() => {
+    return currentRoundConfig?.isTeamDraft === true;
+  }, [currentRoundConfig]);
+
+  const isMyPickTeamDraft = useMemo(() => {
+    if (!myEligibleSlot || !draftRounds) return false;
     const roundConfig = draftRounds.find(r => r.roundNumber === myEligibleSlot.round);
     return roundConfig?.isTeamDraft === true;
-  }, [myEligibleSlot, draftRounds, currentRoundConfig]);
+  }, [myEligibleSlot, draftRounds]);
 
   const isEligibleByTiming = useMemo(() => {
     if (!timingInfo?.hasTiming || !user) return false;
@@ -863,7 +867,7 @@ export default function DraftBoard() {
           <span className="text-muted-foreground text-sm" data-testid="text-round-info">
             {currentSlot ? (() => { const rn = draftRounds?.find(r => r.roundNumber === currentSlot.round)?.name; const label = rn ? (/^\d+$/.test(rn) ? `Round ${rn}` : rn) : `Round ${currentSlot.round}`; return `${label}, Pick ${currentSlot.roundPickIndex + 1}, Overall ${currentSlot.overallPickNumber}`; })() : draftStartTime ? `Starts ${draftStartTime.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "Waiting to start"}
           </span>
-          {isTeamDraftRound && (
+          {isCurrentRoundTeamDraft && (
             <Badge variant="secondary" data-testid="badge-team-draft-round">
               <Building2 className="h-3 w-3 mr-1" />
               Team Draft Round
@@ -926,7 +930,7 @@ export default function DraftBoard() {
                 </Badge>
               )}
             </div>
-            {isTeamDraftRound && (
+            {isCurrentRoundTeamDraft && (
               <p className="text-sm text-muted-foreground mt-2">
                 This is a team draft round. Pick an MLB organization to draft all remaining affiliated players.
               </p>
@@ -952,7 +956,7 @@ export default function DraftBoard() {
               </div>
             )}
             <div className="flex items-center gap-2 mt-3">
-              {canPick && isTeamDraftRound && (
+              {canPick && isMyPickTeamDraft && (
                 <Button onClick={handleTeamDraftClick} data-testid="button-team-draft-pick">
                   <Building2 className="h-4 w-4 mr-2" />
                   Select Organization
@@ -1540,20 +1544,20 @@ export default function DraftBoard() {
           <Card className="flex flex-col">
             <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
               <CardTitle className="text-lg">
-                {isTeamDraftRound ? "Available Organizations" : "Available Players"}{allAvailablePlayers ? ` (${allAvailablePlayers.length})` : ""}
+                {isMyPickTeamDraft ? "Available Organizations" : "Available Players"}{allAvailablePlayers ? ` (${allAvailablePlayers.length})` : ""}
               </CardTitle>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative w-48">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder={isTeamDraftRound ? "Search organizations..." : "Search players..."}
-                    value={isTeamDraftRound ? orgSearch : playerSearch}
-                    onChange={(e) => isTeamDraftRound ? setOrgSearch(e.target.value) : setPlayerSearch(e.target.value)}
+                    placeholder={isMyPickTeamDraft ? "Search organizations..." : "Search players..."}
+                    value={isMyPickTeamDraft ? orgSearch : playerSearch}
+                    onChange={(e) => isMyPickTeamDraft ? setOrgSearch(e.target.value) : setPlayerSearch(e.target.value)}
                     className="pl-9"
                     data-testid="input-search-players"
                   />
                 </div>
-                {!isTeamDraftRound && (
+                {!isMyPickTeamDraft && (
                   <>
                     <Select value={positionFilter} onValueChange={setPositionFilter}>
                       <SelectTrigger className="w-[100px]" data-testid="select-position-filter">
@@ -1584,7 +1588,7 @@ export default function DraftBoard() {
               </div>
             </CardHeader>
             <CardContent className="p-0 flex-1 overflow-hidden">
-              {isTeamDraftRound && draft.status === "active" ? (
+              {isMyPickTeamDraft && draft.status === "active" ? (
                 <div className="overflow-x-auto h-full overflow-y-auto">
                   {filteredOrgs.length === 0 ? (
                     <div className="p-8 text-center text-muted-foreground">
@@ -1648,7 +1652,7 @@ export default function DraftBoard() {
                         <TableHead className="font-semibold">Age</TableHead>
                         <TableHead className="font-semibold">Org</TableHead>
                         <TableHead className="font-semibold">Level</TableHead>
-                        {!isTeamDraftRound && <TableHead className="font-semibold text-right">Action</TableHead>}
+                        {!isMyPickTeamDraft && <TableHead className="font-semibold text-right">Action</TableHead>}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1663,7 +1667,7 @@ export default function DraftBoard() {
                           <TableCell>
                             <Badge variant="outline" className="text-xs">{dp.player.sportLevel}</Badge>
                           </TableCell>
-                          {!isTeamDraftRound && (
+                          {!isMyPickTeamDraft && (
                             <TableCell className="text-right">
                               <div className="flex items-center justify-end gap-1">
                                 {canPick && (
