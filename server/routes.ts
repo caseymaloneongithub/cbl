@@ -9758,14 +9758,10 @@ export async function registerRoutes(
 
       const allSkippedSlots = unmadeSlots.filter(slot => !!slot.skippedAt);
 
-      const deadlinePassedSlots = unmadeSlots.filter(slot => {
-        if (slot.skippedAt) return false;
-        if (slot.round <= 1 || !slot.deadlineAt) return false;
-        if (new Date(slot.deadlineAt).getTime() > now.getTime()) return false;
-        const slotRoundConfig = rounds.find(r => r.roundNumber === slot.round);
-        if (slotRoundConfig?.isTeamDraft === true) return false;
-        return true;
-      });
+      const deadlinePassedSlots = unmadeSlots.filter(slot =>
+        !slot.skippedAt && slot.round > 1 && slot.deadlineAt &&
+        new Date(slot.deadlineAt).getTime() <= now.getTime()
+      );
 
       let currentSlot: typeof sortedSlots[0] | null = null;
       for (const slot of unmadeSlots) {
@@ -9966,9 +9962,6 @@ export async function registerRoutes(
       const isTeamDraftRound = currentRoundConfig?.isTeamDraft === true;
 
       const isPickingForOther = isCommissioner && targetUserId !== userId;
-      if (!isPickingForOther && isTeamDraftRound && !slot.skippedAt && slot.deadlineAt && new Date(slot.deadlineAt).getTime() <= now.getTime()) {
-        return res.status(400).json({ message: "Deadline has passed for this team-draft round pick" });
-      }
       if (!isPickingForOther && !slot.skippedAt && slot.overallPickNumber > 1) {
         const isResolved = (s: any) => {
           if (s.madeAt || s.skippedAt) return true;
