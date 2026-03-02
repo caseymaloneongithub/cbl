@@ -9842,12 +9842,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Picks have already started" });
       }
 
-      const rounds = await storage.getDraftRounds(id);
-      const firstRound = rounds.find(r => r.roundNumber === firstUnmade.round);
-      const pickDurationMs = (firstRound?.pickDurationMinutes || 30) * 60 * 1000;
-      const deadlineAt = new Date(now.getTime() + pickDurationMs);
-
-      await storage.updateDraftPick(firstUnmade.id, { scheduledAt: now, deadlineAt });
+      await storage.updateDraftPick(firstUnmade.id, { scheduledAt: now });
 
       console.log(`[Draft] Commissioner started picks now for draft ${id}, pick #${firstUnmade.overallPickNumber}`);
 
