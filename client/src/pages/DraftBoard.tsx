@@ -26,7 +26,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Clock, Search, Users, Loader2, CheckCircle, Building2, AlertTriangle, ListOrdered, ArrowUp, ArrowDown, Plus, Trash2, Pause, Play, Bell, BellOff, Upload } from "lucide-react";
+import { Clock, Search, Users, Loader2, CheckCircle, Building2, AlertTriangle, ListOrdered, ArrowUp, ArrowDown, Plus, Trash2, Pause, Play, Bell, BellOff, Upload, Download } from "lucide-react";
 import type { Draft, DraftRound, DraftPlayerWithDetails, DraftPickWithDetails, DraftOrder, User, AutoDraftListWithPlayer, TeamAutoDraftList } from "@shared/schema";
 
 
@@ -1663,6 +1663,39 @@ export default function DraftBoard() {
                 {isMyPickTeamDraft ? `Available Organizations (${filteredOrgs.length})` : `Available Players${allAvailablePlayers ? ` (${allAvailablePlayers.length})` : ""}`}
               </CardTitle>
               <div className="flex flex-wrap items-center gap-2">
+                {!isMyPickTeamDraft && allAvailablePlayers && allAvailablePlayers.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const header = "MLB ID,Player Name,Position,Age,Organization,Level";
+                      const rows = allAvailablePlayers.map(dp => {
+                        const p = dp.player;
+                        const escapeCsv = (v: string) => v.includes(",") ? `"${v}"` : v;
+                        return [
+                          p.mlbId,
+                          escapeCsv(p.fullName || ""),
+                          p.primaryPosition || "",
+                          p.age ?? "",
+                          escapeCsv(p.parentOrgName || ""),
+                          p.sportLevel || "",
+                        ].join(",");
+                      });
+                      const csv = [header, ...rows].join("\n");
+                      const blob = new Blob([csv], { type: "text/csv" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = "available_players.csv";
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                    data-testid="button-download-available-players"
+                  >
+                    <Download className="h-4 w-4 mr-1" />
+                    CSV
+                  </Button>
+                )}
                 <div className="relative w-48">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
