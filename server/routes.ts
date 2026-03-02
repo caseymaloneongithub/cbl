@@ -9961,7 +9961,7 @@ export async function registerRoutes(
       const currentRoundConfig = rounds.find((r) => r.roundNumber === slot.round);
       const isTeamDraftRound = currentRoundConfig?.isTeamDraft === true;
 
-      if (!slot.skippedAt && slot.overallPickNumber > 1) {
+      if (!isCommissioner && !slot.skippedAt && slot.overallPickNumber > 1) {
         const isResolved = (s: any) => {
           if (s.madeAt || s.skippedAt) return true;
           if (isTeamDraftRound) return false;
