@@ -62,6 +62,12 @@ export default function DraftBoard() {
   const [teamAutoDraftRosterType, setTeamAutoDraftRosterType] = useState<string>("milb");
   const [positionFilter, setPositionFilter] = useState<string>("all");
   const [orgFilter, setOrgFilter] = useState<string>("all");
+  const [commPickUserId, setCommPickUserId] = useState("");
+  const [commPickSearch, setCommPickSearch] = useState("");
+  const [commPickSelectedPlayer, setCommPickSelectedPlayer] = useState<DraftPlayerWithDetails | null>(null);
+  const [commPickRosterType, setCommPickRosterType] = useState<"mlb" | "milb">("milb");
+  const [commPickOrgName, setCommPickOrgName] = useState("");
+  const [commPickOrgRosterType, setCommPickOrgRosterType] = useState<"mlb" | "milb">("milb");
 
   const draftIdNum = draftId ? parseInt(draftId, 10) : null;
 
@@ -387,6 +393,80 @@ export default function DraftBoard() {
     },
     onError: (error: Error) => {
       toast({ title: "Team Draft Pick failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const commPickTeams = useMemo(() => {
+    if (!draftOrderData) return [];
+    const seen = new Set<string>();
+    return draftOrderData.filter(o => {
+      if (seen.has(o.userId)) return false;
+      seen.add(o.userId);
+      return true;
+    }).map(o => ({ userId: o.userId, teamName: o.user.teamName || `${o.user.firstName} ${o.user.lastName}`, teamAbbreviation: (o.user as any).teamAbbreviation || "" }));
+  }, [draftOrderData]);
+
+  const commPickTargetSlot = useMemo(() => {
+    if (!commPickUserId || !picks) return null;
+    return picks
+      .filter(s => s.userId === commPickUserId && !s.madeAt)
+      .sort((a, b) => a.overallPickNumber - b.overallPickNumber)[0] || null;
+  }, [commPickUserId, picks]);
+
+  const commPickIsTeamDraft = useMemo(() => {
+    if (!commPickTargetSlot || !draftRounds) return false;
+    const rc = draftRounds.find(r => r.roundNumber === commPickTargetSlot.round);
+    return rc?.isTeamDraft === true;
+  }, [commPickTargetSlot, draftRounds]);
+
+  const commPickSearchResults = useMemo(() => {
+    if (!commPickSearch.trim() || !availablePlayers || commPickIsTeamDraft) return [];
+    const needle = stripAccents(commPickSearch.trim().toLowerCase());
+    return availablePlayers
+      .filter(dp => {
+        const name = stripAccents(dp.player.fullName.toLowerCase());
+        return name.includes(needle);
+      })
+      .slice(0, 8);
+  }, [commPickSearch, availablePlayers, commPickIsTeamDraft]);
+
+  const commPickOrgOptions = useMemo(() => {
+    if (!commPickIsTeamDraft || !availablePlayers) return [];
+    const claimed = new Set((picks || []).map(s => s.selectedOrgName).filter(Boolean));
+    const orgs: string[] = [];
+    const seen: Record<string, boolean> = {};
+    availablePlayers.forEach(dp => {
+      if (dp.player.parentOrgName && !claimed.has(dp.player.parentOrgName) && !seen[dp.player.parentOrgName]) {
+        seen[dp.player.parentOrgName] = true;
+        orgs.push(dp.player.parentOrgName);
+      }
+    });
+    return orgs.sort();
+  }, [commPickIsTeamDraft, availablePlayers, picks]);
+
+  const commissionerPick = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", `/api/drafts/${draftIdNum}/commissioner-pick`, data);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      const desc = data.teamDraft
+        ? `Drafted ${data.playersDrafted} players from ${data.orgName}`
+        : "Pick made successfully";
+      toast({ title: "Commissioner Pick Made", description: desc });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "picks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "players"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "timing"] });
+      setCommPickUserId("");
+      setCommPickSearch("");
+      setCommPickSelectedPlayer(null);
+      setCommPickRosterType("milb");
+      setCommPickOrgName("");
+      setCommPickOrgRosterType("milb");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Commissioner pick failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -901,6 +981,134 @@ export default function DraftBoard() {
                 </AlertDialog>
               )}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {draft.status === "active" && (isLeagueCommissioner || user?.isSuperAdmin) && (
+        <Card className="mb-6" data-testid="card-commissioner-pick">
+          <CardHeader className="py-3 pb-2">
+            <CardTitle className="text-base">Commissioner Pick</CardTitle>
+          </CardHeader>
+          <CardContent className="py-2 space-y-3">
+            <div className="flex flex-wrap gap-3 items-end">
+              <div className="min-w-[180px]">
+                <label className="text-xs text-muted-foreground mb-1 block">Team</label>
+                <Select value={commPickUserId} onValueChange={(v) => { setCommPickUserId(v); setCommPickSearch(""); setCommPickSelectedPlayer(null); setCommPickOrgName(""); }} data-testid="select-comm-pick-team">
+                  <SelectTrigger data-testid="trigger-comm-pick-team">
+                    <SelectValue placeholder="Select team..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {commPickTeams.map(t => (
+                      <SelectItem key={t.userId} value={t.userId} data-testid={`option-comm-team-${t.userId}`}>
+                        {t.teamAbbreviation ? `${t.teamAbbreviation} - ${t.teamName}` : t.teamName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {commPickUserId && commPickTargetSlot && (
+                <div className="text-sm text-muted-foreground">
+                  Next open slot: <span className="font-medium">{getRoundLabel(commPickTargetSlot.round, commPickTargetSlot.roundPickIndex)}</span>
+                </div>
+              )}
+              {commPickUserId && !commPickTargetSlot && (
+                <div className="text-sm text-muted-foreground">No open slots for this team.</div>
+              )}
+            </div>
+
+            {commPickUserId && commPickTargetSlot && !commPickIsTeamDraft && (
+              <div className="space-y-2">
+                <div className="relative">
+                  <Input
+                    placeholder="Search players..."
+                    value={commPickSearch}
+                    onChange={(e) => { setCommPickSearch(e.target.value); setCommPickSelectedPlayer(null); }}
+                    data-testid="input-comm-pick-search"
+                  />
+                </div>
+                {commPickSearchResults.length > 0 && (
+                  <div className="border rounded-md max-h-48 overflow-y-auto">
+                    {commPickSearchResults.map(dp => (
+                      <div
+                        key={dp.mlbPlayerId}
+                        className={`px-3 py-2 cursor-pointer hover:bg-accent text-sm flex justify-between items-center ${commPickSelectedPlayer?.mlbPlayerId === dp.mlbPlayerId ? "bg-primary/10" : ""}`}
+                        onClick={() => { setCommPickSelectedPlayer(dp); setCommPickSearch(dp.player.fullName); }}
+                        data-testid={`comm-pick-result-${dp.mlbPlayerId}`}
+                      >
+                        <span className="font-medium">{dp.player.fullName}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {dp.player.primaryPosition} &middot; {getMlbAffiliationAbbreviation(dp.player.parentOrgName || "") || dp.player.parentOrgName}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {commPickSearch.trim() && commPickSearchResults.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No matching available players.</p>
+                )}
+                {commPickSelectedPlayer && (
+                  <div className="flex items-center gap-3">
+                    <Select value={commPickRosterType} onValueChange={(v) => setCommPickRosterType(v as "mlb" | "milb")}>
+                      <SelectTrigger className="w-28" data-testid="select-comm-pick-roster">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="milb">MiLB</SelectItem>
+                        <SelectItem value="mlb">MLB</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      size="sm"
+                      onClick={() => commissionerPick.mutate({ userId: commPickUserId, mlbPlayerId: commPickSelectedPlayer.mlbPlayerId, rosterType: commPickRosterType })}
+                      disabled={commissionerPick.isPending}
+                      data-testid="button-comm-pick-submit"
+                    >
+                      {commissionerPick.isPending ? "Picking..." : "Make Pick"}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {commPickUserId && commPickTargetSlot && commPickIsTeamDraft && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <div className="min-w-[200px]">
+                    <Select value={commPickOrgName} onValueChange={setCommPickOrgName}>
+                      <SelectTrigger data-testid="select-comm-pick-org">
+                        <SelectValue placeholder="Select organization..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {commPickOrgOptions.map(org => (
+                          <SelectItem key={org} value={org}>{org}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Select value={commPickOrgRosterType} onValueChange={(v) => setCommPickOrgRosterType(v as "mlb" | "milb")}>
+                    <SelectTrigger className="w-28" data-testid="select-comm-pick-org-roster">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="milb">MiLB</SelectItem>
+                      <SelectItem value="mlb">MLB</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      const orgMeta = allAvailablePlayers?.find(dp => dp.player.parentOrgName === commPickOrgName);
+                      commissionerPick.mutate({ userId: commPickUserId, selectedOrgName: commPickOrgName, selectedOrgId: orgMeta?.player.parentOrgId ?? null, rosterType: commPickOrgRosterType });
+                    }}
+                    disabled={!commPickOrgName || commissionerPick.isPending}
+                    data-testid="button-comm-pick-org-submit"
+                  >
+                    {commissionerPick.isPending ? "Picking..." : "Make Pick"}
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
