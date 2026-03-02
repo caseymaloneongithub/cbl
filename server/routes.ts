@@ -9844,7 +9844,12 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Picks have already started" });
       }
 
-      await storage.updateDraftPick(firstUnmade.id, { scheduledAt: now });
+      const rounds = await storage.getDraftRounds(id);
+      const firstRound = rounds.find(r => r.roundNumber === firstUnmade.round);
+      const pickDurationMs = (firstRound?.pickDurationMinutes || 30) * 60 * 1000;
+      const deadlineAt = new Date(now.getTime() + pickDurationMs);
+
+      await storage.updateDraftPick(firstUnmade.id, { scheduledAt: now, deadlineAt });
 
       console.log(`[Draft] Commissioner started picks now for draft ${id}, pick #${firstUnmade.overallPickNumber}`);
 
@@ -9884,9 +9889,30 @@ export async function registerRoutes(
       if (slot.madeAt) return res.status(400).json({ message: "This pick has already been made" });
       if (slot.skippedAt) return res.status(400).json({ message: "This pick has already been skipped" });
 
-      const currentOnClock = picks
-        .filter(p => !p.madeAt && !p.skippedAt)
-        .sort((a, b) => a.overallPickNumber - b.overallPickNumber)[0];
+      const now = new Date();
+      const sortedSlots = [...picks].sort((a, b) => a.overallPickNumber - b.overallPickNumber);
+      const unmadeSlots = sortedSlots.filter(p => !p.madeAt);
+      const isSlotResolved = (s: typeof sortedSlots[0]) => {
+        if (s.madeAt || s.skippedAt) return true;
+        if (s.round > 1 && s.deadlineAt && new Date(s.deadlineAt).getTime() <= now.getTime()) return true;
+        return false;
+      };
+
+      let currentOnClock: typeof sortedSlots[0] | null = null;
+      for (const s of unmadeSlots) {
+        if (s.skippedAt) continue;
+        if (s.round > 1 && s.deadlineAt && new Date(s.deadlineAt).getTime() <= now.getTime()) continue;
+        if (s.overallPickNumber === 1) {
+          if (new Date(s.scheduledAt).getTime() <= now.getTime()) currentOnClock = s;
+          break;
+        }
+        const allPrevResolved = sortedSlots
+          .filter(prev => prev.overallPickNumber < s.overallPickNumber)
+          .every(prev => isSlotResolved(prev));
+        if (allPrevResolved) currentOnClock = s;
+        break;
+      }
+
       if (!currentOnClock || currentOnClock.id !== slotId) {
         return res.status(400).json({ message: "Can only skip the current on-the-clock pick" });
       }
@@ -9990,7 +10016,7 @@ export async function registerRoutes(
         );
       }
 
-      if (allSlots.length > 0 && allSlots.filter((s) => s.id !== slot.id).every((s) => !!s.madeAt)) {
+      if (allSlots.length > 0 && allSlots.filter((s) => s.id !== slot.id).every((s) => !!s.madeAt || !!s.skippedAt)) {
         await storage.updateDraft(id, { status: "completed" });
       } else {
         setTimeout(() => processAutoDraft(id, storage), 500);
@@ -10148,7 +10174,7 @@ export async function registerRoutes(
         }
         const result = await storage.fillSlotWithOrg(slot.id, targetUserId, selectedOrgName, selectedOrgId, rosterType, now);
         const allSlots = await storage.getDraftPicks(id);
-        if (allSlots.length > 0 && allSlots.every((s) => !!s.madeAt)) {
+        if (allSlots.length > 0 && allSlots.every((s) => !!s.madeAt || !!s.skippedAt)) {
           await storage.updateDraft(id, { status: "completed" });
         }
         sendPickNotificationEmails(id, slot.id, storage).catch(() => {});
@@ -10172,7 +10198,7 @@ export async function registerRoutes(
 
       const updatedSlot = await storage.fillSlotWithPlayer(slot.id, targetUserId, mlbPlayerId, rosterType, now);
       const allSlots = await storage.getDraftPicks(id);
-      if (allSlots.length > 0 && allSlots.every((s) => !!s.madeAt)) {
+      if (allSlots.length > 0 && allSlots.every((s) => !!s.madeAt || !!s.skippedAt)) {
         await storage.updateDraft(id, { status: "completed" });
       } else {
         setTimeout(() => processAutoDraft(id, storage), 500);
@@ -10550,7 +10576,11 @@ async function sendPickNotificationEmails(
   }
 }
 
+const autoDraftLocks = new Set<number>();
+
 async function processAutoDraft(draftId: number, storage: any): Promise<boolean> {
+  if (autoDraftLocks.has(draftId)) return false;
+  autoDraftLocks.add(draftId);
   try {
     const draft = await storage.getDraft(draftId);
     if (!draft || draft.status !== "active") return false;
@@ -10599,7 +10629,7 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
           console.log(`[AutoDraft] Auto-skipped expired pick #${slot.overallPickNumber} for user ${slot.userId} in draft ${draftId} (no team auto-draft list)`);
           sendPickNotificationEmails(draftId, slot.id, storage, { isSkipped: true }).catch(() => {});
           const updatedSlots = await storage.getDraftPicks(draftId);
-          if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt)) {
+          if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt || !!s.skippedAt)) {
             await storage.updateDraft(draftId, { status: "completed" });
           } else {
             setTimeout(() => processAutoDraft(draftId, storage), 500);
@@ -10612,7 +10642,7 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
       await storage.fillSlotWithOrg(slot.id, slot.userId, topTeamPick.orgName, null, topTeamPick.rosterType as "mlb" | "milb", now);
 
       const updatedSlots = await storage.getDraftPicks(draftId);
-      if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt)) {
+      if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt || !!s.skippedAt)) {
         await storage.updateDraft(draftId, { status: "completed" });
       } else {
         setTimeout(() => processAutoDraft(draftId, storage), 500);
@@ -10632,7 +10662,7 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
         console.log(`[AutoDraft] Auto-skipped expired pick #${slot.overallPickNumber} for user ${slot.userId} in draft ${draftId} (no auto-draft list)`);
         sendPickNotificationEmails(draftId, slot.id, storage, { isSkipped: true }).catch(() => {});
         const updatedSlots = await storage.getDraftPicks(draftId);
-        if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt)) {
+        if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt || !!s.skippedAt)) {
           await storage.updateDraft(draftId, { status: "completed" });
         } else {
           setTimeout(() => processAutoDraft(draftId, storage), 500);
@@ -10645,7 +10675,7 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
     await storage.fillSlotWithPlayer(slot.id, slot.userId, topPick.mlbPlayerId, topPick.rosterType, now);
 
     const updatedSlots = await storage.getDraftPicks(draftId);
-    if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt)) {
+    if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt || !!s.skippedAt)) {
       await storage.updateDraft(draftId, { status: "completed" });
     } else {
       setTimeout(() => processAutoDraft(draftId, storage), 500);
@@ -10658,6 +10688,8 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
   } catch (error) {
     console.error("[AutoDraft] Error processing auto-draft:", error);
     return false;
+  } finally {
+    autoDraftLocks.delete(draftId);
   }
 }
 
@@ -11033,5 +11065,5 @@ async function deployBundleItemAsAutoBid(
 }
 
 // Export functions for use in background jobs
-export { processAllAutoBidsUntilStable, deployBundleItemAsAutoBid };
+export { processAllAutoBidsUntilStable, deployBundleItemAsAutoBid, processAutoDraft };
 

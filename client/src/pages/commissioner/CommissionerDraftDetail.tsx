@@ -379,7 +379,8 @@ export default function CommissionerDraftDetail() {
     refetchInterval: 10000,
   });
 
-  const picksNotStartedYet = draft?.status === "active" && timingInfo?.hasTiming && !timingInfo?.currentSlot;
+  const picksNotStartedYet = draft?.status === "active" && timingInfo?.hasTiming && !timingInfo?.currentSlot &&
+    !(draftPicks?.some(p => p.madeAt || p.skippedAt));
 
   const startPicksNow = useMutation({
     mutationFn: async () => {

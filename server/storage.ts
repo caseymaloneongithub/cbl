@@ -348,6 +348,7 @@ export interface IStorage {
   
   // Draft operations
   getDraft(id: number): Promise<Draft | undefined>;
+  getActiveDraftIds(): Promise<number[]>;
   getDraftsByLeague(leagueId: number): Promise<DraftWithDetails[]>;
   createDraft(data: InsertDraft): Promise<Draft>;
   updateDraft(id: number, data: Partial<Draft>): Promise<Draft | undefined>;
@@ -3494,6 +3495,11 @@ export class DatabaseStorage implements IStorage {
     return draft;
   }
 
+  async getActiveDraftIds(): Promise<number[]> {
+    const rows = await db.select({ id: drafts.id }).from(drafts).where(eq(drafts.status, "active"));
+    return rows.map(r => r.id);
+  }
+
   async getDraftsByLeague(leagueId: number): Promise<DraftWithDetails[]> {
     const allDrafts = await db.select().from(drafts)
       .where(eq(drafts.leagueId, leagueId))
@@ -4105,7 +4111,21 @@ export class DatabaseStorage implements IStorage {
         eq(teamAutoDraftLists.userId, userId),
       ))
       .orderBy(teamAutoDraftLists.rank);
-    return list.find(item => !claimedOrgs.has(item.orgName));
+
+    for (const item of list) {
+      if (claimedOrgs.has(item.orgName)) continue;
+      const [hasPlayers] = await db.select({ id: draftPlayers.id })
+        .from(draftPlayers)
+        .innerJoin(mlbPlayers, eq(draftPlayers.mlbPlayerId, mlbPlayers.id))
+        .where(and(
+          eq(draftPlayers.draftId, draftId),
+          eq(draftPlayers.status, "available"),
+          eq(mlbPlayers.parentOrgName, item.orgName),
+        ))
+        .limit(1);
+      if (hasPlayers) return item;
+    }
+    return undefined;
   }
 
   async clearTeamAutoDraftList(draftId: number, userId: string): Promise<void> {

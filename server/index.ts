@@ -1,5 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
-import { registerRoutes, deployBundleItemAsAutoBid, processAllAutoBidsUntilStable } from "./routes";
+import { registerRoutes, deployBundleItemAsAutoBid, processAllAutoBidsUntilStable, processAutoDraft } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { storage } from "./storage";
@@ -107,6 +107,9 @@ app.use((req, res, next) => {
       
       // Start the auction finalization job - runs every minute
       startAuctionFinalizationJob();
+      
+      // Start the draft deadline job - runs every minute
+      startDraftDeadlineJob();
       
       // Start the hourly email summary job
       startHourlySummaryEmailJob();
@@ -311,6 +314,28 @@ async function deployPendingBundleItems() {
     }
   } catch (error) {
     log(`Error in deployPendingBundleItems: ${error}`, "auction-job");
+  }
+}
+
+// Background job to process draft deadlines every minute
+function startDraftDeadlineJob() {
+  const INTERVAL_MS = 60 * 1000;
+
+  log("Draft deadline job started (runs every minute)", "draft-job");
+
+  runDraftDeadlineCheck();
+
+  setInterval(runDraftDeadlineCheck, INTERVAL_MS);
+}
+
+async function runDraftDeadlineCheck() {
+  try {
+    const activeDraftIds = await storage.getActiveDraftIds();
+    for (const draftId of activeDraftIds) {
+      await processAutoDraft(draftId, storage);
+    }
+  } catch (error) {
+    log(`Draft deadline check error: ${error}`, "draft-job");
   }
 }
 
