@@ -10461,6 +10461,21 @@ export async function registerRoutes(
     }
   });
 
+  // DELETE /api/drafts/:id/auto-draft-list - Clear entire auto-draft list for user
+  app.delete("/api/drafts/:id/auto-draft-list", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const draftId = parseInt(req.params.id);
+      if (isNaN(draftId)) return res.status(400).json({ message: "Invalid draft ID" });
+
+      const count = await storage.clearAutoDraftList(draftId, userId);
+      res.json({ message: "Auto-draft list cleared", removed: count });
+    } catch (error) {
+      console.error("Error clearing auto-draft list:", error);
+      res.status(500).json({ message: "Failed to clear auto-draft list" });
+    }
+  });
+
   app.post("/api/drafts/:id/auto-draft-list/upload", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.userId!;

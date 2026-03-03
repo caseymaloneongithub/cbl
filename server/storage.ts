@@ -397,6 +397,7 @@ export interface IStorage {
   reorderAutoDraftList(draftId: number, userId: string, orderedIds: number[]): Promise<void>;
   getTopAvailableAutoDraftPick(draftId: number, userId: string): Promise<AutoDraftList | undefined>;
   clearAutoDraftItem(draftId: number, mlbPlayerId: number): Promise<void>;
+  clearAutoDraftList(draftId: number, userId: string): Promise<number>;
 
   // Team auto-draft lists (for team draft rounds)
   getTeamAutoDraftList(draftId: number, userId: string): Promise<TeamAutoDraftList[]>;
@@ -4056,6 +4057,14 @@ export class DatabaseStorage implements IStorage {
       eq(autoDraftLists.draftId, draftId),
       eq(autoDraftLists.mlbPlayerId, mlbPlayerId),
     ));
+  }
+
+  async clearAutoDraftList(draftId: number, userId: string): Promise<number> {
+    const result = await db.delete(autoDraftLists).where(and(
+      eq(autoDraftLists.draftId, draftId),
+      eq(autoDraftLists.userId, userId),
+    )).returning();
+    return result.length;
   }
 
   async getTeamAutoDraftList(draftId: number, userId: string): Promise<TeamAutoDraftList[]> {

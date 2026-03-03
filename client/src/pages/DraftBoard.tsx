@@ -593,10 +593,7 @@ export default function DraftBoard() {
 
   const clearAutoDraft = useMutation({
     mutationFn: async () => {
-      if (!autoDraftList?.length) return;
-      await Promise.all(
-        autoDraftList.map((item) => apiRequest("DELETE", `/api/drafts/${draftIdNum}/auto-draft-list/${item.id}`)),
-      );
+      await apiRequest("DELETE", `/api/drafts/${draftIdNum}/auto-draft-list`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "auto-draft-list"] });
@@ -1275,6 +1272,38 @@ export default function DraftBoard() {
                       <Upload className="h-3.5 w-3.5 mr-1" />
                       Upload
                     </Button>
+                    {autoDraftList && autoDraftList.length > 0 && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            data-testid="button-auto-draft-clear"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 mr-1" />
+                            Clear
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Clear auto-draft list?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will remove all {autoDraftList.length} players from your auto-draft list. You can upload a new list afterward.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => clearAutoDraft.mutate()}
+                              disabled={clearAutoDraft.isPending}
+                              data-testid="button-confirm-clear-auto-draft"
+                            >
+                              {clearAutoDraft.isPending ? "Clearing..." : "Clear List"}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
                   </div>
                 </div>
                 <div className="text-xs text-muted-foreground">
