@@ -1207,7 +1207,7 @@ export default function DraftBoard() {
           <CardHeader className="pb-3">
             <CardTitle className="text-lg">Slot Board</CardTitle>
           </CardHeader>
-          <CardContent className="p-0 max-h-[360px] overflow-y-auto" id="slot-board-scroll">
+          <CardContent className="p-0 max-h-[280px] overflow-y-auto" id="slot-board-scroll">
             <Table>
               <TableHeader className="sticky top-0 z-10 bg-background">
                 <TableRow className="bg-muted/50">
