@@ -1204,8 +1204,8 @@ export default function DraftBoard() {
 
       {!!picks?.length && (
         <Card>
-          <CardHeader className="pb-3 baseball-stitch">
-            <CardTitle className="text-lg">◇ Slot Board</CardTitle>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Slot Board</CardTitle>
           </CardHeader>
           <CardContent className="p-0 max-h-[200px] overflow-y-auto" id="slot-board-scroll">
             <Table>
@@ -1254,8 +1254,8 @@ export default function DraftBoard() {
         const skippedPicks = myPicks.filter(p => p.skippedAt && !p.madeAt);
         return (
           <Card className="mb-6" data-testid="card-my-draft">
-            <CardHeader className="pb-2 baseball-stitch">
-              <CardTitle className="text-lg">◇ My Draft <span className="text-sm font-normal text-muted-foreground ml-1">({madePicks.length} of {myPicks.length})</span></CardTitle>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg">My Draft <span className="text-sm font-normal text-muted-foreground ml-1">({madePicks.length} of {myPicks.length})</span></CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
@@ -1318,10 +1318,10 @@ export default function DraftBoard() {
       <div className="grid gap-6 lg:grid-cols-2">
           {draft.status !== "completed" && (
             <Card>
-              <CardHeader className="pb-3 space-y-3 baseball-stitch">
+              <CardHeader className="pb-3 space-y-3">
                 <div className="flex flex-row items-center justify-between gap-2">
                   <CardTitle className="text-lg flex items-center gap-2">
-                    ◇ Auto-Draft List
+                    Auto-Draft List
                   </CardTitle>
                   <div className="flex items-center gap-2">
                     {autoDraftList && autoDraftList.length > 0 && (() => {
@@ -1603,10 +1603,10 @@ export default function DraftBoard() {
 
           {draft.status !== "completed" && hasTeamDraftRound && (
             <Card>
-              <CardHeader className="pb-3 space-y-3 baseball-stitch">
+              <CardHeader className="pb-3 space-y-3">
                 <div className="flex flex-row items-center justify-between gap-2">
                   <CardTitle className="text-lg flex items-center gap-2">
-                    ◇ Team Auto-Draft List
+                    Team Auto-Draft List
                   </CardTitle>
                   <div className="flex items-center gap-2">
                     {teamAutoDraftList && teamAutoDraftList.length > 0 && (() => {
@@ -1770,7 +1770,7 @@ export default function DraftBoard() {
 
         <div>
           <Card className="flex flex-col">
-            <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3 baseball-stitch">
+            <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
               <CardTitle className="text-lg">
                 {isMyPickTeamDraft ? `Available Organizations (${filteredOrgs.length})` : `Available Players${allAvailablePlayers ? ` (${allAvailablePlayers.length})` : ""}`}
               </CardTitle>

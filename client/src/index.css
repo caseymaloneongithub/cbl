@@ -197,13 +197,6 @@
  */
 @layer utilities {
 
-  .baseball-stitch {
-    border-top: 2px dashed hsl(0 70% 50% / 0.35);
-  }
-  .dark .baseball-stitch {
-    border-top: 2px dashed hsl(0 60% 45% / 0.3);
-  }
-
   /* Hide ugly search cancel button in Chrome until we can style it properly */
   input[type="search"]::-webkit-search-cancel-button {
     @apply hidden;
