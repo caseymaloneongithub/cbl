@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { stripAccents } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -537,29 +537,34 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
     unresolvedRows.length,
   ]);
 
+  const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    const csvHash = hashText(csvUploadText.trim());
-    const hasDraftState =
-      Object.keys(resolutionMap).length > 0 ||
-      Object.keys(duplicateTeamResolutionMap).length > 0 ||
-      Object.keys(cutMap).some((rowNum) => !!cutMap[rowNum]) ||
-      Object.keys(confirmedRowMap).some((rowNum) => !!confirmedRowMap[rowNum]);
-    if (!hasDraftState) {
-      localStorage.removeItem(reconciliationDraftStorageKey);
-      return;
-    }
-    const payload = {
-      leagueId,
-      season,
-      scope: reconciliationScope,
-      csvHash,
-      resolutionMap,
-      duplicateTeamResolutionMap,
-      cutMap,
-      confirmedRowMap,
-      updatedAt: new Date().toISOString(),
-    };
-    localStorage.setItem(reconciliationDraftStorageKey, JSON.stringify(payload));
+    if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+    draftSaveTimerRef.current = setTimeout(() => {
+      const csvHash = hashText(csvUploadText.trim());
+      const hasDraftState =
+        Object.keys(resolutionMap).length > 0 ||
+        Object.keys(duplicateTeamResolutionMap).length > 0 ||
+        Object.keys(cutMap).some((rowNum) => !!cutMap[rowNum]) ||
+        Object.keys(confirmedRowMap).some((rowNum) => !!confirmedRowMap[rowNum]);
+      if (!hasDraftState) {
+        localStorage.removeItem(reconciliationDraftStorageKey);
+        return;
+      }
+      const payload = {
+        leagueId,
+        season,
+        scope: reconciliationScope,
+        csvHash,
+        resolutionMap,
+        duplicateTeamResolutionMap,
+        cutMap,
+        confirmedRowMap,
+        updatedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(reconciliationDraftStorageKey, JSON.stringify(payload));
+    }, 300);
+    return () => { if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current); };
   }, [csvUploadText, resolutionMap, duplicateTeamResolutionMap, cutMap, confirmedRowMap, reconciliationDraftStorageKey]);
 
   useEffect(() => {
@@ -1007,87 +1012,118 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
     return `mlb_api_id,last_name,first_name,team_abbreviation,roster_type,age,mlb_team,org,fangraphs_id,status,years,acquired\n,Prospect,Example James,${teamAbbr},milb,22,,Dodgers,12345,MH,0,D 2026\n`;
   }, [activeMembers, csvDefaultRosterType]);
 
-  const csvUploadPreview = useMemo(() => {
+  const [csvUploadPreview, setCsvUploadPreview] = useState<{
+    error?: string;
+    totalRows?: number;
+    validRows?: number;
+    invalidMlbIds?: number;
+    missingValues?: number;
+    invalidRosterTypes?: number;
+    unknownTeams?: string[];
+  } | null>(null);
+  const [csvParsing, setCsvParsing] = useState(false);
+  const csvPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
     const raw = csvUploadText.trim();
-    if (!raw) return null;
-    const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-    if (lines.length < 2) return { error: "CSV must include a header and at least one data row." };
-    const detectDelimiter = (line: string) => {
-      const comma = (line.match(/,/g) || []).length;
-      const semicolon = (line.match(/;/g) || []).length;
-      const tab = (line.match(/\t/g) || []).length;
-      if (tab > comma && tab > semicolon) return "\t";
-      if (semicolon > comma) return ";";
-      return ",";
-    };
-    const delimiter = detectDelimiter(lines[0]);
-    const normalizeHeader = (rawHeader: string) =>
-      String(rawHeader || "")
-        .replace(/^\uFEFF/, "")
-        .replace(/^"+|"+$/g, "")
-        .trim()
-        .toLowerCase();
-    const headers = lines[0].split(delimiter).map((h) => normalizeHeader(h));
-    const mlbIdIdx = headers.findIndex((h) => ["mlb_api_id", "mlb_id", "mlbid", "player_id", "id"].includes(h));
-    const nameIdx = headers.findIndex((h) => ["player_name", "name", "player", "full_name", "player full name"].includes(h));
-    const firstNameIdx = headers.findIndex((h) => ["first_name", "first name", "firstname", "first", "fname"].includes(h));
-    const lastNameIdx = headers.findIndex((h) => ["last_name", "last name", "lastname", "last", "lname"].includes(h));
-    const abbrIdx = headers.findIndex((h) => ["team_abbreviation", "team_abbrev", "abbreviation", "team", "abbr", "cbl"].includes(h));
-    const rosterTypeIdx = headers.findIndex((h) => ["roster_type", "roster type", "type", "scope"].includes(h));
-    if ((mlbIdIdx === -1 && nameIdx === -1 && (firstNameIdx === -1 || lastNameIdx === -1)) || abbrIdx === -1) {
-      return { error: "Missing required columns. Include team abbreviation and either MLB API ID, player_name, or first_name + last_name." };
+    if (!raw) {
+      setCsvUploadPreview(null);
+      setCsvParsing(false);
+      if (csvPreviewTimerRef.current) clearTimeout(csvPreviewTimerRef.current);
+      return;
     }
-    if (isTemplateLikeCsv(raw)) {
-      return { error: "Template rows detected (Example Prospect/Shohei Ohtani). Replace with real rows before uploading." };
-    }
-
-    const knownAbbr = new Set(activeMembers.map((m) => (m.teamAbbreviation || "").toUpperCase()).filter(Boolean));
-    const unknownTeams = new Set<string>();
-    let validRows = 0;
-    let invalidMlbIds = 0;
-    let missingValues = 0;
-    let invalidRosterTypes = 0;
-
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(delimiter).map((c) => c.trim());
-      const mlbRaw = mlbIdIdx >= 0 ? cols[mlbIdIdx] : "";
-      const firstNameRaw = firstNameIdx >= 0 ? cols[firstNameIdx] : "";
-      const lastNameRaw = lastNameIdx >= 0 ? cols[lastNameIdx] : "";
-      const nameRaw = nameIdx >= 0
-        ? cols[nameIdx]
-        : [firstNameRaw, lastNameRaw].filter(Boolean).join(" ").trim();
-      const abbrRaw = (cols[abbrIdx] || "").toUpperCase();
-      const rosterRaw = (rosterTypeIdx >= 0 ? cols[rosterTypeIdx] : csvDefaultRosterType).toLowerCase();
-      const rosterTypeValid = rosterRaw === "" || rosterRaw === "mlb" || rosterRaw === "milb" || rosterRaw === "draft";
-      if ((!mlbRaw && !nameRaw) || !abbrRaw) {
-        missingValues++;
-        continue;
+    setCsvParsing(true);
+    if (csvPreviewTimerRef.current) clearTimeout(csvPreviewTimerRef.current);
+    csvPreviewTimerRef.current = setTimeout(() => {
+      const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      if (lines.length < 2) {
+        setCsvUploadPreview({ error: "CSV must include a header and at least one data row." });
+        setCsvParsing(false);
+        return;
       }
-      if (mlbRaw) {
-        const mlbId = Number(mlbRaw);
-        if (!Number.isInteger(mlbId) || mlbId <= 0) {
-          invalidMlbIds++;
+      const detectDelimiter = (line: string) => {
+        const comma = (line.match(/,/g) || []).length;
+        const semicolon = (line.match(/;/g) || []).length;
+        const tab = (line.match(/\t/g) || []).length;
+        if (tab > comma && tab > semicolon) return "\t";
+        if (semicolon > comma) return ";";
+        return ",";
+      };
+      const delimiter = detectDelimiter(lines[0]);
+      const normalizeHeader = (rawHeader: string) =>
+        String(rawHeader || "")
+          .replace(/^\uFEFF/, "")
+          .replace(/^"+|"+$/g, "")
+          .trim()
+          .toLowerCase();
+      const headers = lines[0].split(delimiter).map((h) => normalizeHeader(h));
+      const mlbIdIdx = headers.findIndex((h) => ["mlb_api_id", "mlb_id", "mlbid", "player_id", "id"].includes(h));
+      const nameIdx = headers.findIndex((h) => ["player_name", "name", "player", "full_name", "player full name"].includes(h));
+      const firstNameIdx = headers.findIndex((h) => ["first_name", "first name", "firstname", "first", "fname"].includes(h));
+      const lastNameIdx = headers.findIndex((h) => ["last_name", "last name", "lastname", "last", "lname"].includes(h));
+      const abbrIdx = headers.findIndex((h) => ["team_abbreviation", "team_abbrev", "abbreviation", "team", "abbr", "cbl"].includes(h));
+      const rosterTypeIdx = headers.findIndex((h) => ["roster_type", "roster type", "type", "scope"].includes(h));
+      if ((mlbIdIdx === -1 && nameIdx === -1 && (firstNameIdx === -1 || lastNameIdx === -1)) || abbrIdx === -1) {
+        setCsvUploadPreview({ error: "Missing required columns. Include team abbreviation and either MLB API ID, player_name, or first_name + last_name." });
+        setCsvParsing(false);
+        return;
+      }
+      if (isTemplateLikeCsv(raw)) {
+        setCsvUploadPreview({ error: "Template rows detected (Example Prospect/Shohei Ohtani). Replace with real rows before uploading." });
+        setCsvParsing(false);
+        return;
+      }
+
+      const knownAbbr = new Set(activeMembers.map((m) => (m.teamAbbreviation || "").toUpperCase()).filter(Boolean));
+      const unknownTeams = new Set<string>();
+      let validRows = 0;
+      let invalidMlbIds = 0;
+      let missingValues = 0;
+      let invalidRosterTypes = 0;
+
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(delimiter).map((c) => c.trim());
+        const mlbRaw = mlbIdIdx >= 0 ? cols[mlbIdIdx] : "";
+        const firstNameRaw = firstNameIdx >= 0 ? cols[firstNameIdx] : "";
+        const lastNameRaw = lastNameIdx >= 0 ? cols[lastNameIdx] : "";
+        const nameRaw = nameIdx >= 0
+          ? cols[nameIdx]
+          : [firstNameRaw, lastNameRaw].filter(Boolean).join(" ").trim();
+        const abbrRaw = (cols[abbrIdx] || "").toUpperCase();
+        const rosterRaw = (rosterTypeIdx >= 0 ? cols[rosterTypeIdx] : csvDefaultRosterType).toLowerCase();
+        const rosterTypeValid = rosterRaw === "" || rosterRaw === "mlb" || rosterRaw === "milb" || rosterRaw === "draft";
+        if ((!mlbRaw && !nameRaw) || !abbrRaw) {
+          missingValues++;
           continue;
         }
+        if (mlbRaw) {
+          const mlbId = Number(mlbRaw);
+          if (!Number.isInteger(mlbId) || mlbId <= 0) {
+            invalidMlbIds++;
+            continue;
+          }
+        }
+        if (!knownAbbr.has(abbrRaw)) {
+          unknownTeams.add(abbrRaw);
+        }
+        if (!rosterTypeValid) {
+          invalidRosterTypes++;
+          continue;
+        }
+        validRows++;
       }
-      if (!knownAbbr.has(abbrRaw)) {
-        unknownTeams.add(abbrRaw);
-      }
-      if (!rosterTypeValid) {
-        invalidRosterTypes++;
-        continue;
-      }
-      validRows++;
-    }
 
-    return {
-      totalRows: lines.length - 1,
-      validRows,
-      invalidMlbIds,
-      missingValues,
-      invalidRosterTypes,
-      unknownTeams: Array.from(unknownTeams),
-    };
+      setCsvUploadPreview({
+        totalRows: lines.length - 1,
+        validRows,
+        invalidMlbIds,
+        missingValues,
+        invalidRosterTypes,
+        unknownTeams: Array.from(unknownTeams),
+      });
+      setCsvParsing(false);
+    }, 300);
+    return () => { if (csvPreviewTimerRef.current) clearTimeout(csvPreviewTimerRef.current); };
   }, [csvUploadText, activeMembers, csvDefaultRosterType]);
 
   const downloadTextFile = (filename: string, text: string) => {
@@ -1255,6 +1291,9 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
               placeholder={csvUploadTemplate}
               data-testid="textarea-roster-csv"
             />
+            {csvParsing && csvUploadText.trim() && (
+              <p className="text-sm text-muted-foreground" data-testid="text-roster-csv-parsing">Parsing {csvUploadText.trim().split(/\r?\n/).length.toLocaleString()} lines...</p>
+            )}
             {csvUploadPreview?.error && (
               <p className="text-sm text-destructive" data-testid="text-roster-csv-error">{csvUploadPreview.error}</p>
             )}
