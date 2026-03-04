@@ -1,0 +1,102 @@
+ High Impact
+
+  1. Batch seedMlbPlayerFromApi calls
+
+  At line ~4217, when a row's MLB API ID isn't in the local DB,
+  seedMlbPlayerFromApi is called inline — one network round-trip per missing
+  player. A first pass could collect all MLB API IDs from the CSV, do a single
+  IN (...) query to find which are missing, then batch-seed those before the
+  main processing loop begins. This turns N sequential API calls into one query
+  + a smaller batch of seeds.
+
+  2. Pre-index player candidates in memory
+
+  The matching loop queries or scores candidates per row. If the handler loads
+  the relevant player pool once at the start (indexed by normalized last name,
+  like the legacy script does), it eliminates repeated DB lookups during name
+  matching. The legacy script showed this pattern works — the web route could
+  apply the same approach for the name-resolution phase.
+
+  3. Snapshot stores the full CSV inline
+
+  persistLatestSnapshot embeds the raw csvData in the snapshot JSON (the MiLB
+  snapshot is already 1.7MB). Every write serializes the full CSV into the file;
+   every /latest read deserializes it back out. The CSV could be written once to
+   a separate file at upload time and excluded from the snapshot, with the
+  snapshot only storing a path or hash reference. The /latest route already
+  knows to read roster-normalized-upload.csv as a fallback.
+
+  ---
+  Medium Impact
+
+  4. Debounce localStorage draft writes
+
+  The useEffect at line ~540 fires on every change to resolutionMap, cutMap,
+  confirmedRowMap, or duplicateTeamResolutionMap. Each confirmation triggers a
+  full JSON serialize + localStorage write. A short debounce (e.g., 300ms) would
+   batch rapid confirmations into a single write with no visible effect on the
+  user.
+
+  5. Debounce or lazy-evaluate csvUploadPreview
+
+  csvUploadPreview is a useMemo that parses the entire CSV on every change to
+  csvUploadText — meaning it re-runs on every keystroke in the textarea. For
+  large CSVs this is a synchronous parse of 1000+ rows per character typed.
+  Moving this to a debounced state update (or a useEffect with a debounce) would
+   keep the UI responsive during paste/edit.
+
+  6. Pre-index assignments by name in the audit endpoint
+
+  The /audit route's cross-team name scan (line ~5016) is O(n×m) — for each
+  unresolved row it scans all scope assignments looking for a name match.
+  Building a Map<normalizedName, assignment[]> once at the start of the route
+  turns this into O(1) lookups per row.
+
+  ---
+  Low Impact / Quality of Life
+
+  7. Reduce reconciliation progress polling frequency
+
+  The client polls /roster-reconciliation/progress every 1 second while
+  running=true. Since the upload route is synchronous, the window where
+  running=true is effectively zero — polling rarely catches it. Increasing the
+  interval to 2–3 seconds, or switching to exponential backoff after a few
+  misses, would halve the unnecessary polling traffic during reconciliation.
+
+  8. Parallelize web-suggest-reconciliation.cjs API calls
+
+  The script makes sequential MLB Stats API calls with no concurrency. Even a
+  simple batch size of 5 concurrent requests (Promise.all in chunks) would
+  significantly reduce wall-clock time for larger unresolved sets, if this
+  script ever gets revived.
+
+  ---
+  Summary by effort vs. payoff
+
+  ┌───────────────────────────┬─────────┬───────────────────────────────────┐
+  │        Suggestion         │ Effort  │              Payoff               │
+  ├───────────────────────────┼─────────┼───────────────────────────────────┤
+  │ Batch                     │ Medium  │ High — eliminates N serial API    │
+  │ seedMlbPlayerFromApi      │         │ calls                             │
+  ├───────────────────────────┼─────────┼───────────────────────────────────┤
+  │ Pre-index player          │ Medium  │ High — eliminates per-row DB      │
+  │ candidates                │         │ queries                           │
+  ├───────────────────────────┼─────────┼───────────────────────────────────┤
+  │ Separate CSV from         │ Low     │ Medium — reduces file I/O size    │
+  │ snapshot                  │         │                                   │
+  ├───────────────────────────┼─────────┼───────────────────────────────────┤
+  │ Debounce localStorage     │ Low     │ Low-Medium — smoother UI under    │
+  │ writes                    │         │ load                              │
+  ├───────────────────────────┼─────────┼───────────────────────────────────┤
+  │ Debounce csvUploadPreview │ Low     │ Medium — responsive textarea for  │
+  │                           │         │ large CSVs                        │
+  ├───────────────────────────┼─────────┼───────────────────────────────────┤
+  │ Pre-index audit name scan │ Low     │ Low — fast enough at current      │
+  │                           │         │ scale                             │
+  ├───────────────────────────┼─────────┼───────────────────────────────────┤
+  │ Reduce polling frequency  │ Trivial │ Low — cosmetic bandwidth saving   │
+  ├───────────────────────────┼─────────┼───────────────────────────────────┤
+  │ Parallelize suggest       │ Low     │ Low — script is largely           │
+  │ script                    │         │ deprecated                        │
+  └───────────────────────────┴─────────┴───────────────────────────────────┘
+
