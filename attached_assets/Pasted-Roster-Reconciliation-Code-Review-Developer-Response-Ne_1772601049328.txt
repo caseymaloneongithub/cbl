@@ -1,0 +1,82 @@
+Roster Reconciliation Code Review — Developer Response Needed                 
+  Please review the following findings and respond to each one with your
+  intended action (fix, won't fix, already handled, needs more info, etc.).
+
+  ---
+  1. web-suggest-reconciliation.cjs — Unscoped input/output paths
+
+  The script reads from roster-reconcile-latest.json but the current web flow
+  writes to scoped files (roster-reconcile-latest-mlb.json /
+  roster-reconcile-latest-milb.json). The output files are also unscoped. Is
+  this script still in active use? If so, it needs to be updated to accept a
+  scope argument and read/write the right files.
+
+  ---
+  2. routes.ts line ~4434 — Raw userId in warning messages
+
+  Roster limit warnings are formatted as Team ${row.userId} exceeds MLB roster
+  soft limit..., which exposes a raw UUID in a user-visible message. Should this
+   use the team abbreviation or team name instead?
+
+  ---
+  3. RosterManagement.tsx line 171 — Season derived from current year
+
+  const season = new Date().getFullYear() currently resolves to 2026. If the
+  reconciliation snapshots on disk were written with season: 2025, the
+  component's API calls and reset requests will use 2026 while the data expects
+  2025. The reset endpoint also has a || 2025 fallback that would now be
+  bypassed. Is the intent to always use the current calendar year, or should the
+   season come from the league record (e.g., league.rosterOnboardingSeason)?
+
+  ---
+  4. routes.ts lines ~4511–4548 — Double persistLatestSnapshot on success path
+
+  In the clean success path (no unresolved rows), persistLatestSnapshot is
+  called twice in a row with identical arguments. Was the second call
+  intentional (e.g., as a safety flush), or is it a leftover from a refactor?
+
+  ---
+  5. web-suggest-reconciliation.cjs — No rate limiting on MLB Stats API
+
+  The script makes one API call per unresolved player with no delay between
+  requests. For a large unresolved set this could hit rate limits. Is throttling
+   needed, or is the expected unresolved count always small enough that this
+  isn't a concern?
+
+  ---
+  6. routes.ts audit route — normalizeAuditName inconsistent with main
+  normalization
+
+  The audit endpoint's normalizeAuditName doesn't strip name suffixes (Jr, Sr,
+  II, etc.) the way the main normalizeName does. If a player has a suffix in the
+   DB but not in the upload CSV (or vice versa), the name-match fallback in the
+  audit report could miss them. Should the audit use the same normalization
+  logic as the rest of the system?
+
+  ---
+  7. reconcile-workbook-rosters.cjs — Hardcoded LEAGUE_ID/SEASON and dead
+  updated counter
+
+  The script has LEAGUE_ID = 2 and SEASON = 2025 hardcoded at the top. Is this
+  script still intended for use, or has it been fully replaced by the web upload
+   flow? If still needed, should these be command-line arguments? Also, the
+  updated counter in the report is always 0 (the script deletes and re-inserts
+  rather than updating) — should it be removed from the report output to avoid
+  confusion?
+
+  ---
+  8. routes.ts line ~4447 — "importing" progress stage never observable via
+  polling
+
+  The progress is set to running: true / stage "importing" immediately before a
+  synchronous DB insert, so any client polling at 1-second intervals is unlikely
+   to ever see this state. Is the "importing" stage in the UI important to
+  preserve, or can it be simplified/removed?
+
+  ---
+  9. web-suggest-reconciliation.cjs line ~165 — DB check field alignment
+
+  The script checks where mlb_id = $1 using top.p.id from the MLB Stats API
+  search response. Is id from that API response guaranteed to be the same value
+  stored in the mlb_id column in your DB? If the API returns a different field
+  name or format, this check would silently return false negatives.
