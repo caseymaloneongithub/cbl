@@ -1246,6 +1246,75 @@ export default function DraftBoard() {
       )}
 
 
+      {!!picks?.length && user && (() => {
+        const myPicks = picks.filter(p => p.userId === user.id);
+        if (!myPicks.length) return null;
+        const madePicks = myPicks.filter(p => p.madeAt);
+        const futurePicks = myPicks.filter(p => !p.madeAt && !p.skippedAt);
+        const skippedPicks = myPicks.filter(p => p.skippedAt && !p.madeAt);
+        return (
+          <Card className="mb-6" data-testid="card-my-draft">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg">My Draft</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead>Pick</TableHead>
+                    <TableHead>Round</TableHead>
+                    <TableHead>Selection</TableHead>
+                    <TableHead>Roster</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {madePicks.map((slot) => (
+                    <TableRow key={slot.id} data-testid={`row-my-pick-${slot.id}`}>
+                      <TableCell className="font-mono text-xs">{getRoundLabel(slot.round, slot.roundPickIndex)}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{draftRounds?.find(r => r.roundNumber === slot.round)?.name || `Round ${slot.round}`}{draftRounds?.find(r => r.roundNumber === slot.round)?.isTeamDraft ? " (Team)" : ""}</TableCell>
+                      <TableCell className="text-sm font-medium">
+                        {slot.selectedOrgName
+                          ? <span>{slot.selectedOrgName}</span>
+                          : slot.player
+                            ? <span>{slot.player.fullName} <span className="text-muted-foreground font-normal">({slot.player.primaryPosition}{slot.player.parentOrgName ? `, ${slot.player.parentOrgName}` : ""})</span></span>
+                            : "Picked"}
+                      </TableCell>
+                      <TableCell>
+                        {slot.rosterType && (
+                          <Badge variant={slot.rosterType === "mlb" ? "default" : "secondary"} className="text-xs">
+                            {slot.rosterType.toUpperCase()}
+                          </Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {skippedPicks.map((slot) => (
+                    <TableRow key={slot.id} className="opacity-60" data-testid={`row-my-pick-${slot.id}`}>
+                      <TableCell className="font-mono text-xs">{getRoundLabel(slot.round, slot.roundPickIndex)}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{draftRounds?.find(r => r.roundNumber === slot.round)?.name || `Round ${slot.round}`}</TableCell>
+                      <TableCell className="text-sm"><Badge variant="destructive" className="text-xs">Skipped</Badge></TableCell>
+                      <TableCell></TableCell>
+                    </TableRow>
+                  ))}
+                  {futurePicks.map((slot) => (
+                    <TableRow key={slot.id} className="opacity-50" data-testid={`row-my-pick-${slot.id}`}>
+                      <TableCell className="font-mono text-xs">{getRoundLabel(slot.round, slot.roundPickIndex)}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{draftRounds?.find(r => r.roundNumber === slot.round)?.name || `Round ${slot.round}`}{draftRounds?.find(r => r.roundNumber === slot.round)?.isTeamDraft ? " (Team)" : ""}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {currentSlot?.id === slot.id
+                          ? <Badge variant="default" className="text-xs">On Clock</Badge>
+                          : <span className="italic">Upcoming</span>}
+                      </TableCell>
+                      <TableCell></TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        );
+      })()}
+
       <div className="grid gap-6 lg:grid-cols-2">
           {draft.status !== "completed" && (
             <Card>
