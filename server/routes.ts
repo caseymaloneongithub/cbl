@@ -4429,15 +4429,16 @@ export async function registerRoutes(
 
         for (const row of toInsert) {
           const teamCounts = countMap.get(row.userId) || { mlb: 0, milb: 0 };
+          const teamLabel = userToAbbrev.get(row.userId) || row.userId;
           if (row.rosterType === "mlb") {
             teamCounts.mlb += 1;
             if (league?.mlRosterLimit && teamCounts.mlb > league.mlRosterLimit) {
-              warnings.push(`Team ${row.userId} exceeds MLB roster soft limit (${teamCounts.mlb}/${league.mlRosterLimit})`);
+              warnings.push(`Team ${teamLabel} exceeds MLB roster soft limit (${teamCounts.mlb}/${league.mlRosterLimit})`);
             }
           } else if (row.rosterType === "milb") {
             teamCounts.milb += 1;
             if (league?.milbRosterLimit && teamCounts.milb > league.milbRosterLimit) {
-              warnings.push(`Team ${row.userId} exceeds MiLB roster soft limit (${teamCounts.milb}/${league.milbRosterLimit})`);
+              warnings.push(`Team ${teamLabel} exceeds MiLB roster soft limit (${teamCounts.milb}/${league.milbRosterLimit})`);
             }
           }
           countMap.set(row.userId, teamCounts);
@@ -4534,18 +4535,6 @@ export async function registerRoutes(
         totalRows,
         stage: "completed",
         message: `Completed: ${created} imported`,
-      });
-      await persistLatestSnapshot({
-        processed: lines.length - 1,
-        created,
-        unresolvedCount: 0,
-        unresolved: [],
-        errors,
-        warnings,
-        csvData,
-        csvHash,
-        persistedCuts: Array.from(persistedCutEntries.values()),
-        resolvedRows: resolvedRowsSnapshot,
       });
       res.json({
         requiresResolution: false,
