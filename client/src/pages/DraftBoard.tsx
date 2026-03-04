@@ -1303,7 +1303,11 @@ export default function DraftBoard() {
                       <TableCell className="text-sm text-muted-foreground">
                         {currentSlot?.id === slot.id
                           ? <Badge variant="default" className="text-xs">On Clock</Badge>
-                          : <span className="italic">Upcoming</span>}
+                          : slot.deadlineAt
+                            ? <span className="text-xs">{new Date(slot.deadlineAt).toLocaleString()}</span>
+                            : slot.scheduledAt
+                              ? <span className="text-xs">{new Date(slot.scheduledAt).toLocaleString()}</span>
+                              : <span className="italic">Upcoming</span>}
                       </TableCell>
                       <TableCell></TableCell>
                     </TableRow>
