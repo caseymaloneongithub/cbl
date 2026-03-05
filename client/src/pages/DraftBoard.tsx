@@ -1413,7 +1413,7 @@ export default function DraftBoard() {
                   </div>
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  Set your priority order here. When you are on the clock, the system takes the highest available player in this list.
+                  Set your priority order here. When you are on the clock, the system takes the highest available player in this list. Click any rank number to jump a player to a new position.
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="relative min-w-[220px] flex-1">
