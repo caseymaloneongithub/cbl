@@ -69,6 +69,7 @@ import {
   draftEmailOptOuts,
   teamAutoDraftLists,
   type TeamAutoDraftList,
+  draftUserSettings,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, lt, sql, isNull, inArray, or } from "drizzle-orm";
@@ -406,6 +407,10 @@ export interface IStorage {
   reorderTeamAutoDraftList(draftId: number, userId: string, orderedIds: number[]): Promise<void>;
   getTopAvailableTeamAutoDraftPick(draftId: number, userId: string, claimedOrgs: Set<string>): Promise<TeamAutoDraftList | undefined>;
   clearTeamAutoDraftList(draftId: number, userId: string): Promise<void>;
+
+  // Draft user settings
+  getDraftUserSettings(draftId: number, userId: string): Promise<{ autoDraftMode: string }>;
+  setDraftUserSettings(draftId: number, userId: string, autoDraftMode: string): Promise<void>;
 
   // Draft email opt-outs
   getDraftEmailOptOut(draftId: number, userId: string): Promise<boolean>;
@@ -4142,6 +4147,34 @@ export class DatabaseStorage implements IStorage {
       eq(teamAutoDraftLists.draftId, draftId),
       eq(teamAutoDraftLists.userId, userId),
     ));
+  }
+
+  async getDraftUserSettings(draftId: number, userId: string): Promise<{ autoDraftMode: string }> {
+    const [row] = await db
+      .select()
+      .from(draftUserSettings)
+      .where(and(
+        eq(draftUserSettings.draftId, draftId),
+        eq(draftUserSettings.userId, userId)
+      ));
+    return { autoDraftMode: row?.autoDraftMode ?? "immediate" };
+  }
+
+  async setDraftUserSettings(draftId: number, userId: string, autoDraftMode: string): Promise<void> {
+    const [existing] = await db
+      .select()
+      .from(draftUserSettings)
+      .where(and(
+        eq(draftUserSettings.draftId, draftId),
+        eq(draftUserSettings.userId, userId)
+      ));
+    if (existing) {
+      await db.update(draftUserSettings)
+        .set({ autoDraftMode })
+        .where(eq(draftUserSettings.id, existing.id));
+    } else {
+      await db.insert(draftUserSettings).values({ draftId, userId, autoDraftMode });
+    }
   }
 
   async getDraftEmailOptOut(draftId: number, userId: string): Promise<boolean> {

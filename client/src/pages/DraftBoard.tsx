@@ -26,7 +26,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Clock, Search, Users, Loader2, CheckCircle, Building2, AlertTriangle, ListOrdered, ArrowUp, ArrowDown, Plus, Trash2, Pause, Play, Bell, BellOff, Upload, Download, Pencil } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Clock, Search, Users, Loader2, CheckCircle, Building2, AlertTriangle, ListOrdered, ArrowUp, ArrowDown, Plus, Trash2, Pause, Play, Bell, BellOff, Upload, Download, Pencil, Shield } from "lucide-react";
 import type { Draft, DraftRound, DraftPlayerWithDetails, DraftPickWithDetails, DraftOrder, User, AutoDraftListWithPlayer, TeamAutoDraftList } from "@shared/schema";
 
 
@@ -522,6 +523,25 @@ export default function DraftBoard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "email-opt-out"] });
+    },
+  });
+
+  const { data: autoDraftSettings } = useQuery<{ autoDraftMode: string }>({
+    queryKey: ["/api/drafts", draftIdNum, "auto-draft-settings"],
+    queryFn: async () => {
+      const res = await fetch(`/api/drafts/${draftIdNum}/auto-draft-settings`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch auto-draft settings");
+      return res.json();
+    },
+    enabled: !!draftIdNum,
+  });
+
+  const toggleAutoDraftMode = useMutation({
+    mutationFn: async (mode: string) => {
+      await apiRequest("PUT", `/api/drafts/${draftIdNum}/auto-draft-settings`, { autoDraftMode: mode });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "auto-draft-settings"] });
     },
   });
 
@@ -1413,7 +1433,22 @@ export default function DraftBoard() {
                   </div>
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  Set your priority order here. When you are on the clock, the system takes the highest available player in this list. Click any rank number to jump a player to a new position.
+                  Set your priority order here. The system picks the highest available player from this list when it's your turn. Click any rank number to jump a player to a new position.
+                </div>
+                <div className="flex items-center gap-2 rounded-md border px-3 py-2 bg-muted/30">
+                  <Checkbox
+                    id="deadline-only-toggle"
+                    checked={autoDraftSettings?.autoDraftMode === "deadline_only"}
+                    onCheckedChange={(checked) => {
+                      toggleAutoDraftMode.mutate(checked ? "deadline_only" : "immediate");
+                    }}
+                    disabled={toggleAutoDraftMode.isPending}
+                    data-testid="checkbox-auto-draft-deadline-only"
+                  />
+                  <label htmlFor="deadline-only-toggle" className="text-xs cursor-pointer select-none">
+                    <span className="font-medium">Deadline only</span>
+                    <span className="text-muted-foreground"> — only auto-draft when the pick deadline expires (prevents skips but lets you pick manually first)</span>
+                  </label>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="relative min-w-[220px] flex-1">

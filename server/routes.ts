@@ -10632,6 +10632,36 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/drafts/:id/auto-draft-settings", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const draftId = parseInt(req.params.id);
+      if (isNaN(draftId)) return res.status(400).json({ message: "Invalid draft ID" });
+      const settings = await storage.getDraftUserSettings(draftId, userId);
+      res.json(settings);
+    } catch (error) {
+      console.error("Error fetching auto-draft settings:", error);
+      res.status(500).json({ message: "Failed to fetch auto-draft settings" });
+    }
+  });
+
+  app.put("/api/drafts/:id/auto-draft-settings", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const draftId = parseInt(req.params.id);
+      if (isNaN(draftId)) return res.status(400).json({ message: "Invalid draft ID" });
+      const { autoDraftMode } = req.body;
+      if (autoDraftMode !== "immediate" && autoDraftMode !== "deadline_only") {
+        return res.status(400).json({ message: "autoDraftMode must be 'immediate' or 'deadline_only'" });
+      }
+      await storage.setDraftUserSettings(draftId, userId, autoDraftMode);
+      res.json({ message: "Updated", autoDraftMode });
+    } catch (error) {
+      console.error("Error updating auto-draft settings:", error);
+      res.status(500).json({ message: "Failed to update auto-draft settings" });
+    }
+  });
+
   // GET /api/drafts/:id/team-auto-draft-list - Get user's team auto-draft list
   app.get("/api/drafts/:id/team-auto-draft-list", isAuthenticated, async (req: any, res) => {
     try {
@@ -10943,6 +10973,11 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
 
     const deadlinePassed = slot.deadlineAt && new Date(slot.deadlineAt).getTime() <= now.getTime();
     const isFirstRound = slot.round === 1;
+
+    const userSettings = await storage.getDraftUserSettings(draftId, slot.userId);
+    if (userSettings.autoDraftMode === "deadline_only" && !deadlinePassed) {
+      return false;
+    }
 
     if (roundConfig?.isTeamDraft) {
       const claimedOrgs = new Set(

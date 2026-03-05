@@ -705,6 +705,17 @@ export const insertTeamAutoDraftListSchema = (createInsertSchema(teamAutoDraftLi
   id: true,
 });
 
+export const draftUserSettings = pgTable("draft_user_settings", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  draftId: integer("draft_id").references(() => drafts.id, { onDelete: "cascade" }).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  autoDraftMode: varchar("auto_draft_mode", { length: 20 }).notNull().default("immediate"),
+}, (table) => [
+  uniqueIndex("uq_draft_user_settings_draft_user").on(table.draftId, table.userId),
+]);
+
+export type DraftUserSettings = typeof draftUserSettings.$inferSelect;
+
 // League roster assignments - links MLB players to league teams
 export const leagueRosterAssignments = pgTable("league_roster_assignments", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
