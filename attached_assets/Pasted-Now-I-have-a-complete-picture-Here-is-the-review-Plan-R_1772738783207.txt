@@ -1,0 +1,75 @@
+Now I have a complete picture. Here is the review:
+
+---
+
+## Plan Review
+
+### T001 — Proportional refund: schema + backend
+
+**Overall: Solid. Two gaps to address.**
+
+The schema change is correctly scoped. `insertPunchCardPurchaseSchema` is auto-derived via `createInsertSchema(punchCardPurchases)`, so adding `amountPaidCents` to the table definition will automatically make it available on `InsertPunchCardPurchase` with no changes needed to `storage.ts`. The plan correctly omits storage from this task.
+
+The three refund handler changes (block `'exhausted'`, calculate proportional amount, pass `amount:` to Stripe) are all correct. Adding `'exhausted'` inside the existing DB transaction alongside the `refunded` and `pending` checks is the right place.
+
+**Gap 1 — API response doesn't return `refundAmountCents` explicitly.**  
+T003 says the success toast should show the refund amount "passed back from the API response," but T001 doesn't say to add `refundAmountCents` to the response body. The current handler returns `stripeRefund.amount` (Stripe's cents value) nested inside `stripeRefund`, and returns `null` for `stripeRefund` when there's no Stripe call (admin-granted cards). T001 should explicitly add `refundAmountCents` to the response so T003 has a reliable, consistently-present field to read, rather than having the frontend dig into `data.stripeRefund?.amount`.
+
+**Gap 2 — Legacy purchases with `amountPaidCents = null` but a real Stripe payment.**  
+The plan says "if `amountPaidCents` is null (admin-granted cards with no payment), skip the Stripe call." But after the migration, any purchase made before this schema change will have `amountPaidCents = null` even though it has a real `stripePaymentIntentId`. The current code's guard is `if (purchase.stripePaymentIntentId)`, which would still call Stripe for legacy records — but without `amountPaidCents`, there's no proportional amount to calculate. The plan needs to decide: for legacy records, issue a full Stripe refund, block the refund entirely, or treat them like admin-granted (skip Stripe, just mark refunded). The plan is silent on this and will leave an implicit code branch that needs a decision.
+
+---
+
+### T002 — Remove duplicate endpoint
+
+**Clean. No issues.**
+
+Both endpoints are nearly identical — same auth middleware, same logic. Removing `POST /api/me/punch-cards/purchase` is straightforward with no side effects.
+
+---
+
+### T003 — Admin refund dialog
+
+**Mostly correct. Two things to pin down.**
+
+**Thing 1 — Admin-granted card UX decision.**  
+The plan says to disable the confirm button when `amountPaidCents` is null. This means an admin can open the dialog for a free-granted card, see "Admin-granted — no payment to refund," and then… be stuck — the confirm button is disabled with no alternative path. The server actually handles this gracefully (skips Stripe, marks as refunded), so the client is more restrictive than the server. This may be intentional ("you can't undo an admin credit grant through the refund flow"), but it should be a conscious decision rather than a side-effect of the disabled button.
+
+**Thing 2 — Depends on the response change from Gap 1 above.**  
+The success toast showing the refund amount is only reliable if T001 explicitly adds `refundAmountCents` to the response. Make sure that lands before T003 is considered complete.
+
+The refund button condition change (`purchase.status === 'active'` → also show for `'refunding'`) is correct and important — without it the "Retry Refund" path the existing handler supports is unreachable from the UI.
+
+---
+
+### T004 — PunchCardFlow UX fixes
+
+**All five fixes are correct. Three small things to watch.**
+
+**Fix 1** — The `isCreatingPurchase` state + await + boolean return is the right approach. Note that `createPunchCardPurchase` is currently called with `currentMember.id` as a parameter, but the function ignores that argument for the API call (it hits `/api/punch-cards/purchase` which uses the session). The parameter is used only to write into `flowState.memberId`. This is harmless but worth being aware of when adding the boolean return — don't accidentally remove the `flowState` write.
+
+**Fix 3** — After removing the parentheticals, `ageCategoryLabel` is used in two places: the header label (`<p>{ageCategoryLabel}</p>`) and the family-sharing sentence (`in the ${ageCategoryLabel.toLowerCase()} category`). "Kids plan" and "Adult plan" work fine in the header, but the family-sharing sentence will read: *"available to all family members in the kids plan category."* That's awkward. Consider either using a separate simpler token for the sentence (e.g., `'kids'`/`'adult'`) or restructuring the sentence.
+
+**Fix 5** — The success screen also contains the bullet `"Credits never expire, use them at your own pace."` Since Fix 2 adds a conditional expiry date display on the plan confirmation step, this bullet is now inconsistent — a plan with an expiry date will show the date on step 1 but then tell the member their credits never expire on the success screen. Not part of the current plan, but worth a follow-up.
+
+---
+
+### Summary
+
+| Task | Assessment |
+|---|---|
+| T001 — schema | ✅ Correct |
+| T001 — purchase handler | ✅ Correct |
+| T001 — refund: block `exhausted` | ✅ Correct |
+| T001 — refund: proportional amount | ✅ Correct |
+| T001 — refund: API response | ⚠️ Should explicitly add `refundAmountCents` to response for T003 |
+| T001 — refund: legacy `null` records | ⚠️ Undefined behavior for pre-migration Stripe purchases |
+| T002 | ✅ Clean |
+| T003 — dialog | ✅ Correct |
+| T003 — admin-granted disabled state | ⚠️ Intentional? Server supports the refund; UI blocks it |
+| T003 — toast relies on T001 response | ⚠️ Implicit dependency, pin down the field name |
+| T004 Fix 1 | ✅ Correct |
+| T004 Fix 2 | ✅ Correct |
+| T004 Fix 3 | ⚠️ `ageCategoryLabel.toLowerCase()` in family-sharing sentence reads awkwardly |
+| T004 Fix 4 | ✅ Correct |
+| T004 Fix 5 | ⚠️ "Credits never expire" bullet on success screen is now inconsistent |
