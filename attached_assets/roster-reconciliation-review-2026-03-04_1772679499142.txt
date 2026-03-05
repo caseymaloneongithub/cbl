@@ -1,0 +1,457 @@
+ROSTER RECONCILIATION CODE REVIEW
+Date: 2026-03-04
+Reviewer: Claude (Sonnet 4.6)
+================================================================================
+
+
+SECTION 1: INITIAL CODE REVIEW FINDINGS
+================================================================================
+
+Overall Architecture
+--------------------
+The system has three layers:
+1. Legacy batch script (reconcile-workbook-rosters.cjs) — Excel-to-DB one-shot tool
+2. Web suggest helper (web-suggest-reconciliation.cjs) — queries MLB Stats API to
+   auto-suggest unresolved rows
+3. Web UI flow — RosterManagement.tsx + server routes — the active production path
+
+
+reconcile-workbook-rosters.cjs (legacy)
+----------------------------------------
+HARDCODED VALUES: LEAGUE_ID = 2 and SEASON = 2025 at lines 6-7. This script
+appears to be a historical one-off, now superseded by the web upload flow. If
+someone ran it today against the wrong constants it would silently operate on
+the wrong league/season.
+
+DEAD 'updated' COUNTER: The script deletes all assignments and re-inserts, so
+'updated' is never incremented. It appears in the report but is always 0 —
+slightly misleading.
+
+FULL PLAYER TABLE LOAD: Line 297 loads all mlb_players rows from seasons
+2021-2025 into memory. For matching, it indexes by normalized last name
+(playersByLast), then falls back to the full pool if the last name isn't found
+(line 323: playersByLast.get(rec.normLast) || players). The full-pool fallback
+means a typo'd last name causes O(n) scoring over all players.
+
+SCORE LINE 235 REDUNDANCY: normFirst + normLast combined gets +40, but first
+(+35) and last (+45) are already scored individually. A perfect first+last match
+gets +120 points total, same as a full-name match. Probably intentional but
+subtle.
+
+
+web-suggest-reconciliation.cjs
+--------------------------------
+STALE INPUT PATH (line 5): Reads from roster-reconcile-latest.json (unscoped),
+but the current web flow writes to scoped files —
+roster-reconcile-latest-mlb.json / roster-reconcile-latest-milb.json. If the
+unscoped file doesn't exist or is stale, this script operates on wrong data. The
+outputs (web-reconcile-suggestions.json, etc.) are also unscoped.
+
+NO API RATE LIMITING: The searchPeople loop makes sequential API calls per
+player with no delay. It logs every 25 rows but doesn't throttle.
+
+DB CHECK FIELD ALIGNMENT (lines 163-170): db.query(... where mlb_id = $1 ...)
+using top.p.id from the MLB Stats API response. Works only if mlb_id in your DB
+matches the Stats API's id field — worth confirming.
+
+person.currentTeam?.name (line 82): The MLB Stats API /people/search response
+shape may not include a nested currentTeam.name. If it doesn't, all team-hint
+scoring is silently zero.
+
+
+Server routes — upload-csv
+---------------------------
+DOUBLE persistLatestSnapshot CALL (lines 4511-4522 and 4537-4548): In the clean
+success path (no unresolved rows), persistLatestSnapshot is called twice with
+identical arguments back-to-back. The second call is redundant.
+
+userId LEAKED IN WARNING MESSAGES (line 4434): warnings.push(`Team ${row.userId}
+exceeds MLB roster soft limit...`) — this exposes a raw UUID to a user-facing
+warning. Should use team abbreviation instead.
+
+running: true PROGRESS WINDOW (line 4447): Progress is set to running=true
+immediately before bulkAssignPlayers, then the route completes synchronously.
+Any polling client on a 1-second interval is unlikely to ever observe the
+"importing" stage. Minor cosmetic issue.
+
+
+Server routes — /roster-reconciliation/progress
+-------------------------------------------------
+5-MINUTE STALE-RUNNING DETECTION (line 4610): If running=true in the file and
+the timestamp is >5 minutes old, it's treated as stale. For very large uploads
+this could flip a legitimately running job to "idle" prematurely. Unlikely in
+practice since the upload completes synchronously.
+
+
+Server routes — /roster-reconciliation/audit
+---------------------------------------------
+normalizeAuditName (lines 4934-4941) doesn't strip suffixes (Jr, Sr, II, etc.)
+like the main normalizeName does. Minor inconsistency.
+
+CROSS-TEAM SCAN is O(n×m): For each unresolved row, it scans all scope
+assignments. Fine for current scale.
+
+
+RosterManagement.tsx
+---------------------
+season = new Date().getFullYear() (line 171): Season is dynamically set to the
+current year (2026 now). If the reconciliation snapshots on disk were written
+for season 2025, there's a mismatch. The reset endpoint's season (line 5119)
+also hardcodes || 2025 as a fallback, now effectively dead.
+
+useEffect HYDRATION GUARD (lines 417-538): The unresolvedRows.length dependency
+means this effect re-fires when rows are confirmed. The hydratedFromLatest guard
+is the real protection — a single boolean doing the heavy lifting.
+
+confirmedDuplicateTeamResolutionMap (lines 865-875): Only collects duplicate
+team resolutions for rows in both confirmedRowMap AND confirmedDuplicateConflictMap.
+Intended behavior but non-obvious data flow.
+
+numericResolutionMap vs confirmedNumericResolutionMap: The full map includes all
+rows; the confirmed map only confirmed rows. The UI passes the right one per
+action but there's no runtime assertion.
+
+
+Summary Table
+-------------
+Severity | Location                          | Issue
+---------|-----------------------------------|----------------------------------------------
+Medium   | web-suggest-reconciliation.cjs    | Reads unscoped path, incompatible with
+         |                                   | current scoped file naming
+Medium   | routes.ts line 4434               | Raw userId in user-facing warning messages
+Medium   | RosterManagement.tsx line 171     | Season hardcoded to current year; may
+         |                                   | mismatch 2025 snapshots
+Low      | routes.ts lines 4511-4548         | Double persistLatestSnapshot on success path
+Low      | web-suggest-reconciliation.cjs    | No API rate limiting on MLB Stats API calls
+Low      | routes.ts audit route             | normalizeAuditName inconsistent with main
+         |                                   | normalizeName (missing suffix stripping)
+Low      | reconcile-workbook-rosters.cjs    | Hardcoded LEAGUE_ID/SEASON; updated counter
+         |                                   | always 0
+Cosmetic | routes.ts line 4447               | running:true window too short to observe
+         |                                   | via polling
+
+
+================================================================================
+SECTION 2: DEVELOPER RESPONSES
+================================================================================
+
+1. web-suggest-reconciliation.cjs — Unscoped input/output paths
+   RESPONSE: This script is a standalone utility that predates the web flow.
+   It's not part of the active web reconciliation pipeline. Safe to leave as-is;
+   could be deleted since the web flow has fully replaced it.
+
+2. routes.ts ~4434 — Raw userId in warning messages
+   RESPONSE: Good catch. Should be fixed to use team abbreviation or team name.
+   FIX WARRANTED.
+
+3. RosterManagement.tsx — Season derived from current year
+   RESPONSE: Intent is to always use the current calendar year. The || 2025
+   fallback in the reset endpoint is dead code. Works as designed. If the league
+   needed a different season, pulling from a league record would be better, but
+   hasn't been needed yet.
+
+4. routes.ts ~4511-4548 — Double persistLatestSnapshot on success path
+   RESPONSE: The second call is a leftover from a refactor. Should be removed.
+   FIX WARRANTED.
+
+5. web-suggest-reconciliation.cjs — No rate limiting on MLB Stats API
+   RESPONSE: Unresolved count in practice is single digits (2-5 players). Not a
+   concern at current scale. Script is largely superseded.
+
+6. normalizeAuditName inconsistent with main normalization
+   RESPONSE: Low priority. Both sides go through the same normalizeAuditName so
+   suffix differences between CSV and DB are unlikely to cause misses. Could be
+   unified for consistency.
+
+7. reconcile-workbook-rosters.cjs — Hardcoded values and dead counter
+   RESPONSE: Script has been fully replaced by the web upload flow. Used for
+   initial data loading during development. Safe to delete or leave as reference.
+
+8. "importing" progress stage never observable
+   RESPONSE: Correct. Stage exists for completeness in the state machine but has
+   no practical visibility. Harmless to keep.
+
+9. web-suggest-reconciliation.cjs — DB check field alignment
+   RESPONSE: top.p.id from the MLB Stats API people search response is the same
+   numeric MLB player ID stored in mlb_players.mlb_id. Alignment is correct.
+
+DECISIONS:
+  Do now:   #2 (team label in warnings), #4 (remove duplicate snapshot call)
+  Defer:    #1, #5 (batch seedMlbPlayerFromApi, pre-index candidates) — revisit
+            if roster sizes grow
+  Won't fix: #3, #6, #7, #8 (working as designed, low ROI, or deprecated)
+
+
+================================================================================
+SECTION 3: REVIEWER COMMENT ON DEVELOPER RESPONSES
+================================================================================
+
+Good triage. The reasoning on #3 is particularly sound — introducing a separate
+file reference for a 1.7MB payload that's read a handful of times per season
+would be solving a problem that doesn't exist yet, and the failure modes you'd
+introduce (orphaned files, path mismatches) are real. Agree with leaving it.
+
+On #1 and #2 (deferred batch/pre-index items), worth pushing back slightly on
+the "defer" framing. The argument is correct that it's not a hot path, but the
+current sequential seedMlbPlayerFromApi calls are also the most likely source of
+a timeout or partial failure during what is a critical commissioner operation.
+If the MLB Stats API is slow or flaky on upload day, the commissioner has no
+recourse other than retrying the whole upload. That's worth keeping in mind when
+deciding what "eventually" means.
+
+On #4 and #5 (debounce items) — agree these are the right calls to do now. One
+thing to watch on #5: if you debounce csvUploadPreview, make sure the UI still
+gives the user some immediate feedback that the CSV was received (e.g., a
+character count or "parsing..." indicator), so a large paste doesn't feel like
+it disappeared into a void for 300ms.
+
+The overall prioritization is sensible and matches the usage pattern. Seasonal
+commissioner tooling should be optimized for correctness and clarity first,
+performance second — and that's exactly what this call reflects.
+
+
+================================================================================
+SECTION 4: EFFICIENCY SUGGESTIONS AND RESPONSES
+================================================================================
+
+Suggestions reviewed and dispositioned:
+
+#1 Batch seedMlbPlayerFromApi — DEFER
+   Agree in principle. Low urgency — sequential API calls add a few seconds to
+   a once-or-twice-per-season operation. Worth doing eventually but not a hot
+   path.
+
+#2 Pre-index player candidates — DEFER
+   Same reasoning. Matching loop runs once during seasonal onboarding. If it
+   takes 3 seconds instead of 0.5, nobody notices because commissioner is
+   watching a progress bar.
+
+#3 Separate CSV from snapshot — WON'T FIX
+   1.7MB is not large for file I/O. Snapshot is read/written a handful of times
+   per session. Adding a separate file reference introduces indirection and
+   another failure mode (orphaned CSV files, path mismatches). Current approach
+   is simple and correct.
+
+#4 Debounce localStorage writes — DO NOW
+   Low effort, prevents unnecessary serialization churn during rapid
+   confirmations.
+
+#5 Debounce csvUploadPreview — DO NOW
+   Parsing a 1000-row CSV on every keystroke is wasteful. 300ms debounce is a
+   straightforward fix that makes the textarea noticeably smoother for large
+   pastes. Note: ensure UI gives immediate feedback (e.g., character count or
+   "parsing..." indicator) so a large paste doesn't feel lost during the debounce
+   window.
+
+#6 Pre-index audit name scan — WON'T FIX
+   Audit endpoint runs against a single league's roster (~750 players max).
+   O(n×m) at that scale is sub-millisecond. Premature optimization.
+
+#7 Reduce polling frequency — WON'T FIX
+   Polling is already harmless — lightweight GET returning small JSON, only runs
+   while reconciliation UI is open (commissioner only). Reducing risks making UI
+   feel less responsive.
+
+#8 Parallelize suggest script — WON'T FIX
+   Script is deprecated. Address if revived.
+
+
+================================================================================
+SECTION 5: NAME MATCHING CODE REVIEW
+================================================================================
+
+Accents and Diacritics
+-----------------------
+The NFD normalization + diacritic stripping in normalizeName and
+normalizeNameWithSpaces is correct and handles ñ, é, á, etc. throughout.
+The getAccentInsensitiveCandidates fallback path (line 3284) is the safety net
+for when the DB text search fails to find an accented name.
+
+GAP: That fallback only fires when the DB search returns zero results. If the
+search returns some candidates — even unrelated ones — the accent-insensitive
+scan is skipped and scoring must rank the right player to the top. Whether this
+is a real problem depends on whether storage.getMlbPlayers({ search: ... }) does
+accent-insensitive matching at the database level. If the DB uses plain LIKE
+against stored accented names, a CSV entry of "Jose Ramirez" searching for
+"José Ramírez" could return some wrong Josés, skip the accent fallback, and
+produce a near-miss. Worth confirming how that DB search is implemented.
+
+
+Nickname Handling
+------------------
+The FIRST_NAME_NICKNAME_GROUPS list is solid for English names. Baseball-specific
+coverage exists: kike→enrique, paco→francisco, quique→enrique are present.
+
+GAPS IN SPANISH/BASEBALL NICKNAMES:
+
+  - "Manny" / "Manuel" — biggest miss. Manny Machado is one of the most rostered
+    players in fantasy baseball. If listed as "Manny," the system has no
+    canonical path to "Manuel" and relies on surname uniqueness alone.
+
+  - "Sandy" / "Alexander" — Sandy Alcantara.
+
+  - "Vlad" / "Vladimir" — Vlad Guerrero Jr.
+
+  - "Yuli" / "Yulieski" — Yuli Gurriel, and this pattern extends to other Cuban
+    player names.
+
+  - "Gio" / "Giovanni" / "Giorgio"
+
+LIKELY BUG — "willy" → "bill" mapping:
+  "willy" currently falls in the William/Bill group. This means the system
+  would search for "bill adames" as a canonical alias for "willy adames." Willy
+  Adames's legal name is Wismael, which maps to neither. "Willy" in baseball is
+  almost always a standalone given name or short for Wilfredo/Wilmer — not
+  William. This mapping probably does more harm than good.
+
+The COMMON_FIRST_NAMES_FOR_SURNAME_TYPO_AUTOMAP set (line 2469) including jose,
+juan, luis, miguel, carlos is a good guard — requiring stronger evidence before
+auto-resolving a 1-character surname typo when the first name is very common.
+That's exactly the right caution.
+
+
+Compound Surnames
+------------------
+The compoundSurnameMatches filter (line 3604) handles players like Elly De La
+Cruz by checking if any token in the search string matches the candidate's
+parsed last name. That generally works.
+
+POTENTIAL WEAKNESS: getCandidateFirstLastPairs extracts tokens[0] and
+tokens[tokens.length - 1] from each name variant. For a FML-format string like
+"De La Cruz, Elly" it gets first="de", last="elly", losing "cruz" entirely.
+Whether this causes actual misses depends on which name variants the DB record
+has for compound-surname players and whether fullName (first-to-last format) is
+reliably populated. Worth spot-checking De La Cruz, De Los Santos, or Del
+Castillo players to see which path they actually match through.
+
+
+Scoring System
+---------------
+Overall design is sound. Using Math.max to accumulate the best match across all
+name variant comparisons is correct. The charSimilarity function with
+vowel-collapse normalization ([aeiouy] → a) is aggressive — "yeremi" and
+"yeremy" collapse identically, which is the intent, but it also collapses fairly
+different names. The many auto-pick gates provide enough protection against
+phantom auto-matches.
+
+The DOB hint tiebreaker (+35 for month/day, +12 for year) is a strong and clean
+discriminator for same-name players — the right tool for genuinely ambiguous
+cases.
+
+Confusable character normalization (rn→m, vv→w, cl→d) covers OCR/typing errors
+in player name data. These are realistic failure modes worth handling.
+
+
+Recommendations
+----------------
+1. Add Manny/Manuel, Sandy/Alexander, Vlad/Vladimir to nickname groups.
+2. Reconsider or remove the Willy → bill mapping.
+3. Confirm accent-insensitive matching at the DB layer.
+4. Targeted smoke test with compound-surname players (De La Cruz, De Los Santos,
+   Del Castillo) to verify the match path.
+
+
+================================================================================
+SECTION 6: KEEPER LEAGUE CONSISTENCY ANALYSIS
+================================================================================
+
+Context
+--------
+This is a Strat-O-Matic keeper league. The 2026 CBL season uses 2025 player
+cards. All players are either on a CBL team's MLB 40-man roster, on a CBL team's
+MiLB roster, or they are free agents. Players who played in MLB in 2025 and
+weren't kept are MLB free agents.
+
+
+The Two-Season Duality
+-----------------------
+The system already has the right structure:
+  - rosterOnboardingSeason = 2025 (card year) on the league record
+  - league_roster_assignments.season = 2026 (CBL game season) on assignments
+
+These are two different things and the code treats them as such. The matching
+fallback that ignores season when no 2026 players exist in the DB bridges them
+silently. This works but is entirely implicit — there's no comment or assertion
+anywhere that says "player data is always N-1 relative to the CBL season." If
+someone updates mlb_players with 2026 data mid-season, the matching behavior
+changes without warning.
+
+
+isUncardedOnMlbRoster Is a Display Guard, Not a Reconciliation Guard
+----------------------------------------------------------------------
+The function at playerCarding.ts checks:
+  sportLevel === "MLB" && (hadHittingStats || hadPitchingStats)
+
+This is exactly the right definition of "got a SOM card." But it's only used
+on the roster display to flag suspicious assignments after the fact. The
+reconciliation matching itself has no equivalent check. This means you can
+reconcile and import a player onto a CBL MLB 40-man who never played in MLB in
+2025 — a minor leaguer, or someone with no stats — and the system won't object
+during import. It only surfaces as a warning badge on the roster UI.
+
+For a strict keeper league, this check arguably belongs in the reconciliation
+step, not just the display.
+
+
+Web Route scoreCandidate Dropped the Sport-Level Scoring Bonus
+---------------------------------------------------------------
+The legacy script had:
+  if (record.rosterType === "mlb" && candidate.sport_level === "MLB") score += 12;
+  if (record.rosterType === "milb" && candidate.sport_level !== "MLB") score += 10;
+
+The web route's scoreCandidate has no equivalent. When matching an MLB roster
+upload, a minor league player with a very similar name scores the same as the
+correct MLB player. For a keeper league where the MLB/MiLB distinction is
+meaningful, this matters. If José Ramírez (MLB) and José Ramírez (Rookie ball)
+are both in the DB, the web route gives them the same name score and relies
+entirely on team hint or age hint to break the tie.
+
+The fix is simple — reintroducing a modest sport-level bonus based on rosterType
+vs sportLevel — but it was apparently dropped during migration to the web flow.
+
+
+The FA Pool Is Residual, Not Explicit
+--------------------------------------
+For a true keeper league, every player who got a 2025 SOM card is either on a
+CBL team's roster or in the FA pool — no one falls through the cracks. Currently
+the FA pool is implicit: getUnassignedPlayers returns all mlb_players rows for
+the season with no assignment. That's correct as long as every card player is in
+mlb_players and every failed reconciliation eventually gets resolved.
+
+But if a reconciliation row stays permanently unresolved — never confirmed, never
+assigned — that player is invisible. Not rostered, not explicitly a FA. The audit
+report shows which CSV rows are unresolved, but there's no inverse report:
+"here are 2025 MLB card players who have no assignment and weren't in any team's
+upload." For keeper league completeness, that inverse view matters.
+
+
+MiLB Roster Validation Is Symmetric
+--------------------------------------
+The same logic applies to MiLB: a player on a team's MiLB roster should have
+been in affiliated ball in 2025, not at the MLB level. Nothing currently prevents
+an MLB-level player from being imported onto a MiLB roster during reconciliation.
+isUncardedOnMlbRoster only checks MLB rosters. Depending on how strictly the
+league enforces roster rules, this may or may not need addressing.
+
+
+Recommendations (Priority Order)
+----------------------------------
+1. RESTORE sport-level scoring bonus in the web scoreCandidate. Small change,
+   directly addresses keeper league correctness during matching.
+
+2. PROMOTE isUncardedOnMlbRoster to a reconciliation warning — when a player is
+   imported onto an MLB roster but fails the card check, surface a warning at
+   import time, not just on the roster display.
+
+3. DOCUMENT the N-1 season convention somewhere in code — a comment near the
+   matching fallback and the rosterOnboardingSeason field making the 2025/2026
+   relationship explicit.
+
+4. LONGER TERM: a completeness report enumerating card-year players with no
+   assignment (the inverse of the audit report). This would let the commissioner
+   verify the keeper league invariant holds after onboarding.
+
+
+================================================================================
+END OF REVIEW
+================================================================================
