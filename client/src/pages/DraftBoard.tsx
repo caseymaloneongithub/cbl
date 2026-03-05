@@ -586,7 +586,22 @@ export default function DraftBoard() {
     mutationFn: async (orderedIds: number[]) => {
       await apiRequest("PUT", `/api/drafts/${draftIdNum}/auto-draft-list/reorder`, { orderedIds });
     },
-    onSuccess: () => {
+    onMutate: async (orderedIds: number[]) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/drafts", draftIdNum, "auto-draft-list"] });
+      const previous = queryClient.getQueryData<AutoDraftListWithPlayer[]>(["/api/drafts", draftIdNum, "auto-draft-list"]);
+      if (previous) {
+        const idToItem = new Map(previous.map(item => [item.id, item]));
+        const reordered = orderedIds.map(id => idToItem.get(id)).filter(Boolean) as AutoDraftListWithPlayer[];
+        queryClient.setQueryData(["/api/drafts", draftIdNum, "auto-draft-list"], reordered);
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["/api/drafts", draftIdNum, "auto-draft-list"], context.previous);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "auto-draft-list"] });
     },
   });
