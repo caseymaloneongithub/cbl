@@ -26,7 +26,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Clock, Search, Users, Loader2, CheckCircle, Building2, AlertTriangle, ListOrdered, ArrowUp, ArrowDown, Plus, Trash2, Pause, Play, Bell, BellOff, Upload, Download } from "lucide-react";
+import { Clock, Search, Users, Loader2, CheckCircle, Building2, AlertTriangle, ListOrdered, ArrowUp, ArrowDown, Plus, Trash2, Pause, Play, Bell, BellOff, Upload, Download, Pencil } from "lucide-react";
 import type { Draft, DraftRound, DraftPlayerWithDetails, DraftPickWithDetails, DraftOrder, User, AutoDraftListWithPlayer, TeamAutoDraftList } from "@shared/schema";
 
 
@@ -1488,7 +1488,7 @@ export default function DraftBoard() {
                                 />
                               ) : (
                                 <span
-                                  className={`${isDrafted ? "" : "cursor-pointer hover:text-primary hover:underline"}`}
+                                  className={`inline-flex items-center gap-0.5 group/rank ${isDrafted ? "" : "cursor-pointer text-primary/70 hover:text-primary border-b border-dashed border-primary/30 hover:border-primary/60"}`}
                                   onClick={() => {
                                     if (isDrafted) return;
                                     setEditingRankId(item.id);
@@ -1498,6 +1498,7 @@ export default function DraftBoard() {
                                   data-testid={`text-auto-draft-rank-${item.id}`}
                                 >
                                   {idx + 1}
+                                  {!isDrafted && <Pencil className="h-2.5 w-2.5 opacity-0 group-hover/rank:opacity-100 transition-opacity" />}
                                 </span>
                               )}
                             </TableCell>
