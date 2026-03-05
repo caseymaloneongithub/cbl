@@ -672,6 +672,24 @@ export default function DraftBoard() {
     reorderAutoDraft.mutate(newList.map(item => item.id));
   };
 
+  const [editingRankId, setEditingRankId] = useState<number | null>(null);
+  const [editingRankValue, setEditingRankValue] = useState("");
+
+  const jumpToPosition = (itemId: number, currentIndex: number, targetStr: string) => {
+    if (!autoDraftList) return;
+    const target = parseInt(targetStr);
+    if (isNaN(target) || target === currentIndex + 1) {
+      setEditingRankId(null);
+      return;
+    }
+    const clamped = Math.max(1, Math.min(autoDraftList.length, target)) - 1;
+    const newList = [...autoDraftList];
+    const [item] = newList.splice(currentIndex, 1);
+    newList.splice(clamped, 0, item);
+    reorderAutoDraft.mutate(newList.map(i => i.id));
+    setEditingRankId(null);
+  };
+
   const hasTeamDraftRound = useMemo(() => {
     return draftRounds?.some(r => r.isTeamDraft) || false;
   }, [draftRounds]);
@@ -1451,7 +1469,38 @@ export default function DraftBoard() {
                           const isDrafted = !!drafted;
                           return (
                           <TableRow key={item.id} data-testid={`row-auto-draft-${item.id}`} className={isDrafted ? "opacity-50" : ""}>
-                            <TableCell className="font-mono text-xs text-muted-foreground">{idx + 1}</TableCell>
+                            <TableCell className="font-mono text-xs text-muted-foreground w-12">
+                              {!isDrafted && editingRankId === item.id ? (
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={autoDraftList.length}
+                                  value={editingRankValue}
+                                  onChange={(e) => setEditingRankValue(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") jumpToPosition(item.id, idx, editingRankValue);
+                                    if (e.key === "Escape") setEditingRankId(null);
+                                  }}
+                                  onBlur={() => setEditingRankId(null)}
+                                  autoFocus
+                                  className="w-12 h-6 px-1 text-xs font-mono text-center border rounded bg-background"
+                                  data-testid={`input-auto-draft-rank-${item.id}`}
+                                />
+                              ) : (
+                                <span
+                                  className={`${isDrafted ? "" : "cursor-pointer hover:text-primary hover:underline"}`}
+                                  onClick={() => {
+                                    if (isDrafted) return;
+                                    setEditingRankId(item.id);
+                                    setEditingRankValue(String(idx + 1));
+                                  }}
+                                  title={isDrafted ? undefined : "Click to move to position"}
+                                  data-testid={`text-auto-draft-rank-${item.id}`}
+                                >
+                                  {idx + 1}
+                                </span>
+                              )}
+                            </TableCell>
                             <TableCell>
                               <div className={`text-sm font-medium ${isDrafted ? "line-through" : ""}`}>{item.player.fullName}</div>
                               {isDrafted ? (
