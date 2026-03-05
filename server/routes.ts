@@ -2036,6 +2036,7 @@ export async function registerRoutes(
         errors: number;
         completedAt: Date | null;
       }) => {
+        // rosterOnboardingSeason stores the card year (N-1 relative to CBL game season)
         await storage.updateLeague(leagueId, {
           rosterOnboardingSeason: season,
           rosterOnboardingStatus: params.status,
@@ -2422,7 +2423,7 @@ export async function registerRoutes(
         ["andrew", "andy", "drew"],
         ["anthony", "tony"],
         ["ben", "benjamin", "benny"],
-        ["bill", "william", "billy", "will", "willy", "liam"],
+        ["bill", "william", "billy", "will", "liam"],
         ["cam", "cameron"],
         ["charlie", "charles", "chuck"],
         ["chris", "christopher", "christoper", "christofer", "topher"],
@@ -2449,6 +2450,12 @@ export async function registerRoutes(
         ["vin", "vincent", "vince"],
         ["vic", "victor"],
         ["zac", "zachary", "zach", "zack", "zackary"],
+        ["manny", "manuel", "emmanuel"],
+        ["sandy", "alexander"],
+        ["vlad", "vladimir"],
+        ["gio", "giovanni", "giorgio"],
+        ["yuli", "yulieski"],
+        ["willy", "wilfredo", "wilmer", "wismael"],
       ];
       const FIRST_NAME_ALIAS_MAP: Record<string, string> = {};
       for (const group of FIRST_NAME_NICKNAME_GROUPS) {
@@ -2857,6 +2864,11 @@ export async function registerRoutes(
             if (candMiddleInitial === row.middleInitialHint) score += 16;
             else score -= 14;
           }
+        }
+        if (row.rosterType && candidate.sportLevel) {
+          const cSport = String(candidate.sportLevel).toUpperCase();
+          if (row.rosterType === "mlb" && cSport === "MLB") score += 12;
+          if (row.rosterType === "milb" && cSport !== "MLB") score += 10;
         }
         if (row.dobHint && candidate.birthDate) {
           const d = new Date(String(candidate.birthDate));
@@ -4104,9 +4116,16 @@ export async function registerRoutes(
         }
       }
 
+      // N-1 season convention: player data (cards) is always from the year before the CBL game season.
+      // e.g. CBL 2026 season uses 2025 player cards. The season fallback searches for season <= target
+      // so that players with only older data still match.
       const players = await storage.getMlbPlayersByMlbIdsWithSeasonFallback(Array.from(uniqueApiIds), season);
       const byApiId = new Map<number, number>();
-      for (const p of players) byApiId.set(p.mlbId, p.id);
+      const playerDetailsById = new Map<number, typeof players[0]>();
+      for (const p of players) {
+        byApiId.set(p.mlbId, p.id);
+        playerDetailsById.set(p.id, p);
+      }
       const seededMlbIds = new Set<number>();
       const seedMlbPlayerFromApi = async (mlbId: number): Promise<number | null> => {
         if (seededMlbIds.has(mlbId)) {
@@ -4167,6 +4186,7 @@ export async function registerRoutes(
           }] as any);
           seededMlbIds.add(mlbId);
           const seeded = await storage.getMlbPlayerByMlbId(mlbId);
+          if (seeded) playerDetailsById.set(seeded.id, seeded as any);
           return seeded?.id ?? null;
         } catch {
           return null;
@@ -4443,6 +4463,20 @@ export async function registerRoutes(
           }
           countMap.set(row.userId, teamCounts);
         }
+
+        for (const row of toInsert) {
+          if (row.rosterType === "mlb") {
+            const playerInfo = playerDetailsById.get(row.mlbPlayerId);
+            if (playerInfo) {
+              const isMlbLevel = (playerInfo.sportLevel || "").toUpperCase() === "MLB";
+              const hasStats = !!playerInfo.hadHittingStats || !!playerInfo.hadPitchingStats;
+              if (!isMlbLevel || !hasStats) {
+                const teamLabel = userToAbbrev.get(row.userId) || row.userId;
+                warnings.push(`${playerInfo.fullName} (${teamLabel}) assigned to MLB roster but may not have a card (${playerInfo.sportLevel || "unknown"} level${!hasStats ? ", no stats" : ""})`);
+              }
+            }
+          }
+        }
       }
 
       await persistProgress({
@@ -4606,6 +4640,7 @@ export async function registerRoutes(
       }
       res.json({
         leagueId,
+        // rosterOnboardingSeason = card year (N-1 relative to CBL game season)
         season: Number(league?.rosterOnboardingSeason || 2025),
         rosterType: rosterTypeScope,
         updatedAt: new Date().toISOString(),

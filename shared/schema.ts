@@ -37,6 +37,8 @@ export const leagues = pgTable("leagues", {
   paCap: integer("pa_cap"),
   mlRosterLimit: integer("ml_roster_limit").default(40),
   milbRosterLimit: integer("milb_roster_limit").default(125),
+  // N-1 season convention: this is the card year (player data year), always one year behind
+  // the CBL game season. e.g. CBL 2026 season uses rosterOnboardingSeason = 2025 (2025 cards).
   rosterOnboardingSeason: integer("roster_onboarding_season").default(2025).notNull(),
   rosterOnboardingStatus: varchar("roster_onboarding_status", { length: 20 }).default("pending").notNull(),
   rosterOnboardingLastProcessed: integer("roster_onboarding_last_processed").default(0).notNull(),
