@@ -10223,7 +10223,10 @@ export async function registerRoutes(
 
       const existingAssignments = await db.select({ mlbPlayerId: leagueRosterAssignments.mlbPlayerId })
         .from(leagueRosterAssignments)
-        .where(eq(leagueRosterAssignments.leagueId, draft.leagueId));
+        .where(and(
+          eq(leagueRosterAssignments.leagueId, draft.leagueId),
+          eq(leagueRosterAssignments.season, draft.season),
+        ));
       const alreadyAssigned = new Set(existingAssignments.map(a => a.mlbPlayerId));
 
       const draftPoolPlayers = await storage.getDraftPlayers(id);
