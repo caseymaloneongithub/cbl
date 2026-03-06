@@ -1724,7 +1724,22 @@ export default function DraftBoard() {
                   </div>
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  Rank your preferred organizations for the team draft round. When you are on the clock, the system picks the highest available org from this list.
+                  Rank your preferred organizations for the team draft round. The system picks the highest available org from this list when it's your turn.
+                </div>
+                <div className="flex items-center gap-2 rounded-md border px-3 py-2 bg-muted/30">
+                  <Checkbox
+                    id="team-deadline-only-toggle"
+                    checked={autoDraftSettings?.autoDraftMode === "deadline_only"}
+                    onCheckedChange={(checked) => {
+                      toggleAutoDraftMode.mutate(checked ? "deadline_only" : "immediate");
+                    }}
+                    disabled={toggleAutoDraftMode.isPending}
+                    data-testid="checkbox-team-auto-draft-deadline-only"
+                  />
+                  <label htmlFor="team-deadline-only-toggle" className="text-xs cursor-pointer select-none">
+                    <span className="font-medium">Deadline only</span>
+                    <span className="text-muted-foreground"> — only auto-draft when the pick deadline expires (prevents skips but lets you pick manually first)</span>
+                  </label>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="relative min-w-[220px] flex-1">
