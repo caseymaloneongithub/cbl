@@ -1299,7 +1299,6 @@ export default function DraftBoard() {
                   <TableHead>Team</TableHead>
                   <TableHead>Time</TableHead>
                   <TableHead>Status</TableHead>
-                  {(isLeagueCommissioner || user?.isSuperAdmin) && <TableHead className="w-[1%]"></TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1309,74 +1308,76 @@ export default function DraftBoard() {
                     <TableCell className={`text-sm ${slot.userId === user?.id ? "font-semibold" : ""}`}>{slot.user.teamName || slot.user.firstName || slot.user.lastName || slot.user.id}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{slot.madeAt ? new Date(slot.madeAt).toLocaleString() : slot.deadlineAt ? new Date(slot.deadlineAt).toLocaleString() : new Date(slot.scheduledAt).toLocaleString()}</TableCell>
                     <TableCell>
-                      {slot.madeAt
-                        ? <span className="text-xs font-medium">{slot.player ? `${slot.player.fullName} (${slot.player.primaryPosition}${slot.player.parentOrgName ? `, ${slot.player.parentOrgName}` : ""})` : slot.selectedOrgName || "Picked"}</span>
-                        : slot.skippedAt
-                          ? <Badge variant="destructive" className="text-xs">Skipped</Badge>
-                          : currentSlot?.id === slot.id
-                            ? <Badge variant="default" className="text-xs">On Clock</Badge>
-                            : (new Date(slot.scheduledAt).getTime() <= nowMs
-                              ? <Badge variant="default" className="text-xs">Open</Badge>
-                              : <Badge variant="outline" className="text-xs">Upcoming</Badge>)}
+                      <div className="flex items-center gap-1">
+                        {slot.madeAt
+                          ? <>
+                              <span className="text-xs font-medium">{slot.player ? `${slot.player.fullName} (${slot.player.primaryPosition}${slot.player.parentOrgName ? `, ${slot.player.parentOrgName}` : ""})` : slot.selectedOrgName || "Picked"}</span>
+                              {(isLeagueCommissioner || user?.isSuperAdmin) && (
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button size="sm" variant="ghost" className="h-5 w-5 p-0 ml-1 shrink-0" title="Nullify pick" data-testid={`button-nullify-pick-${slot.id}`}>
+                                      <X className="h-3 w-3 text-destructive" />
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Nullify this pick?</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        This will remove {slot.player?.fullName || slot.selectedOrgName || "the selection"} from {slot.user.teamName || slot.user.firstName || "this team"}'s pick at {getRoundLabel(slot.round, slot.roundPickIndex)} and make the slot open again.
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                      <AlertDialogAction
+                                        onClick={() => nullifyPick.mutate(slot.id)}
+                                        disabled={nullifyPick.isPending}
+                                        data-testid={`button-confirm-nullify-${slot.id}`}
+                                      >
+                                        {nullifyPick.isPending ? "Nullifying..." : "Nullify Pick"}
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+                              )}
+                            </>
+                          : slot.skippedAt
+                            ? <>
+                                <Badge variant="destructive" className="text-xs">Skipped</Badge>
+                                {(isLeagueCommissioner || user?.isSuperAdmin) && (
+                                  <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                      <Button size="sm" variant="ghost" className="h-5 w-5 p-0 ml-1 shrink-0" title="Unskip pick" data-testid={`button-unskip-pick-${slot.id}`}>
+                                        <Undo2 className="h-3 w-3 text-primary" />
+                                      </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>Unskip this pick?</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                          This will reopen {slot.user.teamName || slot.user.firstName || "this team"}'s pick at {getRoundLabel(slot.round, slot.roundPickIndex)} so they can make their selection.
+                                        </AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction
+                                          onClick={() => unskipPick.mutate(slot.id)}
+                                          disabled={unskipPick.isPending}
+                                          data-testid={`button-confirm-unskip-${slot.id}`}
+                                        >
+                                          {unskipPick.isPending ? "Unskipping..." : "Unskip Pick"}
+                                        </AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
+                                )}
+                              </>
+                            : currentSlot?.id === slot.id
+                              ? <Badge variant="default" className="text-xs">On Clock</Badge>
+                              : (new Date(slot.scheduledAt).getTime() <= nowMs
+                                ? <Badge variant="default" className="text-xs">Open</Badge>
+                                : <Badge variant="outline" className="text-xs">Upcoming</Badge>)}
+                      </div>
                     </TableCell>
-                    {(isLeagueCommissioner || user?.isSuperAdmin) && (
-                      <TableCell className="px-1">
-                        {slot.madeAt && (
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Nullify pick" data-testid={`button-nullify-pick-${slot.id}`}>
-                                <X className="h-3.5 w-3.5 text-destructive" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Nullify this pick?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  This will remove {slot.player?.fullName || slot.selectedOrgName || "the selection"} from {slot.user.teamName || slot.user.firstName || "this team"}'s pick at {getRoundLabel(slot.round, slot.roundPickIndex)} and make the slot open again.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => nullifyPick.mutate(slot.id)}
-                                  disabled={nullifyPick.isPending}
-                                  data-testid={`button-confirm-nullify-${slot.id}`}
-                                >
-                                  {nullifyPick.isPending ? "Nullifying..." : "Nullify Pick"}
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        )}
-                        {slot.skippedAt && !slot.madeAt && (
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Unskip pick" data-testid={`button-unskip-pick-${slot.id}`}>
-                                <Undo2 className="h-3.5 w-3.5 text-primary" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Unskip this pick?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  This will reopen {slot.user.teamName || slot.user.firstName || "this team"}'s pick at {getRoundLabel(slot.round, slot.roundPickIndex)} so they can make their selection.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => unskipPick.mutate(slot.id)}
-                                  disabled={unskipPick.isPending}
-                                  data-testid={`button-confirm-unskip-${slot.id}`}
-                                >
-                                  {unskipPick.isPending ? "Unskipping..." : "Unskip Pick"}
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        )}
-                      </TableCell>
-                    )}
                   </TableRow>
                 ))}
               </TableBody>

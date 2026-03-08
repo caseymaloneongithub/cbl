@@ -31,7 +31,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import type { DraftWithDetails, DraftPlayerWithDetails, DraftPickWithDetails, DraftRound, DraftOrder, User, LeagueMember } from "@shared/schema";
 import {
   ArrowLeft, Loader2, Trash2, Play, Pause, Upload, Users, ListOrdered,
-  FileSpreadsheet, Clock, X, UserPlus, Download, ClipboardCheck, Mail,
+  FileSpreadsheet, Clock, X, UserPlus, Download, ClipboardCheck, Mail, Undo2,
 } from "lucide-react";
 
 function RoundConfigRow({ round, roundEntries, onUpdate, onDelete, canDelete, showDelete, formatCentralInput }: {
@@ -445,6 +445,19 @@ export default function CommissionerDraftDetail() {
       toast({ title: "Pick Nullified" });
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "picks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "players"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", { leagueId: selectedLeagueId }] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const unskipPick = useMutation({
+    mutationFn: async (pickId: number) => {
+      await apiRequest("POST", `/api/drafts/${draftId}/picks/${pickId}/unskip`);
+    },
+    onSuccess: () => {
+      toast({ title: "Pick Unskipped", description: "The pick is open again for the team to make." });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "picks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftId, "timing"] });
       queryClient.invalidateQueries({ queryKey: ["/api/drafts", { leagueId: selectedLeagueId }] });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -1373,32 +1386,56 @@ export default function CommissionerDraftDetail() {
                               <Badge variant="outline">-</Badge>
                             )}
                           </TableCell>
-                          {(draft.status === "active" || draft.status === "paused") && pick.madeAt && (
+                          {(draft.status === "active" || draft.status === "paused") && (
                             <TableCell>
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button variant="ghost" size="icon" data-testid={`button-nullify-pick-${pick.id}`}>
-                                    <X className="h-4 w-4" />
-                                  </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>Nullify Pick</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      Undo this pick? The selection will be returned to the available pool and removed from {pick.user.teamName || "the team"}'s roster.
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => nullifyPick.mutate(pick.id)} data-testid={`button-confirm-nullify-${pick.id}`}>
-                                      Nullify Pick
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
+                              {pick.madeAt && (
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button variant="ghost" size="icon" data-testid={`button-nullify-pick-${pick.id}`}>
+                                      <X className="h-4 w-4" />
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Nullify Pick</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        Undo this pick? The selection will be returned to the available pool and removed from {pick.user.teamName || "the team"}'s roster.
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                      <AlertDialogAction onClick={() => nullifyPick.mutate(pick.id)} data-testid={`button-confirm-nullify-${pick.id}`}>
+                                        Nullify Pick
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+                              )}
+                              {!pick.madeAt && pick.skippedAt && (
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button variant="ghost" size="icon" title="Unskip pick" data-testid={`button-unskip-pick-${pick.id}`}>
+                                      <Undo2 className="h-4 w-4" />
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Unskip Pick</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        Reopen this pick? {pick.user.teamName || "The team"} will be able to make their selection at {getRoundLabel(pick.round, pick.roundPickIndex)} again.
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                      <AlertDialogAction onClick={() => unskipPick.mutate(pick.id)} data-testid={`button-confirm-unskip-${pick.id}`}>
+                                        Unskip Pick
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+                              )}
                             </TableCell>
                           )}
-                          {(draft.status === "active" || draft.status === "paused") && !pick.madeAt && <TableCell />}
                         </TableRow>
                       ))}
                     </TableBody>
