@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Clock, Search, Users, Loader2, CheckCircle, Building2, AlertTriangle, ListOrdered, ArrowUp, ArrowDown, Plus, Trash2, Pause, Play, Bell, BellOff, Upload, Download, Pencil, Shield } from "lucide-react";
+import { Clock, Search, Users, Loader2, CheckCircle, Building2, AlertTriangle, ListOrdered, ArrowUp, ArrowDown, Plus, Trash2, Pause, Play, Bell, BellOff, Upload, Download, Pencil, Shield, Undo2, X } from "lucide-react";
 import type { Draft, DraftRound, DraftPlayerWithDetails, DraftPickWithDetails, DraftOrder, User, AutoDraftListWithPlayer, TeamAutoDraftList } from "@shared/schema";
 
 
@@ -493,6 +493,37 @@ export default function DraftBoard() {
     },
     onError: (error: Error) => {
       toast({ title: "Commissioner pick failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const nullifyPick = useMutation({
+    mutationFn: async (pickId: number) => {
+      await apiRequest("DELETE", `/api/drafts/${draftIdNum}/picks/${pickId}`);
+    },
+    onSuccess: () => {
+      toast({ title: "Pick Nullified", description: "The pick has been removed and the slot is open again." });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "picks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "players"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "timing"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to nullify pick", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const unskipPick = useMutation({
+    mutationFn: async (pickId: number) => {
+      await apiRequest("POST", `/api/drafts/${draftIdNum}/picks/${pickId}/unskip`);
+    },
+    onSuccess: () => {
+      toast({ title: "Pick Unskipped", description: "The pick is open again for the team to make." });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "picks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts", draftIdNum, "timing"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to unskip pick", description: error.message, variant: "destructive" });
     },
   });
 
@@ -1268,6 +1299,7 @@ export default function DraftBoard() {
                   <TableHead>Team</TableHead>
                   <TableHead>Time</TableHead>
                   <TableHead>Status</TableHead>
+                  {(isLeagueCommissioner || user?.isSuperAdmin) && <TableHead className="w-[1%]"></TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1287,6 +1319,64 @@ export default function DraftBoard() {
                               ? <Badge variant="default" className="text-xs">Open</Badge>
                               : <Badge variant="outline" className="text-xs">Upcoming</Badge>)}
                     </TableCell>
+                    {(isLeagueCommissioner || user?.isSuperAdmin) && (
+                      <TableCell className="px-1">
+                        {slot.madeAt && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Nullify pick" data-testid={`button-nullify-pick-${slot.id}`}>
+                                <X className="h-3.5 w-3.5 text-destructive" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Nullify this pick?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will remove {slot.player?.fullName || slot.selectedOrgName || "the selection"} from {slot.user.teamName || slot.user.firstName || "this team"}'s pick at {getRoundLabel(slot.round, slot.roundPickIndex)} and make the slot open again.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => nullifyPick.mutate(slot.id)}
+                                  disabled={nullifyPick.isPending}
+                                  data-testid={`button-confirm-nullify-${slot.id}`}
+                                >
+                                  {nullifyPick.isPending ? "Nullifying..." : "Nullify Pick"}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
+                        {slot.skippedAt && !slot.madeAt && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Unskip pick" data-testid={`button-unskip-pick-${slot.id}`}>
+                                <Undo2 className="h-3.5 w-3.5 text-primary" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Unskip this pick?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will reopen {slot.user.teamName || slot.user.firstName || "this team"}'s pick at {getRoundLabel(slot.round, slot.roundPickIndex)} so they can make their selection.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => unskipPick.mutate(slot.id)}
+                                  disabled={unskipPick.isPending}
+                                  data-testid={`button-confirm-unskip-${slot.id}`}
+                                >
+                                  {unskipPick.isPending ? "Unskipping..." : "Unskip Pick"}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>

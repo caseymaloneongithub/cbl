@@ -10420,6 +10420,36 @@ export async function registerRoutes(
     }
   });
 
+  // POST /api/drafts/:id/picks/:pickId/unskip - Commissioner unskips a pick
+  app.post("/api/drafts/:id/picks/:pickId/unskip", isAuthenticated, async (req: any, res) => {
+    try {
+      const commissionerUserId = req.session.originalUserId || req.session.userId!;
+      const draftId = parseInt(req.params.id);
+      const pickId = parseInt(req.params.pickId);
+      if (isNaN(draftId) || isNaN(pickId)) return res.status(400).json({ message: "Invalid IDs" });
+
+      const draft = await storage.getDraft(draftId);
+      if (!draft) return res.status(404).json({ message: "Draft not found" });
+
+      const isCommissioner = await hasLeagueCommissionerAccess(commissionerUserId, draft.leagueId);
+      if (!isCommissioner) return res.status(403).json({ message: "Commissioner access required" });
+
+      const pick = await storage.getDraftPickById(pickId);
+      if (!pick) return res.status(404).json({ message: "Pick not found" });
+      if (pick.draftId !== draftId) return res.status(400).json({ message: "Pick does not belong to this draft" });
+      if (!pick.skippedAt) return res.status(400).json({ message: "Pick is not skipped" });
+      if (pick.madeAt) return res.status(400).json({ message: "Pick has already been made" });
+
+      await storage.clearDraftSlotSkip(pickId);
+      await storage.updateDraft(draftId, { status: "active" });
+
+      res.json({ message: "Pick unskipped successfully" });
+    } catch (error) {
+      console.error("Error unskipping draft pick:", error);
+      res.status(500).json({ message: "Failed to unskip pick" });
+    }
+  });
+
   // GET /api/drafts/:id/auto-draft-list - Get user's auto-draft list
   app.get("/api/drafts/:id/auto-draft-list", isAuthenticated, async (req: any, res) => {
     try {

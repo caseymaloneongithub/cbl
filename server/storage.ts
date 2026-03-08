@@ -386,6 +386,7 @@ export interface IStorage {
   fillSlotWithPlayer(slotId: number, userId: string, playerId: number, rosterType: "mlb" | "milb", now: Date): Promise<DraftPick>;
   fillSlotWithOrg(slotId: number, userId: string, selectedOrgName: string, selectedOrgId: number | null, rosterType: "mlb" | "milb", now: Date): Promise<{ slot: DraftPick; draftedPlayerIds: number[] }>;
   clearDraftSlot(slotId: number): Promise<void>;
+  clearDraftSlotSkip(slotId: number): Promise<void>;
   getDraftPlayersByParentOrg(draftId: number, parentOrgName: string): Promise<DraftPlayerWithDetails[]>;
   removeRosterAssignmentByPlayer(leagueId: number, userId: string, mlbPlayerId: number, season: number): Promise<void>;
 
@@ -3951,6 +3952,13 @@ export class DatabaseStorage implements IStorage {
       selectedOrgPlayerIds: [],
       madeAt: null,
       madeByUserId: null,
+    }).where(eq(draftPicks.id, slotId));
+  }
+
+  async clearDraftSlotSkip(slotId: number): Promise<void> {
+    await db.update(draftPicks).set({
+      skippedAt: null,
+      skippedByUserId: null,
     }).where(eq(draftPicks.id, slotId));
   }
 
