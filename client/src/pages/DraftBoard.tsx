@@ -21,7 +21,6 @@ import {
 } from "@/components/ui/select";
 import { formatAffiliatedTeamLabel, getMlbAffiliationAbbreviation } from "@/lib/teamDisplay";
 import { stripAccents } from "@/lib/utils";
-import { formatInTimeZone } from "date-fns-tz";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -42,8 +41,6 @@ interface TimingInfo {
 }
 
 const DRAFT_POLL_INTERVAL = 3000;
-const CT_TZ = "America/Chicago";
-const formatCT = (d: string | Date) => formatInTimeZone(new Date(d), CT_TZ, "M/d/yyyy, h:mm:ss a");
 
 export default function DraftBoard() {
   const { draftId } = useParams<{ draftId: string }>();
@@ -983,7 +980,7 @@ export default function DraftBoard() {
             {draft.status === "active" ? "Live" : draft.status === "paused" ? "Paused" : draft.status}
           </Badge>
           <span className="text-muted-foreground text-sm" data-testid="text-round-info">
-            {currentSlot ? (() => { const rn = draftRounds?.find(r => r.roundNumber === currentSlot.round)?.name; const label = rn ? (/^\d+$/.test(rn) ? `Round ${rn}` : rn) : `Round ${currentSlot.round}`; return `${label}, Pick ${currentSlot.roundPickIndex + 1}, Overall ${currentSlot.overallPickNumber}`; })() : draftStartTime ? `Starts ${formatInTimeZone(draftStartTime, CT_TZ, "MMM d, h:mm a")} CT` : "Waiting to start"}
+            {currentSlot ? (() => { const rn = draftRounds?.find(r => r.roundNumber === currentSlot.round)?.name; const label = rn ? (/^\d+$/.test(rn) ? `Round ${rn}` : rn) : `Round ${currentSlot.round}`; return `${label}, Pick ${currentSlot.roundPickIndex + 1}, Overall ${currentSlot.overallPickNumber}`; })() : draftStartTime ? `Starts ${draftStartTime.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "Waiting to start"}
           </span>
           {isCurrentRoundTeamDraft && (
             <Badge variant="secondary" data-testid="badge-team-draft-round">
@@ -1253,7 +1250,7 @@ export default function DraftBoard() {
               </span>
               {draftStartTime ? (
                 <span className="text-lg font-bold text-primary" data-testid="text-start-time">
-                  {formatInTimeZone(draftStartTime, CT_TZ, "EEE, MMM d, h:mm a")} CT
+                  {draftStartTime.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                 </span>
               ) : (
                 <span className="text-lg text-muted-foreground">Not scheduled yet</span>
@@ -1300,7 +1297,7 @@ export default function DraftBoard() {
                 <TableRow className="bg-muted/50">
                   <TableHead>Pick</TableHead>
                   <TableHead>Team</TableHead>
-                  <TableHead>Time (CT)</TableHead>
+                  <TableHead>Time</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1309,7 +1306,7 @@ export default function DraftBoard() {
                   <TableRow key={slot.id} data-current-slot={currentSlot?.id === slot.id ? "true" : undefined} className={`${currentSlot?.id === slot.id ? "bg-primary/10" : slot.userId === user?.id ? "bg-accent/50" : ""}`}>
                     <TableCell className="font-mono text-xs">{getRoundLabel(slot.round, slot.roundPickIndex)}{draftRounds?.find(r => r.roundNumber === slot.round)?.isTeamDraft ? "*" : ""}</TableCell>
                     <TableCell className={`text-sm ${slot.userId === user?.id ? "font-semibold" : ""}`}>{slot.user.teamName || slot.user.firstName || slot.user.lastName || slot.user.id}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{slot.madeAt ? formatCT(slot.madeAt) : slot.deadlineAt ? formatCT(slot.deadlineAt) : formatCT(slot.scheduledAt)}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{slot.madeAt ? new Date(slot.madeAt).toLocaleString() : slot.deadlineAt ? new Date(slot.deadlineAt).toLocaleString() : new Date(slot.scheduledAt).toLocaleString()}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
                         {slot.madeAt
@@ -1451,9 +1448,9 @@ export default function DraftBoard() {
                         {currentSlot?.id === slot.id
                           ? <Badge variant="default" className="text-xs">On Clock</Badge>
                           : slot.deadlineAt
-                            ? <span className="text-xs">{formatCT(slot.deadlineAt)}</span>
+                            ? <span className="text-xs">{new Date(slot.deadlineAt).toLocaleString()}</span>
                             : slot.scheduledAt
-                              ? <span className="text-xs">{formatCT(slot.scheduledAt)}</span>
+                              ? <span className="text-xs">{new Date(slot.scheduledAt).toLocaleString()}</span>
                               : <span className="italic">Upcoming</span>}
                       </TableCell>
                       <TableCell></TableCell>
