@@ -1882,7 +1882,7 @@ export default function DraftBoard() {
                 {isMyPickTeamDraft ? `Available Organizations (${filteredOrgs.length})` : `Available Players${allAvailablePlayers ? ` (${allAvailablePlayers.length})` : ""}`}
               </CardTitle>
               <div className="flex flex-wrap items-center gap-2">
-                {!isMyPickTeamDraft && allAvailablePlayers && allAvailablePlayers.length > 0 && (
+                {allAvailablePlayers && allAvailablePlayers.length > 0 && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -1957,6 +1957,7 @@ export default function DraftBoard() {
             </CardHeader>
             <CardContent className="p-0 flex-1 overflow-hidden">
               {isMyPickTeamDraft && draft.status === "active" ? (
+                <>
                 <div className="overflow-x-auto h-full overflow-y-auto">
                   {filteredOrgs.length === 0 ? (
                     <div className="p-8 text-center text-muted-foreground">
@@ -2020,6 +2021,78 @@ export default function DraftBoard() {
                     </Table>
                   )}
                 </div>
+                {allAvailablePlayers && allAvailablePlayers.length > 0 && (
+                  <div className="border-t mt-4">
+                    <div className="px-4 py-3 flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-muted-foreground">Available Players ({allAvailablePlayers.length})</h3>
+                      <div className="flex items-center gap-2">
+                        <div className="relative w-40">
+                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                          <Input
+                            placeholder="Search players..."
+                            value={playerSearch}
+                            onChange={(e) => setPlayerSearch(e.target.value)}
+                            className="pl-8 h-7 text-xs"
+                            data-testid="input-search-team-draft-players"
+                          />
+                        </div>
+                        <Select value={positionFilter} onValueChange={setPositionFilter}>
+                          <SelectTrigger className="w-[80px] h-7 text-xs" data-testid="select-team-draft-position-filter">
+                            <SelectValue placeholder="Pos" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Pos</SelectItem>
+                            {availablePositions.map(pos => (
+                              <SelectItem key={pos} value={pos}>{pos}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Select value={orgFilter} onValueChange={setOrgFilter}>
+                          <SelectTrigger className="w-[110px] h-7 text-xs" data-testid="select-team-draft-org-filter">
+                            <SelectValue placeholder="Org" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Orgs</SelectItem>
+                            {availableOrgOptions.map(org => (
+                              <SelectItem key={org} value={org}>
+                                {getMlbAffiliationAbbreviation(org) || org}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+                      <Table>
+                        <TableHeader className="sticky top-0 z-10 bg-background">
+                          <TableRow className="bg-muted/50">
+                            <TableHead className="font-semibold">Player</TableHead>
+                            <TableHead className="font-semibold">Pos</TableHead>
+                            <TableHead className="font-semibold">Age</TableHead>
+                            <TableHead className="font-semibold">Org</TableHead>
+                            <TableHead className="font-semibold">Level</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {(filteredAvailablePlayers || allAvailablePlayers).map((dp) => (
+                            <TableRow key={dp.id} data-testid={`row-team-draft-player-${dp.id}`}>
+                              <TableCell className="font-medium">{dp.player.fullName}</TableCell>
+                              <TableCell>{dp.player.primaryPosition}</TableCell>
+                              <TableCell className="text-muted-foreground">{dp.player.age ?? "-"}</TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {getMlbAffiliationAbbreviation(dp.player.parentOrgName) || dp.player.parentOrgName || "-"}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="text-xs">{dp.player.sportLevel}</Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                )}
+                </>
               ) : loadingPlayers ? (
                 <div className="p-6 space-y-3">
                   {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
