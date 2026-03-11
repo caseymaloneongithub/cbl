@@ -48,6 +48,9 @@ import {
   leagueRosterAssignments,
   type LeagueRosterAssignment,
   type InsertLeagueRosterAssignment,
+  leagueSeasons,
+  type LeagueSeason,
+  type InsertLeagueSeason,
   drafts,
   draftPlayers,
   draftRounds,
@@ -278,10 +281,19 @@ export interface IStorage {
   getLeagueBySlug(slug: string): Promise<League | undefined>;
   getAllLeagues(): Promise<League[]>;
   createLeague(data: InsertLeague): Promise<League>;
+  createLeagueWithSeason(data: InsertLeague): Promise<{ league: League; season: LeagueSeason }>;
   updateLeague(id: number, data: Partial<InsertLeague>): Promise<League | undefined>;
   getUserLeagues(userId: string): Promise<League[]>;
   getAuctionsByLeague(leagueId: number): Promise<Auction[]>;
-  
+
+  // League season operations
+  getLeagueSeasons(leagueId: number): Promise<LeagueSeason[]>;
+  getLeagueSeason(id: number): Promise<LeagueSeason | undefined>;
+  getCurrentLeagueSeason(leagueId: number): Promise<LeagueSeason | undefined>;
+  createLeagueSeason(data: InsertLeagueSeason): Promise<LeagueSeason>;
+  updateLeagueSeason(id: number, data: Partial<InsertLeagueSeason>): Promise<LeagueSeason | undefined>;
+  setCurrentSeason(leagueId: number, seasonId: number): Promise<void>;
+
   // League member operations
   getLeagueMembers(leagueId: number): Promise<(LeagueMember & { user: User })[]>;
   getLeagueMember(leagueId: number, userId: string): Promise<LeagueMember | undefined>;
@@ -327,8 +339,8 @@ export interface IStorage {
   clearMlbPlayers(season?: number): Promise<number>;
   
   // League Roster Assignments
-  getLeagueRosterAssignments(leagueId: number, season?: number, filters?: { userId?: string; rosterType?: string }): Promise<(LeagueRosterAssignment & { player: MlbPlayer })[]>;
-  getRosterAssignmentCounts(leagueId: number, season?: number): Promise<{ userId: string; rosterType: string; count: number }[]>;
+  getLeagueRosterAssignments(leagueId: number, season?: number, filters?: { userId?: string; rosterType?: string; seasonId?: number }): Promise<(LeagueRosterAssignment & { player: MlbPlayer })[]>;
+  getRosterAssignmentCounts(leagueId: number, season?: number, seasonId?: number): Promise<{ userId: string; rosterType: string; count: number }[]>;
   assignPlayerToRoster(assignment: InsertLeagueRosterAssignment): Promise<LeagueRosterAssignment>;
   deleteAllRosterAssignments(leagueId: number): Promise<number>;
   deleteRosterAssignmentsByType(leagueId: number, rosterType: string): Promise<number>;
@@ -2743,6 +2755,23 @@ export class DatabaseStorage implements IStorage {
     return league;
   }
 
+  async createLeagueWithSeason(data: InsertLeague): Promise<{ league: League; season: LeagueSeason }> {
+    return await db.transaction(async (tx) => {
+      const [league] = await tx.insert(leagues).values(data).returning();
+      const cardYear = league.rosterOnboardingSeason;
+      const gameYear = cardYear + 1;
+      const [season] = await tx.insert(leagueSeasons).values({
+        leagueId: league.id,
+        name: `Season ${gameYear}`,
+        year: gameYear,
+        cardYear,
+        isCurrent: true,
+        status: "active",
+      }).returning();
+      return { league, season };
+    });
+  }
+
   async updateLeague(id: number, data: Partial<InsertLeague>): Promise<League | undefined> {
     const [league] = await db
       .update(leagues)
@@ -2774,6 +2803,49 @@ export class DatabaseStorage implements IStorage {
         eq(auctions.isDeleted, false)
       ))
       .orderBy(desc(auctions.createdAt));
+  }
+
+  // League season operations
+  async getLeagueSeasons(leagueId: number): Promise<LeagueSeason[]> {
+    return db.select().from(leagueSeasons)
+      .where(eq(leagueSeasons.leagueId, leagueId))
+      .orderBy(desc(leagueSeasons.year));
+  }
+
+  async getLeagueSeason(id: number): Promise<LeagueSeason | undefined> {
+    const [season] = await db.select().from(leagueSeasons).where(eq(leagueSeasons.id, id));
+    return season;
+  }
+
+  async getCurrentLeagueSeason(leagueId: number): Promise<LeagueSeason | undefined> {
+    const [season] = await db.select().from(leagueSeasons)
+      .where(and(eq(leagueSeasons.leagueId, leagueId), eq(leagueSeasons.isCurrent, true)));
+    return season;
+  }
+
+  async createLeagueSeason(data: InsertLeagueSeason): Promise<LeagueSeason> {
+    const [season] = await db.insert(leagueSeasons).values(data).returning();
+    return season;
+  }
+
+  async updateLeagueSeason(id: number, data: Partial<InsertLeagueSeason>): Promise<LeagueSeason | undefined> {
+    const [season] = await db
+      .update(leagueSeasons)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(leagueSeasons.id, id))
+      .returning();
+    return season;
+  }
+
+  async setCurrentSeason(leagueId: number, seasonId: number): Promise<void> {
+    await db.transaction(async (tx) => {
+      await tx.update(leagueSeasons)
+        .set({ isCurrent: false, updatedAt: new Date() })
+        .where(eq(leagueSeasons.leagueId, leagueId));
+      await tx.update(leagueSeasons)
+        .set({ isCurrent: true, updatedAt: new Date() })
+        .where(and(eq(leagueSeasons.id, seasonId), eq(leagueSeasons.leagueId, leagueId)));
+    });
   }
 
   // League member operations
@@ -3305,11 +3377,13 @@ export class DatabaseStorage implements IStorage {
     return result.rowCount || 0;
   }
 
-  async getLeagueRosterAssignments(leagueId: number, season?: number, filters?: { userId?: string; rosterType?: string }): Promise<(LeagueRosterAssignment & { player: MlbPlayer })[]> {
+  async getLeagueRosterAssignments(leagueId: number, season?: number, filters?: { userId?: string; rosterType?: string; seasonId?: number }): Promise<(LeagueRosterAssignment & { player: MlbPlayer })[]> {
     const conditions = [
       eq(leagueRosterAssignments.leagueId, leagueId),
     ];
-    if (season) {
+    if (filters?.seasonId) {
+      conditions.push(eq(leagueRosterAssignments.seasonId, filters.seasonId));
+    } else if (season) {
       conditions.push(eq(leagueRosterAssignments.season, season));
     }
     if (filters?.userId) {
@@ -3327,9 +3401,11 @@ export class DatabaseStorage implements IStorage {
     return rows.map(r => ({ ...r.league_roster_assignments, player: r.mlb_players }));
   }
 
-  async getRosterAssignmentCounts(leagueId: number, season?: number): Promise<{ userId: string; rosterType: string; count: number }[]> {
+  async getRosterAssignmentCounts(leagueId: number, season?: number, seasonId?: number): Promise<{ userId: string; rosterType: string; count: number }[]> {
     const conditions = [eq(leagueRosterAssignments.leagueId, leagueId)];
-    if (season) {
+    if (seasonId) {
+      conditions.push(eq(leagueRosterAssignments.seasonId, seasonId));
+    } else if (season) {
       conditions.push(eq(leagueRosterAssignments.season, season));
     }
     const rows = await db
