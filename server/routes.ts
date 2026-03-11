@@ -13,6 +13,7 @@ import {
   users,
   rosterPlayers,
   leagueRosterAssignments,
+  leagueSeasons,
   auctions,
   auctionTeams,
   drafts,
@@ -1311,6 +1312,12 @@ export async function registerRoutes(
         if (m.teamAbbreviation) teamAbbrToUserId.set(m.teamAbbreviation.toLowerCase(), m.userId);
       }
 
+      // Resolve the current season for this league
+      const currentSeason = await storage.getCurrentLeagueSeason(leagueId);
+      if (!currentSeason) {
+        return res.status(400).json({ message: "No current season found for this league" });
+      }
+
       const resolved: any[] = [];
       const errors: string[] = [];
 
@@ -1331,6 +1338,7 @@ export async function registerRoutes(
 
         resolved.push({
           leagueId,
+          seasonId: currentSeason.id,
           userId: resolvedUserId,
           mlbPlayerId: a.mlbPlayerId,
           rosterType: a.rosterType || "mlb",
@@ -1338,7 +1346,7 @@ export async function registerRoutes(
           salary2026: a.salary2026 ?? null,
           minorLeagueStatus: a.minorLeagueStatus || null,
           minorLeagueYears: a.minorLeagueYears ?? null,
-          season: a.season || new Date().getFullYear(),
+          season: a.season || currentSeason.cardYear,
         });
       }
 
@@ -1473,15 +1481,24 @@ export async function registerRoutes(
         if (!member) return res.status(403).json({ message: "League membership required" });
       }
 
+      const seasonId = req.query.seasonId ? parseInt(req.query.seasonId as string) : undefined;
       const season = req.query.season ? parseInt(req.query.season as string) : undefined;
       const filterUserId = req.query.userId as string | undefined;
       const rosterType = req.query.rosterType as string | undefined;
 
+      // Default to current season if neither seasonId nor season provided
+      let effectiveSeasonId = seasonId;
+      if (!effectiveSeasonId && !season) {
+        const currentSeason = await storage.getCurrentLeagueSeason(leagueId);
+        effectiveSeasonId = currentSeason?.id;
+      }
+
       const assignments = await storage.getLeagueRosterAssignments(leagueId, season, {
         userId: filterUserId,
         rosterType,
+        seasonId: effectiveSeasonId,
       });
-      const counts = await storage.getRosterAssignmentCounts(leagueId, season);
+      const counts = await storage.getRosterAssignmentCounts(leagueId, season, effectiveSeasonId);
 
       res.json({ assignments, counts });
     } catch (error: any) {
@@ -1529,15 +1546,36 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
-      const { mlbPlayerId, assignToUserId, rosterType, season } = req.body;
-      if (!mlbPlayerId || !assignToUserId || !rosterType || !season) {
-        return res.status(400).json({ message: "mlbPlayerId, assignToUserId, rosterType, and season are required" });
+      const { mlbPlayerId, assignToUserId, rosterType, season, seasonId } = req.body;
+      if (!mlbPlayerId || !assignToUserId || !rosterType) {
+        return res.status(400).json({ message: "mlbPlayerId, assignToUserId, and rosterType are required" });
       }
+
+      // Resolve seasonId: prefer explicit (validated), then look up current season
+      let resolvedSeasonId: number | undefined;
+      let resolvedSeason: number | undefined;
+      if (seasonId !== undefined && seasonId !== null) {
+        resolvedSeasonId = Number(seasonId);
+        if (!Number.isInteger(resolvedSeasonId) || resolvedSeasonId <= 0) {
+          return res.status(400).json({ message: "seasonId must be a positive integer" });
+        }
+        const seasonObj = await storage.getLeagueSeason(resolvedSeasonId);
+        if (!seasonObj || seasonObj.leagueId !== leagueId) {
+          return res.status(400).json({ message: "Invalid seasonId for this league" });
+        }
+        resolvedSeason = season ? Number(season) : seasonObj.cardYear;
+      } else {
+        const currentSeason = await storage.getCurrentLeagueSeason(leagueId);
+        if (!currentSeason) return res.status(400).json({ message: "No current season found for this league" });
+        resolvedSeasonId = currentSeason.id;
+        resolvedSeason = season ? Number(season) : currentSeason.cardYear;
+      }
+
       if (!['mlb', 'milb', 'draft'].includes(rosterType)) {
         return res.status(400).json({ message: "rosterType must be 'mlb', 'milb', or 'draft'" });
       }
       if (rosterType === "mlb") {
-        const existingMlbAssignments = await storage.getLeagueRosterAssignments(leagueId, Number(season), { rosterType: "mlb" });
+        const existingMlbAssignments = await storage.getLeagueRosterAssignments(leagueId, undefined, { rosterType: "mlb", seasonId: resolvedSeasonId });
         const conflict = existingMlbAssignments.find((a) => a.mlbPlayerId === Number(mlbPlayerId));
         if (conflict) {
           return res.status(409).json({
@@ -1554,10 +1592,11 @@ export async function registerRoutes(
 
       const assignment = await storage.assignPlayerToRoster({
         leagueId,
+        seasonId: resolvedSeasonId!,
         userId: assignToUserId,
         mlbPlayerId,
         rosterType,
-        season,
+        season: resolvedSeason!,
       });
 
       res.json(assignment);
@@ -1580,17 +1619,38 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
-      const { assignments } = req.body;
+      const { assignments, seasonId } = req.body;
       if (!Array.isArray(assignments) || assignments.length === 0) {
         return res.status(400).json({ message: "assignments array is required" });
       }
 
+      // Resolve seasonId for the batch (validated against leagueId)
+      let resolvedSeasonId: number | undefined;
+      let resolvedCardYear: number | undefined;
+      if (seasonId !== undefined && seasonId !== null) {
+        resolvedSeasonId = Number(seasonId);
+        if (!Number.isInteger(resolvedSeasonId) || resolvedSeasonId <= 0) {
+          return res.status(400).json({ message: "seasonId must be a positive integer" });
+        }
+        const seasonObj = await storage.getLeagueSeason(resolvedSeasonId);
+        if (!seasonObj || seasonObj.leagueId !== leagueId) {
+          return res.status(400).json({ message: "Invalid seasonId for this league" });
+        }
+        resolvedCardYear = seasonObj.cardYear;
+      } else {
+        const currentSeason = await storage.getCurrentLeagueSeason(leagueId);
+        if (!currentSeason) return res.status(400).json({ message: "No current season found for this league" });
+        resolvedSeasonId = currentSeason.id;
+        resolvedCardYear = currentSeason.cardYear;
+      }
+
       const toInsert = assignments.map((a: any) => ({
         leagueId,
+        seasonId: resolvedSeasonId!,
         userId: a.userId,
         mlbPlayerId: a.mlbPlayerId,
         rosterType: a.rosterType,
-        season: a.season,
+        season: a.season || resolvedCardYear!,
       }));
 
       const incomingMlb = toInsert.filter((a: any) => String(a.rosterType) === "mlb");
@@ -1607,18 +1667,15 @@ export async function registerRoutes(
           seenIncoming.add(playerId);
         }
 
-        const seasonSet = new Set<number>(incomingMlb.map((a: any) => Number(a.season)).filter((s: number) => Number.isInteger(s)));
-        for (const scopedSeason of Array.from(seasonSet.values())) {
-          const existingMlbAssignments = await storage.getLeagueRosterAssignments(leagueId, scopedSeason, { rosterType: "mlb" });
-          const existingPlayerIds = new Set<number>(existingMlbAssignments.map((a) => Number(a.mlbPlayerId)));
-          const conflictingIncoming = incomingMlb.find((a: any) => Number(a.season) === scopedSeason && existingPlayerIds.has(Number(a.mlbPlayerId)));
-          if (conflictingIncoming) {
-            return res.status(409).json({
-              message: "One or more MLB players are already assigned for this league/season. Resolve in reconciliation.",
-              season: scopedSeason,
-              mlbPlayerId: Number(conflictingIncoming.mlbPlayerId),
-            });
-          }
+        const existingMlbAssignments = await storage.getLeagueRosterAssignments(leagueId, undefined, { rosterType: "mlb", seasonId: resolvedSeasonId });
+        const existingPlayerIds = new Set<number>(existingMlbAssignments.map((a) => Number(a.mlbPlayerId)));
+        const conflictingIncoming = incomingMlb.find((a: any) => existingPlayerIds.has(Number(a.mlbPlayerId)));
+        if (conflictingIncoming) {
+          return res.status(409).json({
+            message: "One or more MLB players are already assigned for this league/season. Resolve in reconciliation.",
+            seasonId: resolvedSeasonId,
+            mlbPlayerId: Number(conflictingIncoming.mlbPlayerId),
+          });
         }
       }
 
@@ -1658,6 +1715,7 @@ export async function registerRoutes(
     try {
       const userId = req.session.originalUserId || req.session.userId!;
       const leagueId = parseInt(req.params.id);
+      const seasonId = req.query.seasonId ? parseInt(req.query.seasonId as string) : undefined;
       const season = req.query.season ? parseInt(req.query.season as string) : undefined;
       const rosterType = String(req.query.rosterType || "mlb").toLowerCase();
 
@@ -1668,8 +1726,15 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid rosterType" });
       }
 
+      // Default to current season if no season filter provided
+      let effectiveSeasonId = seasonId;
+      if (!effectiveSeasonId && !season) {
+        const currentSeason = await storage.getCurrentLeagueSeason(leagueId);
+        effectiveSeasonId = currentSeason?.id;
+      }
+
       const [assignments, members] = await Promise.all([
-        storage.getLeagueRosterAssignments(leagueId, season, { rosterType: rosterType as "mlb" | "milb" | "draft" }),
+        storage.getLeagueRosterAssignments(leagueId, season, { rosterType: rosterType as "mlb" | "milb" | "draft", seasonId: effectiveSeasonId }),
         storage.getLeagueMembers(leagueId),
       ]);
       const memberByUserId = new Map(members.map((m) => [m.userId, m]));
@@ -1975,7 +2040,24 @@ export async function registerRoutes(
       }
 
       const csvData = String(req.body?.csvData || "").trim();
-      const season = Number(req.body?.season) || 2025;
+      const requestedSeasonId = req.body?.seasonId ? Number(req.body.seasonId) : undefined;
+      let csvSeasonId: number;
+      let season: number;
+      if (requestedSeasonId) {
+        const seasonObj = await storage.getLeagueSeason(requestedSeasonId);
+        if (!seasonObj || seasonObj.leagueId !== leagueId) {
+          return res.status(400).json({ message: "Invalid seasonId" });
+        }
+        csvSeasonId = seasonObj.id;
+        season = Number(req.body?.season) || seasonObj.cardYear;
+      } else {
+        const currentSeason = await storage.getCurrentLeagueSeason(leagueId);
+        if (!currentSeason) {
+          return res.status(400).json({ message: "No current season found for this league" });
+        }
+        csvSeasonId = currentSeason.id;
+        season = Number(req.body?.season) || currentSeason.cardYear;
+      }
       const requestedDefaultRosterType = String(req.body?.defaultRosterType || "").trim().toLowerCase();
       const defaultRosterType: "mlb" | "milb" | "draft" =
         requestedDefaultRosterType === "mlb" || requestedDefaultRosterType === "milb" || requestedDefaultRosterType === "draft"
@@ -4193,7 +4275,7 @@ export async function registerRoutes(
         }
       };
 
-      const existingAssignments = await storage.getLeagueRosterAssignments(leagueId, season);
+      const existingAssignments = await storage.getLeagueRosterAssignments(leagueId, undefined, { seasonId: csvSeasonId });
       const alreadyAssigned = new Set<number>(existingAssignments.map((a) => a.mlbPlayerId));
       const existingByPlayerId = new Map<number, any>(existingAssignments.map((a) => [a.mlbPlayerId, a]));
       const seenPlayerIds = new Set<number>();
@@ -4213,6 +4295,7 @@ export async function registerRoutes(
       let idempotentSkipCount = 0;
       const toInsert: Array<{
         leagueId: number;
+        seasonId: number;
         userId: string;
         mlbPlayerId: number;
         rosterType: "mlb" | "milb" | "draft";
@@ -4332,6 +4415,7 @@ export async function registerRoutes(
         seenPlayerIds.add(internalPlayerId);
         toInsert.push({
           leagueId,
+          seasonId: csvSeasonId,
           userId: row.userId,
           mlbPlayerId: internalPlayerId,
           rosterType: row.rosterType,
@@ -7488,15 +7572,19 @@ export async function registerRoutes(
         rawLeagues = await storage.getUserLeagues(userId);
       }
       
-      // Enrich leagues with user's membership info (role, teamName, teamAbbreviation)
+      // Enrich leagues with user's membership info (role, teamName, teamAbbreviation) and current season
       const leaguesWithMembership = await Promise.all(
         rawLeagues.map(async (league) => {
-          const membership = await storage.getLeagueMember(league.id, userId);
+          const [membership, currentSeason] = await Promise.all([
+            storage.getLeagueMember(league.id, userId),
+            storage.getCurrentLeagueSeason(league.id),
+          ]);
           return {
             ...league,
             role: membership?.role || (user.isSuperAdmin ? 'commissioner' : 'owner'),
             teamName: membership?.teamName || null,
             teamAbbreviation: membership?.teamAbbreviation || null,
+            currentSeason: currentSeason || null,
           };
         })
       );
@@ -7567,6 +7655,122 @@ export async function registerRoutes(
     }
   });
 
+  // League seasons CRUD
+
+  app.get("/api/leagues/:id/seasons", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+      const user = await storage.getUser(userId);
+      if (!user?.isSuperAdmin) {
+        const member = await storage.getLeagueMember(leagueId, userId);
+        if (!member) return res.status(403).json({ message: "League membership required" });
+      }
+      const seasons = await storage.getLeagueSeasons(leagueId);
+      res.json(seasons);
+    } catch (error) {
+      console.error("Error fetching league seasons:", error);
+      res.status(500).json({ message: "Failed to fetch league seasons" });
+    }
+  });
+
+  app.get("/api/leagues/:id/seasons/current", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+      const user = await storage.getUser(userId);
+      if (!user?.isSuperAdmin) {
+        const member = await storage.getLeagueMember(leagueId, userId);
+        if (!member) return res.status(403).json({ message: "League membership required" });
+      }
+      const season = await storage.getCurrentLeagueSeason(leagueId);
+      if (!season) return res.status(404).json({ message: "No current season found" });
+      res.json(season);
+    } catch (error) {
+      console.error("Error fetching current season:", error);
+      res.status(500).json({ message: "Failed to fetch current season" });
+    }
+  });
+
+  app.post("/api/leagues/:id/seasons", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+      if (!await hasLeagueCommissionerAccess(userId, leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+      const { name, year, cardYear, isCurrent, status } = req.body;
+      if (!name || !year || !cardYear) {
+        return res.status(400).json({ message: "name, year, and cardYear are required" });
+      }
+      // Always insert with isCurrent=false to avoid violating the partial unique
+      // constraint, then atomically set current via setCurrentSeason if requested.
+      const season = await storage.createLeagueSeason({
+        leagueId, name, year, cardYear,
+        isCurrent: false,
+        status: status || "active",
+      });
+      if (isCurrent) {
+        await storage.setCurrentSeason(leagueId, season.id);
+      }
+      // Re-fetch to return accurate isCurrent value
+      const updated = isCurrent ? await storage.getLeagueSeason(season.id) : season;
+      res.status(201).json(updated || season);
+    } catch (error: any) {
+      if (error.code === '23505') {
+        return res.status(409).json({ message: "A season with this year already exists for this league" });
+      }
+      console.error("Error creating league season:", error);
+      res.status(500).json({ message: "Failed to create league season" });
+    }
+  });
+
+  app.patch("/api/leagues/:id/seasons/:seasonId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+      const seasonId = parseInt(req.params.seasonId);
+      if (!await hasLeagueCommissionerAccess(userId, leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+      const season = await storage.getLeagueSeason(seasonId);
+      if (!season || season.leagueId !== leagueId) {
+        return res.status(404).json({ message: "Season not found" });
+      }
+      const { name, year, cardYear, status } = req.body;
+      const updated = await storage.updateLeagueSeason(seasonId, {
+        ...(name !== undefined && { name }),
+        ...(year !== undefined && { year }),
+        ...(cardYear !== undefined && { cardYear }),
+        ...(status !== undefined && { status }),
+      });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating league season:", error);
+      res.status(500).json({ message: "Failed to update league season" });
+    }
+  });
+
+  app.post("/api/leagues/:id/seasons/:seasonId/set-current", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+      const seasonId = parseInt(req.params.seasonId);
+      if (!await hasLeagueCommissionerAccess(userId, leagueId)) {
+        return res.status(403).json({ message: "Commissioner access required" });
+      }
+      const season = await storage.getLeagueSeason(seasonId);
+      if (!season || season.leagueId !== leagueId) {
+        return res.status(404).json({ message: "Season not found" });
+      }
+      await storage.setCurrentSeason(leagueId, seasonId);
+      res.json({ message: "Current season updated" });
+    } catch (error) {
+      console.error("Error setting current season:", error);
+      res.status(500).json({ message: "Failed to set current season" });
+    }
+  });
+
   // Create a new league (super admin only)
   app.post("/api/leagues", isAuthenticated, async (req: any, res) => {
     try {
@@ -7599,7 +7803,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "A league with this slug already exists" });
       }
 
-      const league = await storage.createLeague({
+      const { league } = await storage.createLeagueWithSeason({
         name: name.trim(),
         slug: slug.toLowerCase().trim(),
         timezone: timezone || "America/New_York",
@@ -8965,20 +9169,41 @@ export async function registerRoutes(
   app.post("/api/drafts", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.originalUserId || req.session.userId!;
-      const { name, leagueId, season, rounds, snake, pickDurationMinutes, teamDraftRound } = req.body;
+      const { name, leagueId, season, seasonId, rounds, snake, pickDurationMinutes, teamDraftRound } = req.body;
 
-      if (!name || !leagueId || !season) {
-        return res.status(400).json({ message: "name, leagueId, and season are required" });
+      if (!name || !leagueId) {
+        return res.status(400).json({ message: "name and leagueId are required" });
       }
 
       if (!await hasLeagueCommissionerAccess(userId, leagueId)) {
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
+      // Resolve seasonId: prefer explicit (validated), then look up current season
+      let resolvedSeasonId: number | undefined;
+      let resolvedSeason: number | undefined;
+      if (seasonId !== undefined && seasonId !== null) {
+        resolvedSeasonId = Number(seasonId);
+        if (!Number.isInteger(resolvedSeasonId) || resolvedSeasonId <= 0) {
+          return res.status(400).json({ message: "seasonId must be a positive integer" });
+        }
+        const seasonObj = await storage.getLeagueSeason(resolvedSeasonId);
+        if (!seasonObj || seasonObj.leagueId !== leagueId) {
+          return res.status(400).json({ message: "Invalid seasonId for this league" });
+        }
+        resolvedSeason = season ? Number(season) : seasonObj.cardYear;
+      } else {
+        const currentSeason = await storage.getCurrentLeagueSeason(leagueId);
+        if (!currentSeason) return res.status(400).json({ message: "No current season found for this league" });
+        resolvedSeasonId = currentSeason.id;
+        resolvedSeason = season ? Number(season) : currentSeason.cardYear;
+      }
+
       const draft = await storage.createDraft({
         name,
         leagueId,
-        season,
+        seasonId: resolvedSeasonId!,
+        season: resolvedSeason!,
         rounds: rounds || 1,
         snake: snake !== undefined ? snake : true,
         pickDurationMinutes: pickDurationMinutes || 30,
@@ -10225,7 +10450,7 @@ export async function registerRoutes(
         .from(leagueRosterAssignments)
         .where(and(
           eq(leagueRosterAssignments.leagueId, draft.leagueId),
-          eq(leagueRosterAssignments.season, draft.season),
+          eq(leagueRosterAssignments.seasonId, draft.seasonId),
         ));
       const alreadyAssigned = new Set(existingAssignments.map(a => a.mlbPlayerId));
 
@@ -10235,6 +10460,7 @@ export async function registerRoutes(
       let assignedCount = 0;
       const assignments: {
         leagueId: number;
+        seasonId: number;
         userId: string;
         mlbPlayerId: number;
         rosterType: string;
@@ -10250,6 +10476,7 @@ export async function registerRoutes(
             const poolEntry = poolMap.get(playerId);
             assignments.push({
               leagueId: draft.leagueId,
+              seasonId: draft.seasonId,
               userId: pick.userId,
               mlbPlayerId: playerId,
               rosterType: pick.rosterType || "milb",
@@ -10264,6 +10491,7 @@ export async function registerRoutes(
           const poolEntry = poolMap.get(pick.mlbPlayerId);
           assignments.push({
             leagueId: draft.leagueId,
+            seasonId: draft.seasonId,
             userId: pick.userId,
             mlbPlayerId: pick.mlbPlayerId,
             rosterType: pick.rosterType || "milb",

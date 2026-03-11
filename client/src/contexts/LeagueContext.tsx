@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
-import type { League, LeagueMember } from "@shared/schema";
+import type { League, LeagueMember, LeagueSeason } from "@shared/schema";
 
 type LeagueMemberWithUser = LeagueMember & {
   user: {
@@ -17,6 +17,7 @@ type LeagueWithRole = League & {
   role: 'owner' | 'commissioner';
   teamName: string | null;
   teamAbbreviation: string | null;
+  currentSeason: LeagueSeason | null;
 };
 
 const SELECTED_LEAGUE_KEY = "selectedLeagueId";
@@ -24,6 +25,7 @@ const SELECTED_LEAGUE_KEY = "selectedLeagueId";
 interface LeagueContextValue {
   leagues: LeagueWithRole[];
   currentLeague: LeagueWithRole | null;
+  currentSeason: LeagueSeason | null;
   selectedLeagueId: number | null;
   selectLeague: (leagueId: number) => void;
   isLoadingLeagues: boolean;
@@ -75,10 +77,12 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
 
   const isLeagueCommissioner = currentLeague?.role === 'commissioner';
   const hasAnyCommissionerRole = leagues?.some(l => l.role === 'commissioner') || false;
+  const currentSeason = currentLeague?.currentSeason || null;
 
   const value: LeagueContextValue = {
     leagues: leagues || [],
     currentLeague,
+    currentSeason,
     selectedLeagueId: selectedLeagueId ?? currentLeague?.id ?? null,
     selectLeague,
     isLoadingLeagues,

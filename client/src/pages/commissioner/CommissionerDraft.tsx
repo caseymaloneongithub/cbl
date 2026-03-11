@@ -17,7 +17,7 @@ import type { DraftWithDetails } from "@shared/schema";
 import { Plus, Loader2, ListOrdered } from "lucide-react";
 
 export default function CommissionerDraft() {
-  const { selectedLeagueId } = useLeague();
+  const { selectedLeagueId, currentSeason } = useLeague();
   const { toast } = useToast();
   const [, navigate] = useLocation();
 
@@ -42,7 +42,8 @@ export default function CommissionerDraft() {
       const res = await apiRequest("POST", "/api/drafts", {
         name: newName,
         leagueId: selectedLeagueId,
-        season: new Date().getFullYear(),
+        seasonId: currentSeason?.id,
+        season: currentSeason?.cardYear || new Date().getFullYear(),
         pickDurationMinutes: newPickDuration,
         teamDraftRound: newTeamDraftRound ? Number(newTeamDraftRound) : null,
       });

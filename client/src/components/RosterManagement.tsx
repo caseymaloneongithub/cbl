@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLeague } from "@/hooks/useLeague";
 import { stripAccents } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -168,7 +169,9 @@ interface DuplicateMlbAssignmentsResponse {
 
 export default function RosterManagement({ leagueId, league, members, isCommissioner, rosterLevel, showOnboardingTools = false, onboardingScope }: RosterManagementProps) {
   const { toast } = useToast();
-  const season = new Date().getFullYear();
+  const { currentSeason } = useLeague();
+  const season = currentSeason?.cardYear || new Date().getFullYear();
+  const seasonId = currentSeason?.id;
   const [selectedTeamId, setSelectedTeamId] = useState<string>("all");
   const [selectedRosterType, setSelectedRosterType] = useState<string>(rosterLevel || "all");
   const [rosterSearch, setRosterSearch] = useState("");
@@ -289,7 +292,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
   });
 
   const assignMutation = useMutation({
-    mutationFn: async (data: { mlbPlayerId: number; assignToUserId: string; rosterType: string; season: number }) => {
+    mutationFn: async (data: { mlbPlayerId: number; assignToUserId: string; rosterType: string; season: number; seasonId?: number }) => {
       return apiRequest("POST", `/api/leagues/${leagueId}/roster-assignments`, data);
     },
     onSuccess: () => {
@@ -665,6 +668,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
       const response = await apiRequest("POST", `/api/leagues/${leagueId}/roster-assignments/upload-csv`, {
         csvData: csvUploadText,
         season,
+        seasonId,
         defaultRosterType: csvDefaultRosterType,
         operation: action,
         assumePageScope: !!onboardingScope,
@@ -2280,6 +2284,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                     assignToUserId: assignUserId,
                     rosterType: assignRosterType,
                     season,
+                    seasonId,
                   });
                 }
               }}
