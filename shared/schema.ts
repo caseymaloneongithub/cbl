@@ -59,37 +59,7 @@ export const leaguesRelations = relations(leagues, ({ one, many }) => ({
   }),
   members: many(leagueMembers),
   auctions: many(auctions),
-  seasons: many(leagueSeasons),
 }));
-
-// League seasons - represents a discrete season within a league
-export const leagueSeasons = pgTable("league_seasons", {
-  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  leagueId: integer("league_id").references(() => leagues.id).notNull(),
-  name: varchar("name", { length: 100 }).notNull(), // e.g., "Season 2026"
-  year: integer("year").notNull(), // game year, e.g. 2026
-  cardYear: integer("card_year").notNull(), // player data year, e.g. 2025 (usually year - 1)
-  isCurrent: boolean("is_current").default(false).notNull(),
-  status: varchar("status", { length: 20 }).default("active").notNull(), // 'setup', 'active', 'completed'
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [
-  index("idx_league_seasons_league").on(table.leagueId),
-  uniqueIndex("uq_league_season_league_year").on(table.leagueId, table.year),
-]);
-
-export const leagueSeasonsRelations = relations(leagueSeasons, ({ one }) => ({
-  league: one(leagues, {
-    fields: [leagueSeasons.leagueId],
-    references: [leagues.id],
-  }),
-}));
-
-export const insertLeagueSeasonSchema = (createInsertSchema(leagueSeasons) as any).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
 
 // League members table - tracks which users belong to which leagues and their roles
 export const leagueMembers = pgTable("league_members", {
@@ -591,9 +561,8 @@ export const insertTeamOwnershipInviteSchema = (createInsertSchema(teamOwnership
 export const drafts = pgTable("drafts", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   leagueId: integer("league_id").references(() => leagues.id).notNull(),
-  seasonId: integer("season_id").references(() => leagueSeasons.id).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
-  season: integer("season").notNull(), // legacy card year integer, kept for backward compat
+  season: integer("season").notNull(),
   rounds: integer("rounds").notNull().default(1),
   snake: boolean("snake").notNull().default(false),
   status: varchar("status", { length: 20 }).notNull().default("setup"), // 'setup', 'active', 'paused', 'completed'
@@ -605,7 +574,6 @@ export const drafts = pgTable("drafts", {
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
   index("idx_drafts_league").on(table.leagueId),
-  index("idx_drafts_season_id").on(table.seasonId),
 ]);
 
 export const insertDraftSchema = (createInsertSchema(drafts) as any).omit({
@@ -752,7 +720,6 @@ export type DraftUserSettings = typeof draftUserSettings.$inferSelect;
 export const leagueRosterAssignments = pgTable("league_roster_assignments", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   leagueId: integer("league_id").references(() => leagues.id).notNull(),
-  seasonId: integer("season_id").references(() => leagueSeasons.id).notNull(),
   userId: varchar("user_id").references(() => users.id).notNull(),
   mlbPlayerId: integer("mlb_player_id").references(() => mlbPlayers.id).notNull(),
   rosterType: varchar("roster_type", { length: 10 }).notNull(), // 'mlb', 'milb', 'draft'
@@ -760,11 +727,10 @@ export const leagueRosterAssignments = pgTable("league_roster_assignments", {
   salary2026: real("salary_2026"),
   minorLeagueStatus: varchar("minor_league_status", { length: 8 }),
   minorLeagueYears: integer("minor_league_years"),
-  season: integer("season").notNull(), // legacy card year integer, kept for backward compat
+  season: integer("season").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
   index("idx_roster_assignments_league_season").on(table.leagueId, table.season),
-  index("idx_roster_assignments_season_id").on(table.seasonId),
   index("idx_roster_assignments_user").on(table.userId),
 ]);
 
@@ -835,9 +801,6 @@ export const insertMlbPlayerSchema = (createInsertSchema(mlbPlayers) as any).omi
 // Types
 export type League = typeof leagues.$inferSelect;
 export type InsertLeague = z.infer<typeof insertLeagueSchema>;
-
-export type LeagueSeason = typeof leagueSeasons.$inferSelect;
-export type InsertLeagueSeason = z.infer<typeof insertLeagueSeasonSchema>;
 
 export type LeagueMember = typeof leagueMembers.$inferSelect;
 export type InsertLeagueMember = z.infer<typeof insertLeagueMemberSchema>;

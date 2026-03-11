@@ -23,9 +23,9 @@ Preferred communication style: Simple, everyday language.
 ### Database Layer
 - **ORM**: Drizzle ORM with PostgreSQL.
 - **Schema**: Centralized in `shared/schema.ts` with Drizzle-Zod for runtime validation.
-- **Core Tables**: `users`, `auctions`, `auctionTeams`, `leagueSettings`, `freeAgents`, `bids`, `autoBids`, `sessions`, `drafts`, `draftPlayers`, `draftPicks`, `draftOrder`, `leagueRosterAssignments`, `teamOwnershipInvites`, `leagueSeasons`.
+- **Core Tables**: `users`, `auctions`, `auctionTeams`, `leagueSettings`, `freeAgents`, `bids`, `autoBids`, `sessions`, `drafts`, `draftPlayers`, `draftPicks`, `draftOrder`, `leagueRosterAssignments`, `teamOwnershipInvites`.
 - **Storage**: `server/storage.ts` encapsulates database operations.
-- **Migrations**: SQL migration files in `migrations/` directory (0001-0014), applied manually via `psql`. Drizzle Kit used for schema introspection.
+- **Migrations**: SQL migration files in `migrations/` directory (0001-0011), applied manually via `psql`. Drizzle Kit used for schema introspection.
 - **Query Optimization**: Employs batch queries to prevent N+1 issues, particularly for free agent loading.
 
 ### Authentication & Authorization
@@ -47,8 +47,7 @@ Preferred communication style: Simple, everyday language.
 - **MLB Stats Integration**: Commissioners can sync player statistics from MLB's official Stats API, supporting fuzzy name matching, selective stat updates, batch processing, two-way player detection (pitcher/hitter), counting stats (HR, SB, W, SV, IP, PA), and full FML name tracking.
 - **Email Notifications**: Integrated with Resend for password resets, new user credentials, and hourly auction summaries with configurable notification settings (none, commissioner, bidders, league) and individual opt-out options.
 - **Draft System**: Full draft management with separate detail pages per draft (`/commissioner/drafts/:draftId`), CSV-based order configuration, customizable rounds, "Team Draft" functionality, commissioner pick-on-behalf and nullify/undo pick capabilities (including unskip), time-based pick scheduling with early-pick support, and ranked auto-draft lists (similar to auto-bidding) with configurable auto-draft mode (immediate or deadline-only via `draftUserSettings` table). Draft timing rules: Round 1 picks are sequential (all previous must be made/skipped); Round 2+ picks unlock when previous pick's deadline passes; skipped/deadline-passed picks can be made at any time. Concurrency-safe with per-draft locking.
-- **League Seasons**: First-class season entity (`leagueSeasons` table) scoping rosters and drafts per season. Each league has one current season (enforced by partial unique index). Seasons track `year` (game year) and `cardYear` (N-1). API supports CRUD, set-current, and automatic fallback to current season. Both `drafts.seasonId` and `leagueRosterAssignments.seasonId` are NOT NULL FKs. Legacy `season` integer kept for backward compat.
-- **League Roster Assignments**: Tracks MLB players assigned to league teams per season (scoped by `seasonId`), supporting ML and MiLB roster limits, contract fields, minor league status/years tracking, and dynamically identifying unassigned players as free agents. Includes duplicate assignment prevention via database trigger (now season_id-scoped).
+- **League Roster Assignments**: Tracks MLB players assigned to league teams per season, supporting ML and MiLB roster limits, contract fields, minor league status/years tracking, and dynamically identifying unassigned players as free agents. Includes duplicate assignment prevention via database trigger.
 - **Reconciliation**: Commissioner tools for reconciling roster data, with scoped reconciliation views. Name matching includes sport-level scoring bonus (MLB/MiLB alignment), extensive nickname mappings (including Spanish baseball names), and uncarded-player warnings at import time. N-1 season convention documented: card year is always one year behind the CBL game season.
 - **Player Carding**: Utility for generating player card displays (`client/src/lib/playerCarding.ts`).
 - **Team Display**: Utility for team display formatting (`client/src/lib/teamDisplay.ts`).
