@@ -1957,7 +1957,6 @@ export default function DraftBoard() {
             </CardHeader>
             <CardContent className="p-0 flex-1 overflow-hidden">
               {isMyPickTeamDraft && draft.status === "active" ? (
-                <>
                 <div className="overflow-x-auto h-full overflow-y-auto">
                   {filteredOrgs.length === 0 ? (
                     <div className="p-8 text-center text-muted-foreground">
@@ -2021,7 +2020,6 @@ export default function DraftBoard() {
                     </Table>
                   )}
                 </div>
-                </>
               ) : loadingPlayers ? (
                 <div className="p-6 space-y-3">
                   {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
@@ -2096,7 +2094,7 @@ export default function DraftBoard() {
             </CardContent>
           </Card>
 
-          {isMyPickTeamDraft && draft.status === "active" && allAvailablePlayers && allAvailablePlayers.length > 0 && (
+          {isCurrentRoundTeamDraft && draft.status === "active" && allAvailablePlayers && allAvailablePlayers.length > 0 && (
             <Card className="flex flex-col mt-4" data-testid="card-team-draft-players">
               <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
                 <CardTitle className="text-lg">

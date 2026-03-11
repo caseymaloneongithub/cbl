@@ -1,0 +1,31 @@
+Here's my review of the last few draft-related commits:
+
+## Recent Draft Commits Review
+
+### 1. `4dfadc9` - Remove commissioner pick cancellation from regular draft board
+### 2. `a762075` - Remove commissioner actions from the main draft board view
+### 3. `e81461f` - Update platform to remove unused draft board action buttons
+
+These three commits progressively stripped commissioner-only actions from the draft board:
+- **Removed `nullifyPick` and `unskipPick` mutations** entirely (~60 lines of mutation logic deleted)
+- **Removed inline nullify/unskip UI** from the pick table — commissioners no longer see the `X` button on made picks or `Undo2` on skipped picks
+- **Cleaned up unused imports** (`Undo2`, `X` from lucide-react)
+
+The pick display now just shows the player name for made picks and a "Skipped" badge for skipped ones, with no action buttons for anyone. This is a significant change — commissioners can no longer correct mistakes from the draft board itself. If these actions are still available elsewhere (e.g., a commissioner admin panel), that's fine, but if this was the only UI for them, those capabilities are now inaccessible.
+
+### 4. `f861d30` - Add a read-only player list to team draft mode
+### 5. `a5276a9` - Improve player scouting during team drafts
+
+These two commits added and then refined a player scouting card for team drafts:
+- Added a separate **"Available Players" card** that appears when it's your pick during a team draft (`isMyPickTeamDraft && draft.status === "active"`)
+- Includes **search, position filter, and org filter**
+- Added a **CSV download button** so teams can export the available player list
+- Made the list **scrollable** with sticky headers
+- The table shows player name, position, age, org (abbreviated), and level
+
+**Observations:**
+- The player card only shows during **active** team drafts when **it's your pick** — other participants can't browse the list while waiting, which seems intentionally restrictive but could limit scouting time
+- The CSV generation is inline (not a utility function) — works fine but is ~15 lines of logic embedded in a click handler
+- The fragment wrapper (`<>...</>`) added around the org-pick table in commit `a5276a9` appears unnecessary — there's only one child `<div>` inside it
+
+Overall the changes are clean and functional. The main architectural question is whether the commissioner nullify/unskip actions were intentionally removed permanently or just relocated.
