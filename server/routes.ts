@@ -10135,12 +10135,9 @@ export async function registerRoutes(
       if (isTeamDraftRound) {
         const selectedOrgName = req.body?.selectedOrgName || req.body?.parentOrgName;
         const selectedOrgId = req.body?.selectedOrgId ? parseInt(req.body.selectedOrgId) : null;
-        const rosterType = (req.body?.rosterType || "milb") as "mlb" | "milb";
+        const rosterType: "milb" = "milb";
         if (!selectedOrgName) {
           return res.status(400).json({ message: "selectedOrgName is required for team draft rounds" });
-        }
-        if (rosterType !== "mlb" && rosterType !== "milb") {
-          return res.status(400).json({ message: "rosterType must be 'mlb' or 'milb'" });
         }
 
         const result = await storage.fillSlotWithOrg(slot.id, targetUserId, selectedOrgName, selectedOrgId, rosterType, now);
@@ -10252,7 +10249,7 @@ export async function registerRoutes(
               leagueId: draft.leagueId,
               userId: pick.userId,
               mlbPlayerId: playerId,
-              rosterType: pick.rosterType || "milb",
+              rosterType: "milb",
               minorLeagueStatus: poolEntry?.minorLeagueStatus || null,
               minorLeagueYears: poolEntry?.minorLeagueYears ?? null,
               season: draft.season,
@@ -10321,12 +10318,9 @@ export async function registerRoutes(
       if (isTeamDraftRound) {
         const selectedOrgName = req.body?.selectedOrgName || req.body?.parentOrgName;
         const selectedOrgId = req.body?.selectedOrgId ? parseInt(req.body.selectedOrgId) : null;
-        const rosterType = (req.body?.rosterType || "milb") as "mlb" | "milb";
+        const rosterType: "milb" = "milb";
         if (!selectedOrgName) {
           return res.status(400).json({ message: "selectedOrgName is required for team-draft round" });
-        }
-        if (rosterType !== "mlb" && rosterType !== "milb") {
-          return res.status(400).json({ message: "rosterType must be 'mlb' or 'milb'" });
         }
         const result = await storage.fillSlotWithOrg(slot.id, targetUserId, selectedOrgName, selectedOrgId, rosterType, now);
         const allSlots = await storage.getDraftPicks(id);
@@ -10721,7 +10715,7 @@ export async function registerRoutes(
       if (existing.some(item => item.orgName === orgName)) {
         return res.status(400).json({ message: "Organization is already in your team auto-draft list" });
       }
-      const item = await storage.addTeamAutoDraftItem(draftId, userId, orgName, rosterType || "milb");
+      const item = await storage.addTeamAutoDraftItem(draftId, userId, orgName, "milb");
       const draft = await storage.getDraft(draftId);
       if (draft && draft.status === "active") {
         setTimeout(() => processAutoDraft(draftId, storage), 500);
@@ -11035,7 +11029,7 @@ async function processAutoDraft(draftId: number, storage: any): Promise<boolean>
         return false;
       }
 
-      await storage.fillSlotWithOrg(slot.id, slot.userId, topTeamPick.orgName, null, topTeamPick.rosterType as "mlb" | "milb", now);
+      await storage.fillSlotWithOrg(slot.id, slot.userId, topTeamPick.orgName, null, "milb", now);
 
       const updatedSlots = await storage.getDraftPicks(draftId);
       if (updatedSlots.length > 0 && updatedSlots.every((s: any) => !!s.madeAt || !!s.skippedAt)) {

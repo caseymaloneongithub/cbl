@@ -56,12 +56,10 @@ export default function DraftBoard() {
   const [autoDraftRosterType, setAutoDraftRosterType] = useState<string>("milb");
   const [teamDraftDialogOpen, setTeamDraftDialogOpen] = useState(false);
   const [selectedOrg, setSelectedOrg] = useState<string>("");
-  const [teamDraftRosterType, setTeamDraftRosterType] = useState<string>("milb");
   const [countdown, setCountdown] = useState<string>("");
   const [startCountdown, setStartCountdown] = useState<string>("");
   const [autoDraftSearch, setAutoDraftSearch] = useState("");
   const [teamAutoDraftSearch, setTeamAutoDraftSearch] = useState("");
-  const [teamAutoDraftRosterType, setTeamAutoDraftRosterType] = useState<string>("milb");
   const [positionFilter, setPositionFilter] = useState<string>("all");
   const [orgFilter, setOrgFilter] = useState<string>("all");
   const [commPickUserId, setCommPickUserId] = useState("");
@@ -847,7 +845,7 @@ export default function DraftBoard() {
 
   const handleConfirmTeamDraft = () => {
     if (!selectedOrg) return;
-    makeTeamDraftPick.mutate({ parentOrgName: selectedOrg, rosterType: teamDraftRosterType });
+    makeTeamDraftPick.mutate({ parentOrgName: selectedOrg, rosterType: "milb" });
   };
 
   if (loadingDraft) {
@@ -1740,15 +1738,9 @@ export default function DraftBoard() {
                       data-testid="input-team-auto-draft-search"
                     />
                   </div>
-                  <Select value={teamAutoDraftRosterType} onValueChange={setTeamAutoDraftRosterType}>
-                    <SelectTrigger className="w-[100px]" data-testid="select-team-auto-draft-roster-type">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="milb">MiLB</SelectItem>
-                      <SelectItem value="mlb">MLB</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center h-9 px-3 rounded-md border bg-muted text-sm text-muted-foreground" data-testid="team-auto-draft-roster-type-label">
+                    MiLB
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="p-0">
@@ -1774,7 +1766,7 @@ export default function DraftBoard() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => addToTeamAutoDraft.mutate({ orgName: org, rosterType: teamAutoDraftRosterType })}
+                            onClick={() => addToTeamAutoDraft.mutate({ orgName: org, rosterType: "milb" })}
                             disabled={addToTeamAutoDraft.isPending}
                             data-testid={`button-team-auto-draft-candidate-add-${org}`}
                           >
@@ -1998,7 +1990,7 @@ export default function DraftBoard() {
                                     <Button
                                       size="sm"
                                       variant="outline"
-                                      onClick={() => addToTeamAutoDraft.mutate({ orgName: org, rosterType: teamAutoDraftRosterType })}
+                                      onClick={() => addToTeamAutoDraft.mutate({ orgName: org, rosterType: "milb" })}
                                       disabled={addToTeamAutoDraft.isPending}
                                       data-testid={`button-queue-org-${org.replace(/\s/g, '-')}`}
                                     >
