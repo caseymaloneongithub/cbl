@@ -844,9 +844,10 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
     [cutMap],
   );
   const reconciliationUnresolvedCount = unresolvedRows.length;
+  const alreadyImportedCount = Number(lastCsvUploadResult?.created || 0);
   const readyToImportCount = Math.max(
     0,
-    Number(lastCsvUploadResult?.processed || 0) - reconciliationUnresolvedCount - selectedCutCount,
+    Number(lastCsvUploadResult?.processed || 0) - alreadyImportedCount - reconciliationUnresolvedCount - selectedCutCount,
   );
   const hideFinalTotalsWhileProcessing = progressActive && (
     progressPayload?.stage === "matching" ||
@@ -1410,7 +1411,8 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                     <>Rows are being evaluated. Imported/skipped totals will appear after processing completes.</>
                   ) : ((reconciliationUnresolvedCount > 0 || confirmedRowCount > 0) || inReconciliationPhase) ? (
                     <>
-                      Pending import: {readyToImportCount} rows
+                      Auto-imported: {alreadyImportedCount.toLocaleString()}
+                      {readyToImportCount > 0 ? ` | Skipped: ${readyToImportCount.toLocaleString()}` : ""}
                       {reconciliationUnresolvedCount > 0 ? ` | Needs manual resolution: ${reconciliationUnresolvedCount}` : ""}
                       {confirmedRowCount > 0 ? ` | Confirmed: ${confirmedRowCount}` : ""}
                       {selectedCutCount > 0 ? ` | Marked cut: ${selectedCutCount}` : ""}
