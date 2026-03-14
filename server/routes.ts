@@ -2601,14 +2601,14 @@ export async function registerRoutes(
           return [];
         }
       };
-      const SPORT_IDS_FOR_DIRECTORY = [11, 12, 13, 14, 16];
+      const SPORT_IDS_FOR_DIRECTORY = [1, 11, 12, 13, 14, 15, 16, 509];
       const webDirectoryCache = new Map<string, any[]>();
       const searchMlbDirectoryBySurname = async (rawName: string, season: number): Promise<any[]> => {
         const parts = splitNormName(rawName);
         const surname = (parts.last || "").trim();
         if (!surname || surname.length < 4) return [];
         const candidates: any[] = [];
-        const seasons = [season, season - 1, season - 2, season - 3, season - 4];
+        const seasons = [season, season - 1, season - 2, season - 3, season - 4, season - 5];
         for (const y of seasons) {
           for (const sportId of SPORT_IDS_FOR_DIRECTORY) {
             const key = `${sportId}-${y}`;
@@ -3190,6 +3190,45 @@ export async function registerRoutes(
         return resolved;
       };
 
+      if (isLargeUpload) {
+        await persistProgress({ running: true, processed: 0, totalRows, stage: matchingStage, message: "Pre-loading MiLB directories (2020-" + season + ")..." });
+        const prefetchSeasons = [season, season - 1, season - 2, season - 3, season - 4, season - 5];
+        for (const y of prefetchSeasons) {
+          for (const sportId of SPORT_IDS_FOR_DIRECTORY) {
+            const key = `${sportId}-${y}`;
+            if (webDirectoryCache.has(key)) continue;
+            try {
+              const response = await fetch(`https://statsapi.mlb.com/api/v1/sports/${sportId}/players?season=${y}`);
+              if (!response.ok) {
+                webDirectoryCache.set(key, []);
+                continue;
+              }
+              const payload = await response.json();
+              const people = Array.isArray(payload?.people) ? payload.people : [];
+              const roster = people.map((p: any) => ({
+                mlbId: Number(p?.id),
+                fullName: String(p?.fullName || "").trim(),
+                fullFmlName: String(p?.fullFMLName || "").trim() || null,
+                nameFirstLast: String(p?.nameFirstLast || "").trim() || null,
+                firstName: p?.firstName || null,
+                middleName: p?.middleName || null,
+                lastName: p?.lastName || null,
+                age: Number.isFinite(Number(p?.currentAge)) ? Number(p.currentAge) : null,
+                currentTeamName: p?.currentTeam?.name || null,
+                parentOrgName: null,
+                sportLevel: "DIR",
+                birthDate: p?.birthDate || null,
+                season: y,
+              })).filter((p: any) => Number.isInteger(p.mlbId) && p.mlbId > 0 && p.fullName);
+              webDirectoryCache.set(key, roster);
+            } catch {
+              webDirectoryCache.set(key, []);
+            }
+          }
+        }
+        console.log(`[Reconciliation] Pre-loaded ${webDirectoryCache.size} directory caches`);
+      }
+
       for (let i = 1; i < lines.length; i++) {
         const rowNum = i + 1;
         processedRowsLive++;
@@ -3306,8 +3345,7 @@ export async function registerRoutes(
               ]);
               candidates = mergeCandidatesByMlbId([candidates, webRaw, webStripped]).slice(0, 50);
             }
-            // Generic deep fallback: MLB sport directories across prior years filtered by surname fuzziness.
-            if (!isLargeUpload && candidates.length === 0) {
+            if (candidates.length === 0) {
               candidates = await searchMlbDirectoryBySurname(rawName, season);
             }
             const hasDobExactCandidate = (list: any[]) => {
