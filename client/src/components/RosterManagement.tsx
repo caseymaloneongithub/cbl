@@ -770,7 +770,12 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
       }
     },
     onError: (error: any) => {
-      toast({ title: "CSV Upload Failed", description: error.message, variant: "destructive" });
+      const isTimeout = /timeout|network|fetch|abort|failed to fetch/i.test(error?.message || "");
+      if (isTimeout) {
+        toast({ title: "Request timed out", description: "Processing continues on the server. Progress will update automatically." });
+      } else {
+        toast({ title: "CSV Upload Failed", description: error.message, variant: "destructive" });
+      }
     },
     onSettled: () => {
       setIsReconciling(false);

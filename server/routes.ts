@@ -1967,6 +1967,8 @@ export async function registerRoutes(
 
   // Bulk assign via CSV payload (commissioner only)
   app.post("/api/leagues/:id/roster-assignments/upload-csv", isAuthenticated, async (req: any, res) => {
+    req.setTimeout(600000);
+    res.setTimeout(600000);
     try {
       const userId = req.session.originalUserId || req.session.userId!;
       const leagueId = parseInt(req.params.id);
@@ -3190,19 +3192,24 @@ export async function registerRoutes(
         return resolved;
       };
 
-      if (isLargeUpload) {
+      {
         await persistProgress({ running: true, processed: 0, totalRows, stage: matchingStage, message: "Pre-loading MiLB directories (2020-" + season + ")..." });
         const prefetchSeasons = [season, season - 1, season - 2, season - 3, season - 4, season - 5];
+        const fetchTasks: { key: string; url: string }[] = [];
         for (const y of prefetchSeasons) {
           for (const sportId of SPORT_IDS_FOR_DIRECTORY) {
             const key = `${sportId}-${y}`;
             if (webDirectoryCache.has(key)) continue;
+            fetchTasks.push({ key, url: `https://statsapi.mlb.com/api/v1/sports/${sportId}/players?season=${y}` });
+          }
+        }
+        const BATCH_SIZE = 8;
+        for (let b = 0; b < fetchTasks.length; b += BATCH_SIZE) {
+          const batch = fetchTasks.slice(b, b + BATCH_SIZE);
+          const results = await Promise.allSettled(batch.map(async (task) => {
             try {
-              const response = await fetch(`https://statsapi.mlb.com/api/v1/sports/${sportId}/players?season=${y}`);
-              if (!response.ok) {
-                webDirectoryCache.set(key, []);
-                continue;
-              }
+              const response = await fetch(task.url);
+              if (!response.ok) return { key: task.key, roster: [] as any[] };
               const payload = await response.json();
               const people = Array.isArray(payload?.people) ? payload.people : [];
               const roster = people.map((p: any) => ({
@@ -3218,11 +3225,16 @@ export async function registerRoutes(
                 parentOrgName: null,
                 sportLevel: "DIR",
                 birthDate: p?.birthDate || null,
-                season: y,
+                season: parseInt(task.key.split("-")[1]),
               })).filter((p: any) => Number.isInteger(p.mlbId) && p.mlbId > 0 && p.fullName);
-              webDirectoryCache.set(key, roster);
+              return { key: task.key, roster };
             } catch {
-              webDirectoryCache.set(key, []);
+              return { key: task.key, roster: [] as any[] };
+            }
+          }));
+          for (const r of results) {
+            if (r.status === "fulfilled") {
+              webDirectoryCache.set(r.value.key, r.value.roster);
             }
           }
         }
