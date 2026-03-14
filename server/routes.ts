@@ -8525,12 +8525,22 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Commissioner or Super Admin access required" });
       }
 
-      const { budgetCap, ipCap, paCap } = req.body;
+      const { budgetCap, ipCap, paCap, mlRosterLimit, milbRosterLimit } = req.body;
       const updateData: any = {};
       
       if (budgetCap !== undefined) updateData.budgetCap = budgetCap;
       if (ipCap !== undefined) updateData.ipCap = ipCap;
       if (paCap !== undefined) updateData.paCap = paCap;
+      if (mlRosterLimit !== undefined) {
+        const val = parseInt(mlRosterLimit);
+        if (isNaN(val) || val < 1) return res.status(400).json({ message: "ML roster limit must be a positive integer" });
+        updateData.mlRosterLimit = val;
+      }
+      if (milbRosterLimit !== undefined) {
+        const val = parseInt(milbRosterLimit);
+        if (isNaN(val) || val < 1) return res.status(400).json({ message: "MiLB roster limit must be a positive integer" });
+        updateData.milbRosterLimit = val;
+      }
 
       const league = await storage.updateLeague(leagueId, updateData);
       if (!league) {

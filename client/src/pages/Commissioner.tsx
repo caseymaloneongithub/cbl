@@ -128,7 +128,7 @@ export default function Commissioner() {
   const [rosterDragActive, setRosterDragActive] = useState(false);
   const [rosterUploadLoading, setRosterUploadLoading] = useState(false);
   const [editingLeagueCaps, setEditingLeagueCaps] = useState(false);
-  const [capsForm, setCapsForm] = useState({ budgetCap: "", ipCap: "", paCap: "" });
+  const [capsForm, setCapsForm] = useState({ budgetCap: "", ipCap: "", paCap: "", mlRosterLimit: "", milbRosterLimit: "" });
   
   interface ParsedRosterPlayer {
     playerName: string;
@@ -1717,6 +1717,8 @@ export default function Commissioner() {
                   budgetCap: rosterUsage?.caps.budgetCap?.toString() || "",
                   ipCap: rosterUsage?.caps.ipCap?.toString() || "",
                   paCap: rosterUsage?.caps.paCap?.toString() || "",
+                  mlRosterLimit: (currentLeague?.mlRosterLimit ?? 40).toString(),
+                  milbRosterLimit: (currentLeague?.milbRosterLimit ?? 150).toString(),
                 });
               }}
               data-testid="button-edit-league-caps"
@@ -1952,7 +1954,7 @@ export default function Commissioner() {
               Player Roster Assignments
             </CardTitle>
             <CardDescription className="mt-1">
-              Assign MLB players from the database to team rosters. Each team has a {currentLeague.mlRosterLimit || 40}-man ML roster and {currentLeague.milbRosterLimit || 125}-man MiLB system.
+              Assign MLB players from the database to team rosters. Each team has a {currentLeague.mlRosterLimit || 40}-man ML roster and {currentLeague.milbRosterLimit || 150}-man MiLB system.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -1970,9 +1972,9 @@ export default function Commissioner() {
       <Dialog open={editingLeagueCaps} onOpenChange={setEditingLeagueCaps}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit League Caps</DialogTitle>
+            <DialogTitle>Edit League Settings</DialogTitle>
             <DialogDescription>
-              Set maximum budget, IP, and PA limits for the league. These caps are used to calculate available capacity for auctions.
+              Set maximum budget, IP, and PA limits for the league, and configure roster size limits per team.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -2009,6 +2011,31 @@ export default function Commissioner() {
                 data-testid="input-pa-cap"
               />
             </div>
+            <Separator />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="mlRosterLimit">ML Roster Limit</Label>
+                <Input
+                  id="mlRosterLimit"
+                  type="number"
+                  value={capsForm.mlRosterLimit}
+                  onChange={(e) => setCapsForm({ ...capsForm, mlRosterLimit: e.target.value })}
+                  placeholder="40"
+                  data-testid="input-ml-roster-limit"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="milbRosterLimit">MiLB Roster Limit</Label>
+                <Input
+                  id="milbRosterLimit"
+                  type="number"
+                  value={capsForm.milbRosterLimit}
+                  onChange={(e) => setCapsForm({ ...capsForm, milbRosterLimit: e.target.value })}
+                  placeholder="150"
+                  data-testid="input-milb-roster-limit"
+                />
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingLeagueCaps(false)}>
@@ -2020,6 +2047,8 @@ export default function Commissioner() {
                   budgetCap: capsForm.budgetCap ? parseFloat(capsForm.budgetCap) : null,
                   ipCap: capsForm.ipCap ? parseInt(capsForm.ipCap) : null,
                   paCap: capsForm.paCap ? parseInt(capsForm.paCap) : null,
+                  mlRosterLimit: capsForm.mlRosterLimit ? parseInt(capsForm.mlRosterLimit) : 40,
+                  milbRosterLimit: capsForm.milbRosterLimit ? parseInt(capsForm.milbRosterLimit) : 150,
                 });
               }}
               disabled={updateLeagueCaps.isPending}

@@ -34,7 +34,7 @@ export default function CommissionerRosters({ level }: { level: "mlb" | "milb" }
   const title = level === "mlb" ? "MLB Rosters" : "MiLB Rosters";
   const description = level === "mlb"
     ? `Assign MLB players to team ${currentLeague?.mlRosterLimit || 40}-man MLB rosters`
-    : `Assign MiLB players to team ${currentLeague?.milbRosterLimit || 125}-man MiLB systems`;
+    : `Assign MiLB players to team ${currentLeague?.milbRosterLimit || 150}-man MiLB systems`;
 
   useEffect(() => {
     if (typeof window === "undefined") return;

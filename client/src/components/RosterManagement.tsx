@@ -1216,7 +1216,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
             <div className="text-sm" data-testid="text-roster-limits">
               <span className="font-medium">ML:</span> {league.mlRosterLimit || 40} per team
               <span className="mx-2">|</span>
-              <span className="font-medium">MiLB:</span> {league.milbRosterLimit || 125} per team
+              <span className="font-medium">MiLB:</span> {league.milbRosterLimit || 150} per team
             </div>
           </CardContent>
         </Card>
@@ -1747,7 +1747,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                 <TableRow>
                   <TableHead>Team</TableHead>
                   <TableHead className="text-center">ML ({league.mlRosterLimit || 40})</TableHead>
-                  <TableHead className="text-center">MiLB ({league.milbRosterLimit || 125})</TableHead>
+                  <TableHead className="text-center">MiLB ({league.milbRosterLimit || 150})</TableHead>
                   <TableHead className="text-center">Draft</TableHead>
                   <TableHead className="text-center">Total</TableHead>
                 </TableRow>
@@ -1756,7 +1756,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                 {activeMembers.map(m => {
                   const counts = teamCountMap[m.userId] || { mlb: 0, milb: 0, draft: 0 };
                   const mlbLimit = league.mlRosterLimit || 40;
-                  const milbLimit = league.milbRosterLimit || 125;
+                  const milbLimit = league.milbRosterLimit || 150;
                   return (
                     <TableRow key={m.userId} data-testid={`row-team-summary-${m.userId}`}>
                       <TableCell className="font-medium">{m.teamName || m.teamAbbreviation || m.userId}</TableCell>
@@ -2252,7 +2252,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
               {assignUserId && (() => {
                 const counts = teamCountMap[assignUserId] || { mlb: 0, milb: 0, draft: 0 };
                 const mlbLimit = league.mlRosterLimit || 40;
-                const milbLimit = league.milbRosterLimit || 125;
+                const milbLimit = league.milbRosterLimit || 150;
                 const wouldExceed =
                   (assignRosterType === 'mlb' && counts.mlb >= mlbLimit) ||
                   (assignRosterType === 'milb' && counts.milb >= milbLimit);
