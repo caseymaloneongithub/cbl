@@ -3275,7 +3275,7 @@ export async function registerRoutes(
           if ((!Number.isInteger(mlbApiId) || mlbApiId <= 0) && rawName) {
             const nameForSearch = stripParentheticalName(rawName) || rawName;
             const searchAliases = Array.from(new Set((() => {
-              const aliases = [rawName, nameForSearch].filter(Boolean);
+              const aliases = [nameForSearch].filter(Boolean);
               const split = splitNormName(nameForSearch || rawName);
               const canonicalFirst = canonicalFirstName(split.first || "");
               if (canonicalFirst && split.last && canonicalFirst !== split.first) {
