@@ -1009,7 +1009,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
     if (csvDefaultRosterType === "mlb") {
       return `mlb_api_id,player_name,middle_name,team_abbreviation,roster_type,age,mlb_team,org,fangraphs_id,status,2026\n660271,Shohei Ohtani,,${teamAbbr},mlb,30,Los Angeles Dodgers,Dodgers,19755,ARB,45\n`;
     }
-    return `mlb_api_id,last_name,first_name,team_abbreviation,roster_type,age,mlb_team,org,fangraphs_id,status,years,acquired\n,Prospect,Example James,${teamAbbr},milb,22,,Dodgers,12345,MH,0,D 2026\n`;
+    return `mlb_api_id,last_name,first_name,team_abbreviation,org,status,years,acquired\n,Prospect,Example James,${teamAbbr},Dodgers,MH,0,D 2026\n`;
   }, [activeMembers, csvDefaultRosterType]);
 
   const [csvUploadPreview, setCsvUploadPreview] = useState<{
@@ -1229,13 +1229,13 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Step 1: {onboardingScope ? `This page is locked to ${scopeLabel} scope.` : "Choose upload type (MiLB or MLB)."} Step 2: Load or download the template. Step 3: Fill rows using MLB API IDs or name columns (<code>player_name</code> or <code>first_name</code> + <code>last_name</code>) with team abbreviation. Optional: add <code>middle_name</code>, age/team hints, and MLB contract status + 2026 salary. Step 4: Upload and resolve every row until there are zero unresolved/errors.
+              Step 1: {onboardingScope ? `This page is locked to ${scopeLabel} scope.` : "Choose upload type (MiLB or MLB)."} Step 2: Load or download the template. Step 3: Fill rows using MLB API IDs or name columns (<code>player_name</code> or <code>first_name</code> + <code>last_name</code>) with team abbreviation. Optional: add <code>middle_name</code>, <code>org</code>, and MiLB contract status + years. Age and MLB team are auto-populated from API data. Step 4: Upload and resolve every row until there are zero unresolved/errors.
             </p>
             <p className="text-xs text-muted-foreground">
               For MiLB onboarding, use <code>last_name</code> + <code>first_name</code>. The <code>first_name</code> field can include middle names (example: <code>Benjamin David</code>).
             </p>
             <p className="text-xs text-muted-foreground">
-              After each upload, review the "Reconciliation Summary" below for imported vs skipped rows and exact skip reasons. Missing <code>roster_type</code> defaults to <code>{reconciliationScope}</code>.
+              After each upload, review the "Reconciliation Summary" below for imported vs skipped rows and exact skip reasons. Roster type defaults to <code>{reconciliationScope}</code> based on the selected scope.
             </p>
             {!onboardingScope ? (
               <div className="flex items-center gap-2 flex-wrap">
