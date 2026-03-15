@@ -42,6 +42,15 @@ type PitcherSortKey = "name" | "pos" | "team" | "g" | "gs" | "ip" | "k" | "bb" |
 type SortDir = "asc" | "desc";
 
 const fmtRate = (v: number | null | undefined) => (v == null ? "-" : Number(v).toFixed(3));
+
+function formatLevelWithYear(sportLevel: string, lastActiveSeason?: number | null, lastActiveLevel?: string | null): string {
+  const currentYear = new Date().getFullYear();
+  if (lastActiveSeason && lastActiveSeason < currentYear) {
+    const displayLevel = lastActiveLevel || sportLevel;
+    return `${displayLevel} (${lastActiveSeason})`;
+  }
+  return sportLevel;
+}
 const fmtEra = (v: number | null | undefined) => (v == null ? "-" : Number(v).toFixed(2));
 const fmt1 = (v: number | null | undefined) => (v == null ? "-" : Number(v).toFixed(1));
 
@@ -377,7 +386,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
                             <TableCell><NameWithHover p={p} /></TableCell>
                             <TableCell className="font-mono text-[11px]">{p.primaryPosition || "-"}</TableCell>
                             <TableCell>{teamAbbrForPlayer(p)}</TableCell>
-                            {showMilbLevel && <TableCell>{p.sportLevel || "-"}</TableCell>}
+                            {showMilbLevel && <TableCell>{formatLevelWithYear(p.sportLevel, p.lastPlayedSeason, p.lastPlayedLevel)}</TableCell>}
                             <TableCell className="text-right font-mono">{p.hittingAtBats ?? 0}</TableCell>
                             <TableCell className="text-right font-mono">{p.hittingPlateAppearances ?? 0}</TableCell>
                             <TableCell className="text-right font-mono">{p.hittingWalks ?? 0}</TableCell>
@@ -434,7 +443,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
                             <TableCell><NameWithHover p={p} /></TableCell>
                             <TableCell className="font-mono text-[11px]">{p.primaryPosition || "-"}</TableCell>
                             <TableCell>{teamAbbrForPlayer(p)}</TableCell>
-                            {showMilbLevel && <TableCell>{p.sportLevel || "-"}</TableCell>}
+                            {showMilbLevel && <TableCell>{formatLevelWithYear(p.sportLevel, p.lastPlayedSeason, p.lastPlayedLevel)}</TableCell>}
                             <TableCell className="text-right font-mono">{p.pitchingGames ?? 0}</TableCell>
                             <TableCell className="text-right font-mono">{p.pitchingGamesStarted ?? 0}</TableCell>
                             <TableCell className="text-right font-mono">{fmt1(p.pitchingInningsPitched)}</TableCell>

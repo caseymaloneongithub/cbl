@@ -38,6 +38,15 @@ type PitcherSortKey = "name" | "pos" | "team" | "g" | "gs" | "ip" | "k" | "bb" |
 type SortDir = "asc" | "desc";
 
 const fmtRate = (v: number | null | undefined) => (v == null ? "-" : Number(v).toFixed(3));
+
+function formatLevelWithYear(sportLevel: string, lastActiveSeason?: number | null, lastActiveLevel?: string | null): string {
+  const currentYear = new Date().getFullYear();
+  if (lastActiveSeason && lastActiveSeason < currentYear) {
+    const displayLevel = lastActiveLevel || sportLevel;
+    return `${displayLevel} (${lastActiveSeason})`;
+  }
+  return sportLevel;
+}
 const fmtEra = (v: number | null | undefined) => (v == null ? "-" : Number(v).toFixed(2));
 const fmt1 = (v: number | null | undefined) => (v == null ? "-" : Number(v).toFixed(1));
 
@@ -103,6 +112,8 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
       const pa = a.player.hittingPlateAppearances ?? 0;
       const isTwoWay = ip >= 20 && pa >= 100;
       if (isTwoWay) return true;
+      const hasAnyStats = a.player.hadHittingStats || a.player.hadPitchingStats;
+      if (!hasAnyStats) return a.player.positionType !== "Pitcher";
       return a.player.hadHittingStats || !a.player.hadPitchingStats;
     }),
     [filtered],
@@ -113,6 +124,8 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
       const pa = a.player.hittingPlateAppearances ?? 0;
       const isTwoWay = ip >= 20 && pa >= 100;
       if (isTwoWay) return true;
+      const hasAnyStats = a.player.hadHittingStats || a.player.hadPitchingStats;
+      if (!hasAnyStats) return a.player.positionType === "Pitcher";
       return a.player.hadPitchingStats && !a.player.hadHittingStats;
     }),
     [filtered],
@@ -245,7 +258,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                           <TableCell><NameWithHover a={a} /></TableCell>
                           <TableCell className="font-mono text-[11px]">{a.player.primaryPosition || "-"}</TableCell>
                           <TableCell>{teamAbbrForPlayer(a.player)}</TableCell>
-                          {showMilbLevel && <TableCell>{a.player.sportLevel || "-"}</TableCell>}
+                          {showMilbLevel && <TableCell>{formatLevelWithYear(a.player.sportLevel, (a.player as any).lastActiveSeason, (a.player as any).lastActiveLevel)}</TableCell>}
                           <TableCell className="text-right font-mono">{a.player.hittingAtBats ?? 0}</TableCell>
                           <TableCell className="text-right font-mono">{a.player.hittingPlateAppearances ?? 0}</TableCell>
                           <TableCell className="text-right font-mono">{a.player.hittingWalks ?? 0}</TableCell>
@@ -289,7 +302,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                           <TableCell><NameWithHover a={a} /></TableCell>
                           <TableCell className="font-mono text-[11px]">{a.player.primaryPosition || "-"}</TableCell>
                           <TableCell>{teamAbbrForPlayer(a.player)}</TableCell>
-                          {showMilbLevel && <TableCell>{a.player.sportLevel || "-"}</TableCell>}
+                          {showMilbLevel && <TableCell>{formatLevelWithYear(a.player.sportLevel, (a.player as any).lastActiveSeason, (a.player as any).lastActiveLevel)}</TableCell>}
                           <TableCell className="text-right font-mono">{a.player.pitchingGames ?? 0}</TableCell>
                           <TableCell className="text-right font-mono">{a.player.pitchingGamesStarted ?? 0}</TableCell>
                           <TableCell className="text-right font-mono">{fmt1(a.player.pitchingInningsPitched)}</TableCell>
