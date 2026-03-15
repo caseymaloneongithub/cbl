@@ -2057,6 +2057,7 @@ export async function registerRoutes(
         mlbId: mlbPlayers.mlbId,
         fullName: mlbPlayers.fullName,
         sportLevel: mlbPlayers.sportLevel,
+        positionType: mlbPlayers.positionType,
         season: mlbPlayers.season,
         lastPlayedSeason: mlbPlayers.lastPlayedSeason,
         lastPlayedLevel: mlbPlayers.lastPlayedLevel,
@@ -2070,12 +2071,11 @@ export async function registerRoutes(
       let updated = 0;
       let skipped = 0;
       let apiLookedUp = 0;
-      const BATCH_SIZE = 2;
-      const BATCH_DELAY = 2000;
+      const BATCH_DELAY = 500;
 
-      for (let i = 0; i < playersToBackfill.length; i += BATCH_SIZE) {
-        const batch = playersToBackfill.slice(i, i + BATCH_SIZE);
-        await Promise.all(batch.map(async (player) => {
+      for (let i = 0; i < playersToBackfill.length; i++) {
+        const player = playersToBackfill[i];
+        await (async () => {
           const played = (player.hittingPlateAppearances ?? 0) > 0 || (player.pitchingGames ?? 0) > 0 ||
             (player.pitchingInningsPitched ?? 0) > 0 || player.hadHittingStats || player.hadPitchingStats;
 
@@ -2099,27 +2099,28 @@ export async function registerRoutes(
 
           try {
             const BACKFILL_SPORT_IDS = [1, 11, 12, 13, 14, 16];
-            const fetches = BACKFILL_SPORT_IDS.flatMap(sid => [
-              fetch(`https://statsapi.mlb.com/api/v1/people/${player.mlbId}/stats?stats=yearByYear&group=hitting&sportId=${sid}`).then(r => r.ok ? r.json() : null).catch(() => null),
-              fetch(`https://statsapi.mlb.com/api/v1/people/${player.mlbId}/stats?stats=yearByYear&group=pitching&sportId=${sid}`).then(r => r.ok ? r.json() : null).catch(() => null),
-            ]);
-            const results = await Promise.all(fetches);
             apiLookedUp++;
 
             let best: { season: number; sportId: number } | null = null;
-            for (let idx = 0; idx < results.length; idx++) {
-              const payload = results[idx];
-              if (!payload) continue;
-              const sportId = BACKFILL_SPORT_IDS[Math.floor(idx / 2)];
-              const splits = Array.isArray(payload?.stats?.[0]?.splits) ? payload.stats[0].splits : [];
-              for (const split of splits) {
-                const s = Number.parseInt(String(split?.season || ""), 10);
-                if (!Number.isInteger(s) || s < 1900) continue;
-                const splitSportId = split?.sport?.id ?? sportId;
-                if (best == null || s > best.season) {
-                  best = { season: s, sportId: splitSportId };
-                }
+            for (const sid of BACKFILL_SPORT_IDS) {
+              const groups = player.positionType === "Pitcher" ? ["pitching", "hitting"] : ["hitting", "pitching"];
+              for (const group of groups) {
+                try {
+                  const resp = await fetch(`https://statsapi.mlb.com/api/v1/people/${player.mlbId}/stats?stats=yearByYear&group=${group}&sportId=${sid}`);
+                  if (!resp.ok) continue;
+                  const payload = await resp.json();
+                  const splits = Array.isArray(payload?.stats?.[0]?.splits) ? payload.stats[0].splits : [];
+                  for (const split of splits) {
+                    const s = Number.parseInt(String(split?.season || ""), 10);
+                    if (!Number.isInteger(s) || s < 1900) continue;
+                    const splitSportId = split?.sport?.id ?? sid;
+                    if (best == null || s > best.season) {
+                      best = { season: s, sportId: splitSportId };
+                    }
+                  }
+                } catch { /* individual fetch fail, continue */ }
               }
+              if (best) break;
             }
 
             if (best) {
@@ -2136,9 +2137,9 @@ export async function registerRoutes(
             console.error(`[Backfill] Failed API lookup for mlbId=${player.mlbId} (${player.fullName}):`, err?.message || err);
             skipped++;
           }
-        }));
+        })();
 
-        if (i + BATCH_SIZE < playersToBackfill.length) {
+        if (i + 1 < playersToBackfill.length) {
           await new Promise(r => setTimeout(r, BATCH_DELAY));
         }
       }
