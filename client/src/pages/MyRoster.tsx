@@ -47,6 +47,7 @@ interface RosterAssignment {
   minorLeagueStatus: string | null;
   minorLeagueYears: number | null;
   acquired: string | null;
+  rosterSlot: string | null;
   player: MlbPlayer;
 }
 
@@ -85,9 +86,12 @@ function NameWithHover({ a }: { a: RosterAssignment }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="font-medium cursor-default">
+        <span className="font-medium cursor-default flex items-center gap-1.5">
           {a.player.fullName}
           {isUncardedOnMlbRoster(a.player, a.rosterType) ? " (uncarded)" : ""}
+          {a.rosterSlot === "60" && (
+            <Badge variant="destructive" className="text-[10px] px-1.5 py-0">60-day IL</Badge>
+          )}
         </span>
       </TooltipTrigger>
       <TooltipContent>
@@ -227,6 +231,8 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
 
   const title = level === "mlb" ? "MLB Roster" : "MiLB Roster";
   const limit = level === "mlb" ? (currentLeague as any)?.mlRosterLimit || 40 : (currentLeague as any)?.milbRosterLimit || 150;
+  const il60Count = level === "mlb" ? filtered.filter(a => a.rosterSlot === "60").length : 0;
+  const activeCount = filtered.length - il60Count;
   const showMilbLevel = level === "milb";
 
   if (!selectedLeagueId) {
@@ -245,9 +251,12 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-roster-title">{title}</h1>
-          <p className="text-sm text-muted-foreground">{currentLeague?.teamName || "Your team"} - {filtered.length} players / {limit}</p>
+          <p className="text-sm text-muted-foreground">
+            {currentLeague?.teamName || "Your team"} - {activeCount} players / {limit}
+            {il60Count > 0 && ` (${il60Count} on 60-day IL)`}
+          </p>
         </div>
-        <Badge variant={filtered.length > limit ? "destructive" : "secondary"} data-testid="badge-roster-count">{filtered.length} / {limit}</Badge>
+        <Badge variant={activeCount > limit ? "destructive" : "secondary"} data-testid="badge-roster-count">{activeCount} / {limit}{il60Count > 0 ? ` + ${il60Count} IL` : ""}</Badge>
       </div>
 
       <Card>

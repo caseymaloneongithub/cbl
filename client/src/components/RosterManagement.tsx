@@ -46,7 +46,7 @@ import { formatAffiliatedTeamLabel } from "@/lib/teamDisplay";
 import { isUncardedOnMlbRoster } from "@/lib/playerCarding";
 import { useToast } from "@/hooks/use-toast";
 import type { MlbPlayer, LeagueMember, League } from "@shared/schema";
-import { Search, UserPlus, Trash2, ArrowRightLeft, Loader2, Users, ChevronLeft, ChevronRight, AlertTriangle, Download, FileSpreadsheet } from "lucide-react";
+import { Search, UserPlus, Trash2, ArrowRightLeft, Loader2, Users, ChevronLeft, ChevronRight, AlertTriangle, Download, FileSpreadsheet, HeartPulse } from "lucide-react";
 
 interface RosterAssignment {
   id: number;
@@ -59,6 +59,7 @@ interface RosterAssignment {
   acquired: string | null;
   contractStatus: string | null;
   salary2026: string | null;
+  rosterSlot: string | null;
   player: MlbPlayer;
 }
 
@@ -271,6 +272,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
   const { data: rosterData, isLoading: loadingRoster } = useQuery<{
     assignments: RosterAssignment[];
     counts: RosterCount[];
+    il60Counts: Record<string, number>;
   }>({
     queryKey: ["/api/leagues", leagueId, "roster-assignments", selectedTeamId, selectedRosterType],
     queryFn: async () => {
@@ -345,6 +347,21 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
     },
     onError: (error: any) => {
       toast({ title: "Failed to remove", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const toggleIL60Mutation = useMutation({
+    mutationFn: async ({ assignmentId, currentSlot }: { assignmentId: number; currentSlot: string | null }) => {
+      const newSlot = currentSlot === "60" ? null : "60";
+      return apiRequest("PATCH", `/api/leagues/${leagueId}/roster-assignments/${assignmentId}`, { rosterSlot: newSlot });
+    },
+    onSuccess: (_data, variables) => {
+      const action = variables.currentSlot === "60" ? "removed from" : "placed on";
+      toast({ title: `Player ${action} 60-day IL` });
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues", leagueId, "roster-assignments"] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to update IL status", description: error.message, variant: "destructive" });
     },
   });
 
@@ -981,16 +998,22 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
   };
 
   const teamCountMap = useMemo(() => {
-    const map: Record<string, { mlb: number; milb: number; draft: number }> = {};
+    const map: Record<string, { mlb: number; milb: number; draft: number; il60: number }> = {};
     if (!rosterData?.counts) return map;
     for (const c of rosterData.counts) {
-      if (!map[c.userId]) map[c.userId] = { mlb: 0, milb: 0, draft: 0 };
+      if (!map[c.userId]) map[c.userId] = { mlb: 0, milb: 0, draft: 0, il60: 0 };
       if (c.rosterType === 'mlb') map[c.userId].mlb = c.count;
       else if (c.rosterType === 'milb') map[c.userId].milb = c.count;
       else if (c.rosterType === 'draft') map[c.userId].draft = c.count;
     }
+    if (rosterData?.il60Counts) {
+      for (const [userId, count] of Object.entries(rosterData.il60Counts)) {
+        if (!map[userId]) map[userId] = { mlb: 0, milb: 0, draft: 0, il60: 0 };
+        map[userId].il60 = count;
+      }
+    }
     return map;
-  }, [rosterData?.counts]);
+  }, [rosterData?.counts, rosterData?.il60Counts]);
 
   const totalAssigned = useMemo(() => {
     return Object.values(teamCountMap).reduce((sum, c) => sum + c.mlb + c.milb + c.draft, 0);
@@ -998,13 +1021,14 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
   const rosterSummaryTotals = useMemo(() => {
     return activeMembers.reduce(
       (acc, member) => {
-        const counts = teamCountMap[member.userId] || { mlb: 0, milb: 0, draft: 0 };
+        const counts = teamCountMap[member.userId] || { mlb: 0, milb: 0, draft: 0, il60: 0 };
         acc.mlb += counts.mlb;
         acc.milb += counts.milb;
         acc.draft += counts.draft;
+        acc.il60 += counts.il60;
         return acc;
       },
-      { mlb: 0, milb: 0, draft: 0 },
+      { mlb: 0, milb: 0, draft: 0, il60: 0 },
     );
   }, [activeMembers, teamCountMap]);
 
@@ -1767,6 +1791,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                 <TableRow>
                   <TableHead>Team</TableHead>
                   <TableHead className="text-center">ML ({league.mlRosterLimit || 40})</TableHead>
+                  <TableHead className="text-center">60-day IL</TableHead>
                   <TableHead className="text-center">MiLB ({league.milbRosterLimit || 150})</TableHead>
                   <TableHead className="text-center">Draft</TableHead>
                   <TableHead className="text-center">Total</TableHead>
@@ -1774,17 +1799,19 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
               </TableHeader>
               <TableBody>
                 {activeMembers.map(m => {
-                  const counts = teamCountMap[m.userId] || { mlb: 0, milb: 0, draft: 0 };
+                  const counts = teamCountMap[m.userId] || { mlb: 0, milb: 0, draft: 0, il60: 0 };
+                  const mlbActive = counts.mlb - counts.il60;
                   const mlbLimit = league.mlRosterLimit || 40;
                   const milbLimit = league.milbRosterLimit || 150;
                   return (
                     <TableRow key={m.userId} data-testid={`row-team-summary-${m.userId}`}>
                       <TableCell className="font-medium">{m.teamName || m.teamAbbreviation || m.userId}</TableCell>
                       <TableCell className="text-center">
-                        <span className={counts.mlb > mlbLimit ? "text-destructive font-bold" : ""}>
-                          {counts.mlb}
+                        <span className={mlbActive > mlbLimit ? "text-destructive font-bold" : ""}>
+                          {mlbActive}
                         </span>
                       </TableCell>
+                      <TableCell className="text-center">{counts.il60 || "-"}</TableCell>
                       <TableCell className="text-center">
                         <span className={counts.milb > milbLimit ? "text-destructive font-bold" : ""}>
                           {counts.milb}
@@ -1797,7 +1824,8 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                 })}
                 <TableRow data-testid="row-team-summary-totals">
                   <TableCell className="font-semibold">Total</TableCell>
-                  <TableCell className="text-center font-semibold">{rosterSummaryTotals.mlb}</TableCell>
+                  <TableCell className="text-center font-semibold">{rosterSummaryTotals.mlb - rosterSummaryTotals.il60}</TableCell>
+                  <TableCell className="text-center font-semibold">{rosterSummaryTotals.il60 || "-"}</TableCell>
                   <TableCell className="text-center font-semibold">{rosterSummaryTotals.milb}</TableCell>
                   <TableCell className="text-center font-semibold">{rosterSummaryTotals.draft}</TableCell>
                   <TableCell className="text-center font-semibold">
@@ -1921,8 +1949,15 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                   {filteredAssignments.map(a => (
                     <TableRow key={a.id} data-testid={`row-assignment-${a.id}`}>
                       <TableCell className="font-medium">
-                        {a.player.fullName}
-                        {isUncardedOnMlbRoster(a.player, a.rosterType) ? " (uncarded)" : ""}
+                        <span className="flex items-center gap-1.5">
+                          {a.player.fullName}
+                          {isUncardedOnMlbRoster(a.player, a.rosterType) ? " (uncarded)" : ""}
+                          {a.rosterSlot === "60" && (
+                            <Badge variant="destructive" className="text-[10px] px-1.5 py-0" data-testid={`badge-il60-${a.id}`}>
+                              60-day IL
+                            </Badge>
+                          )}
+                        </span>
                       </TableCell>
                       <TableCell>{a.player.primaryPosition || "-"}</TableCell>
                       <TableCell>
@@ -1943,6 +1978,18 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                       {isCommissioner && (
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
+                            {rosterLevel === "mlb" && (
+                              <Button
+                                size="icon"
+                                variant={a.rosterSlot === "60" ? "destructive" : "ghost"}
+                                onClick={() => toggleIL60Mutation.mutate({ assignmentId: a.id, currentSlot: a.rosterSlot })}
+                                disabled={toggleIL60Mutation.isPending}
+                                title={a.rosterSlot === "60" ? "Remove from 60-day IL" : "Place on 60-day IL"}
+                                data-testid={`button-toggle-il60-${a.id}`}
+                              >
+                                <HeartPulse className="h-4 w-4" />
+                              </Button>
+                            )}
                             <Button
                               size="icon"
                               variant="ghost"
@@ -2278,15 +2325,16 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                 </Select>
               </div>
               {assignUserId && (() => {
-                const counts = teamCountMap[assignUserId] || { mlb: 0, milb: 0, draft: 0 };
+                const counts = teamCountMap[assignUserId] || { mlb: 0, milb: 0, draft: 0, il60: 0 };
+                const mlbActive = counts.mlb - counts.il60;
                 const mlbLimit = league.mlRosterLimit || 40;
                 const milbLimit = league.milbRosterLimit || 150;
                 const wouldExceed =
-                  (assignRosterType === 'mlb' && counts.mlb >= mlbLimit) ||
+                  (assignRosterType === 'mlb' && mlbActive >= mlbLimit) ||
                   (assignRosterType === 'milb' && counts.milb >= milbLimit);
                 if (!wouldExceed) return null;
                 const limitLabel = assignRosterType === 'mlb' ? `ML limit of ${mlbLimit}` : `MiLB limit of ${milbLimit}`;
-                const currentCount = assignRosterType === 'mlb' ? counts.mlb : counts.milb;
+                const currentCount = assignRosterType === 'mlb' ? mlbActive : counts.milb;
                 return (
                   <div className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3" data-testid="warning-roster-limit">
                     <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />

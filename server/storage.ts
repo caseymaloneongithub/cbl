@@ -332,7 +332,7 @@ export interface IStorage {
   assignPlayerToRoster(assignment: InsertLeagueRosterAssignment): Promise<LeagueRosterAssignment>;
   deleteAllRosterAssignments(leagueId: number): Promise<number>;
   deleteRosterAssignmentsByType(leagueId: number, rosterType: string): Promise<number>;
-  updateRosterAssignment(id: number, updates: { rosterType?: string; userId?: string }): Promise<LeagueRosterAssignment | undefined>;
+  updateRosterAssignment(id: number, updates: { rosterType?: string; userId?: string; rosterSlot?: string | null }): Promise<LeagueRosterAssignment | undefined>;
   executeRosterTrade(params: {
     leagueId: number;
     season: number;
@@ -3390,10 +3390,11 @@ export class DatabaseStorage implements IStorage {
     return result.length;
   }
 
-  async updateRosterAssignment(id: number, updates: { rosterType?: string; userId?: string }): Promise<LeagueRosterAssignment | undefined> {
+  async updateRosterAssignment(id: number, updates: { rosterType?: string; userId?: string; rosterSlot?: string | null }): Promise<LeagueRosterAssignment | undefined> {
     const setObj: any = {};
     if (updates.rosterType) setObj.rosterType = updates.rosterType;
     if (updates.userId) setObj.userId = updates.userId;
+    if (updates.rosterSlot !== undefined) setObj.rosterSlot = updates.rosterSlot;
     const [result] = await db.update(leagueRosterAssignments).set(setObj).where(eq(leagueRosterAssignments.id, id)).returning();
     return result;
   }

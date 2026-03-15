@@ -1519,7 +1519,16 @@ export async function registerRoutes(
         };
       });
 
-      res.json({ assignments: enrichedAssignments, counts });
+      const il60Source = (filterUserId || rosterType) 
+        ? await storage.getLeagueRosterAssignments(leagueId, season, { rosterType: "mlb" })
+        : assignments;
+      const il60Counts: Record<string, number> = {};
+      for (const a of il60Source) {
+        if (a.rosterType === "mlb" && a.rosterSlot === "60") {
+          il60Counts[a.userId] = (il60Counts[a.userId] || 0) + 1;
+        }
+      }
+      res.json({ assignments: enrichedAssignments, counts, il60Counts });
     } catch (error: any) {
       console.error("Error fetching roster assignments:", error);
       res.status(500).json({ message: "Failed to fetch roster assignments" });
@@ -1714,8 +1723,20 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
-      const { rosterType, userId: newUserId } = req.body;
-      const updated = await storage.updateRosterAssignment(assignmentId, { rosterType, userId: newUserId });
+      const { rosterType, userId: newUserId, rosterSlot } = req.body;
+      const sanitizedSlot = rosterSlot === "60" ? "60" : rosterSlot === null ? null : undefined;
+      const updatePayload: { rosterType?: string; userId?: string; rosterSlot?: string | null } = {};
+      if (rosterType) updatePayload.rosterType = rosterType;
+      if (newUserId) updatePayload.userId = newUserId;
+      if (sanitizedSlot !== undefined) updatePayload.rosterSlot = sanitizedSlot;
+      if (rosterType && rosterType !== "mlb") updatePayload.rosterSlot = null;
+
+      const existing = await db.select().from(leagueRosterAssignments).where(eq(leagueRosterAssignments.id, assignmentId)).limit(1);
+      if (!existing.length || existing[0].leagueId !== leagueId) {
+        return res.status(404).json({ message: "Assignment not found in this league" });
+      }
+
+      const updated = await storage.updateRosterAssignment(assignmentId, updatePayload);
       if (!updated) {
         return res.status(404).json({ message: "Assignment not found" });
       }
@@ -2464,6 +2485,7 @@ export async function registerRoutes(
       const orgIdx = headers.findIndex((h: string) => ["org", "parent_org", "organization"].includes(h));
       const fangraphsIdx = headers.findIndex((h: string) => ["fangraphs_id", "fangraphs id", "fg_id", "fgid"].includes(h));
       const acquiredIdx = headers.findIndex((h: string) => ["acquired", "acq", "date_acquired", "date acquired"].includes(h));
+      const rosterSlotIdx = headers.findIndex((h: string) => ["roster", "roster_slot", "slot"].includes(h));
       if (abbrIdx === -1 || (mlbIdIdx === -1 && nameIdx === -1 && (firstNameIdx === -1 || lastNameIdx === -1))) {
         return res.status(400).json({ message: "CSV must include team abbreviation and either MLB API ID, player_name, or first_name + last_name columns" });
       }
@@ -3556,6 +3578,7 @@ export async function registerRoutes(
         const rawYears = yearsIdx >= 0 ? (cols[yearsIdx] || "").trim() : "";
         const rawAge = ageIdx >= 0 ? (cols[ageIdx] || "").trim() : "";
         const rawAcquired = acquiredIdx >= 0 ? (cols[acquiredIdx] || "").trim() : "";
+        const rawRosterSlot = rosterSlotIdx >= 0 ? (cols[rosterSlotIdx] || "").trim() : "";
         const rawMlbTeam = mlbTeamIdx >= 0 ? (cols[mlbTeamIdx] || "").trim() : "";
         const rawOrg = orgIdx >= 0 ? (cols[orgIdx] || "").trim() : "";
         const rawFangraphs = fangraphsIdx >= 0 ? (cols[fangraphsIdx] || "").trim() : "";
@@ -4252,6 +4275,7 @@ export async function registerRoutes(
           minorLeagueStatus,
           minorLeagueYears,
           acquired: rawAcquired || null,
+          rosterSlot: rawRosterSlot === "60" ? "60" : null,
           playerName: rawName || undefined,
           ageHint,
           mlbTeamHint: rawMlbTeam || null,
@@ -4590,6 +4614,32 @@ export async function registerRoutes(
         if (alreadyAssigned.has(internalPlayerId)) {
           const existing = existingByPlayerId.get(internalPlayerId);
           if (existing && existing.userId === row.userId && existing.rosterType === row.rosterType) {
+            const metadataChanged =
+              (row.rosterType === "mlb" && (
+                (row.contractStatus || null) !== (existing.contractStatus || null) ||
+                (row.salary2026 ?? null) !== (existing.salary2026 ?? null) ||
+                (row.acquired || null) !== (existing.acquired || null) ||
+                (row.rosterSlot || null) !== (existing.rosterSlot || null)
+              )) ||
+              (row.rosterType !== "mlb" && (
+                (row.minorLeagueStatus || null) !== (existing.minorLeagueStatus || null) ||
+                (row.minorLeagueYears ?? null) !== (existing.minorLeagueYears ?? null) ||
+                (row.acquired || null) !== (existing.acquired || null)
+              ));
+            if (metadataChanged) {
+              toReassign.push({
+                assignmentId: existing.id,
+                userId: existing.userId,
+                rosterType: row.rosterType,
+                contractStatus: row.rosterType === "mlb" ? row.contractStatus : null,
+                salary2026: row.rosterType === "mlb" ? row.salary2026 : null,
+                minorLeagueStatus: row.rosterType !== "mlb" ? row.minorLeagueStatus : null,
+                minorLeagueYears: row.rosterType !== "mlb" ? row.minorLeagueYears : null,
+                acquired: row.acquired,
+                rosterSlot: row.rosterSlot,
+              });
+              continue;
+            }
             idempotentSkipCount++;
             continue;
           }
@@ -4630,6 +4680,7 @@ export async function registerRoutes(
                     minorLeagueStatus: row.rosterType !== "mlb" ? row.minorLeagueStatus : null,
                     minorLeagueYears: row.rosterType !== "mlb" ? row.minorLeagueYears : null,
                     acquired: row.acquired,
+                    rosterSlot: row.rosterSlot,
                   });
                   continue;
                 }
@@ -4646,6 +4697,7 @@ export async function registerRoutes(
                   minorLeagueStatus: row.rosterType !== "mlb" ? row.minorLeagueStatus : null,
                   minorLeagueYears: row.rosterType !== "mlb" ? row.minorLeagueYears : null,
                   acquired: row.acquired,
+                  rosterSlot: row.rosterSlot,
                 });
                 continue;
               }
@@ -4684,6 +4736,7 @@ export async function registerRoutes(
           minorLeagueStatus: row.rosterType !== "mlb" ? row.minorLeagueStatus : null,
           minorLeagueYears: row.rosterType !== "mlb" ? row.minorLeagueYears : null,
           acquired: row.acquired,
+          rosterSlot: row.rosterSlot,
           season,
         });
       }
@@ -4843,6 +4896,7 @@ export async function registerRoutes(
             minorLeagueStatus: row.minorLeagueStatus ?? null,
             minorLeagueYears: row.minorLeagueYears ?? null,
             acquired: row.acquired ?? null,
+            rosterSlot: row.rosterSlot ?? null,
           })
           .where(eq(leagueRosterAssignments.id, row.assignmentId));
       }
