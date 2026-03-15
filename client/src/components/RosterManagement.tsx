@@ -57,6 +57,8 @@ interface RosterAssignment {
   season: number;
   createdAt: string;
   acquired: string | null;
+  contractStatus: string | null;
+  salary2026: string | null;
   player: MlbPlayer;
 }
 
@@ -1907,6 +1909,8 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                     <TableHead>Position</TableHead>
                     <TableHead>Level</TableHead>
                     <TableHead>Acquired</TableHead>
+                    {rosterLevel === "mlb" && <TableHead>Status</TableHead>}
+                    {rosterLevel === "mlb" && <TableHead>Salary</TableHead>}
                     <TableHead>Team</TableHead>
                     <TableHead>Roster</TableHead>
                     <TableHead>MLB Team</TableHead>
@@ -1925,6 +1929,8 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                         {formatLevelWithYear(a.player.sportLevel, (a.player as any).lastActiveSeason, (a.player as any).lastActiveLevel)}
                       </TableCell>
                       <TableCell className="text-[11px]">{a.acquired || "-"}</TableCell>
+                      {rosterLevel === "mlb" && <TableCell className="text-[11px]">{a.contractStatus || "-"}</TableCell>}
+                      {rosterLevel === "mlb" && <TableCell className="text-[11px]">{a.salary2026 || "-"}</TableCell>}
                       <TableCell>{getMemberName(a.userId)}</TableCell>
                       <TableCell>{getRosterTypeBadge(a.rosterType)}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">
