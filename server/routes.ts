@@ -3356,6 +3356,7 @@ export async function registerRoutes(
         salary2026: number | null;
         minorLeagueStatus: string | null;
         minorLeagueYears: number | null;
+        acquired: string | null;
         playerName?: string;
         ageHint?: number | null;
         mlbTeamHint?: string | null;
@@ -3554,6 +3555,7 @@ export async function registerRoutes(
         const rawSalary2026 = salary2026Idx >= 0 ? (cols[salary2026Idx] || "").trim() : "";
         const rawYears = yearsIdx >= 0 ? (cols[yearsIdx] || "").trim() : "";
         const rawAge = ageIdx >= 0 ? (cols[ageIdx] || "").trim() : "";
+        const rawAcquired = acquiredIdx >= 0 ? (cols[acquiredIdx] || "").trim() : "";
         const rawMlbTeam = mlbTeamIdx >= 0 ? (cols[mlbTeamIdx] || "").trim() : "";
         const rawOrg = orgIdx >= 0 ? (cols[orgIdx] || "").trim() : "";
         const rawFangraphs = fangraphsIdx >= 0 ? (cols[fangraphsIdx] || "").trim() : "";

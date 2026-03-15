@@ -727,6 +727,7 @@ export const leagueRosterAssignments = pgTable("league_roster_assignments", {
   salary2026: real("salary_2026"),
   minorLeagueStatus: varchar("minor_league_status", { length: 8 }),
   minorLeagueYears: integer("minor_league_years"),
+  acquired: varchar("acquired", { length: 80 }),
   season: integer("season").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
