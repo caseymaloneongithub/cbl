@@ -4251,6 +4251,7 @@ export async function registerRoutes(
           salary2026,
           minorLeagueStatus,
           minorLeagueYears,
+          acquired: rawAcquired || null,
           playerName: rawName || undefined,
           ageHint,
           mlbTeamHint: rawMlbTeam || null,
@@ -4559,6 +4560,7 @@ export async function registerRoutes(
         salary2026?: number | null;
         minorLeagueStatus?: string | null;
         minorLeagueYears?: number | null;
+        acquired?: string | null;
         season: number;
       }> = [];
       const toReassign: Array<{
@@ -4569,6 +4571,7 @@ export async function registerRoutes(
         salary2026?: number | null;
         minorLeagueStatus?: string | null;
         minorLeagueYears?: number | null;
+        acquired?: string | null;
       }> = [];
 
       for (const row of parsedRows) {
@@ -4626,6 +4629,7 @@ export async function registerRoutes(
                     salary2026: row.rosterType === "mlb" ? row.salary2026 : null,
                     minorLeagueStatus: row.rosterType !== "mlb" ? row.minorLeagueStatus : null,
                     minorLeagueYears: row.rosterType !== "mlb" ? row.minorLeagueYears : null,
+                    acquired: row.acquired,
                   });
                   continue;
                 }
@@ -4641,6 +4645,7 @@ export async function registerRoutes(
                   salary2026: row.rosterType === "mlb" ? row.salary2026 : null,
                   minorLeagueStatus: row.rosterType !== "mlb" ? row.minorLeagueStatus : null,
                   minorLeagueYears: row.rosterType !== "mlb" ? row.minorLeagueYears : null,
+                  acquired: row.acquired,
                 });
                 continue;
               }
@@ -4678,6 +4683,7 @@ export async function registerRoutes(
           salary2026: row.rosterType === "mlb" ? row.salary2026 : null,
           minorLeagueStatus: row.rosterType !== "mlb" ? row.minorLeagueStatus : null,
           minorLeagueYears: row.rosterType !== "mlb" ? row.minorLeagueYears : null,
+          acquired: row.acquired,
           season,
         });
       }
@@ -4836,6 +4842,7 @@ export async function registerRoutes(
             salary2026: row.salary2026 ?? null,
             minorLeagueStatus: row.minorLeagueStatus ?? null,
             minorLeagueYears: row.minorLeagueYears ?? null,
+            acquired: row.acquired ?? null,
           })
           .where(eq(leagueRosterAssignments.id, row.assignmentId));
       }
@@ -10579,6 +10586,7 @@ export async function registerRoutes(
       const poolMap = new Map(draftPoolPlayers.map(dp => [dp.mlbPlayerId, dp]));
 
       let assignedCount = 0;
+      const draftAcquired = `D ${draft.season}`;
       const assignments: {
         leagueId: number;
         userId: string;
@@ -10586,6 +10594,7 @@ export async function registerRoutes(
         rosterType: string;
         minorLeagueStatus: string | null;
         minorLeagueYears: number | null;
+        acquired: string;
         season: number;
       }[] = [];
 
@@ -10601,6 +10610,7 @@ export async function registerRoutes(
               rosterType: "milb",
               minorLeagueStatus: poolEntry?.minorLeagueStatus || null,
               minorLeagueYears: poolEntry?.minorLeagueYears ?? null,
+              acquired: draftAcquired,
               season: draft.season,
             });
             alreadyAssigned.add(playerId);
@@ -10615,6 +10625,7 @@ export async function registerRoutes(
             rosterType: pick.rosterType || "milb",
             minorLeagueStatus: poolEntry?.minorLeagueStatus || null,
             minorLeagueYears: poolEntry?.minorLeagueYears ?? null,
+            acquired: draftAcquired,
             season: draft.season,
           });
           alreadyAssigned.add(pick.mlbPlayerId);

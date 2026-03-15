@@ -45,6 +45,7 @@ interface RosterAssignment {
   contractStatus: string | null;
   minorLeagueStatus: string | null;
   minorLeagueYears: number | null;
+  acquired: string | null;
   player: MlbPlayer;
 }
 
@@ -66,13 +67,9 @@ function formatLevelWithYear(sportLevel: string, lastActiveSeason?: number | nul
 const fmtEra = (v: number | null | undefined) => (v == null ? "-" : Number(v).toFixed(2));
 const fmt1 = (v: number | null | undefined) => (v == null ? "-" : Number(v).toFixed(1));
 
-function formatAcquired(status: string | null, years: number | null): string {
-  if (!status) return "-";
-  const labels: Record<string, string> = { MH: "Homegrown", MC: "Claimed", FA: "Free Agent", D: "Draft" };
-  const label = labels[status] || status;
-  if (years == null || years === 0) return label;
-  if (status === "D") return `${label} (${years})`;
-  return `${label} (${years}yr)`;
+function formatAcquired(acquired: string | null): string {
+  if (!acquired) return "-";
+  return acquired;
 }
 
 function teamAbbrForPlayer(p: MlbPlayer): string {
@@ -303,7 +300,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                           <TableCell className="font-mono text-[11px]">{a.player.primaryPosition || "-"}</TableCell>
                           <TableCell>{teamAbbrForPlayer(a.player)}</TableCell>
                           {showMilbLevel && <TableCell>{formatLevelWithYear(a.player.sportLevel, (a.player as any).lastActiveSeason, (a.player as any).lastActiveLevel)}</TableCell>}
-                          {level === "milb" && <TableCell className="text-[11px]">{formatAcquired(a.minorLeagueStatus, a.minorLeagueYears)}</TableCell>}
+                          {level === "milb" && <TableCell className="text-[11px]">{formatAcquired(a.acquired)}</TableCell>}
                           <TableCell className="text-right font-mono">{a.player.hittingAtBats ?? 0}</TableCell>
                           <TableCell className="text-right font-mono">{a.player.hittingPlateAppearances ?? 0}</TableCell>
                           <TableCell className="text-right font-mono">{a.player.hittingWalks ?? 0}</TableCell>
@@ -363,7 +360,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                           <TableCell className="font-mono text-[11px]">{a.player.primaryPosition || "-"}</TableCell>
                           <TableCell>{teamAbbrForPlayer(a.player)}</TableCell>
                           {showMilbLevel && <TableCell>{formatLevelWithYear(a.player.sportLevel, (a.player as any).lastActiveSeason, (a.player as any).lastActiveLevel)}</TableCell>}
-                          {level === "milb" && <TableCell className="text-[11px]">{formatAcquired(a.minorLeagueStatus, a.minorLeagueYears)}</TableCell>}
+                          {level === "milb" && <TableCell className="text-[11px]">{formatAcquired(a.acquired)}</TableCell>}
                           <TableCell className="text-right font-mono">{a.player.pitchingGames ?? 0}</TableCell>
                           <TableCell className="text-right font-mono">{a.player.pitchingGamesStarted ?? 0}</TableCell>
                           <TableCell className="text-right font-mono">{fmt1(a.player.pitchingInningsPitched)}</TableCell>
