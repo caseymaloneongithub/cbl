@@ -166,6 +166,14 @@ interface DuplicateMlbAssignmentsResponse {
   duplicates: DuplicateMlbPlayerRecord[];
 }
 
+function formatLevelWithYear(sportLevel: string, lastActiveSeason?: number | null): string {
+  const currentYear = new Date().getFullYear();
+  if (lastActiveSeason && lastActiveSeason < currentYear) {
+    return `${sportLevel} (${lastActiveSeason})`;
+  }
+  return sportLevel;
+}
+
 export default function RosterManagement({ leagueId, league, members, isCommissioner, rosterLevel, showOnboardingTools = false, onboardingScope }: RosterManagementProps) {
   const { toast } = useToast();
   const season = new Date().getFullYear();
@@ -1909,7 +1917,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                         {isUncardedOnMlbRoster(a.player, a.rosterType) ? " (uncarded)" : ""}
                       </TableCell>
                       <TableCell>{a.player.primaryPosition || "-"}</TableCell>
-                      <TableCell>{a.player.sportLevel}</TableCell>
+                      <TableCell>{formatLevelWithYear(a.player.sportLevel, (a.player as any).lastActiveSeason)}</TableCell>
                       <TableCell>{getMemberName(a.userId)}</TableCell>
                       <TableCell>{getRosterTypeBadge(a.rosterType)}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">
@@ -2011,7 +2019,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                             <Badge variant="secondary">MiLB FA</Badge>
                           )}
                         </TableCell>
-                        <TableCell>{p.sportLevel}</TableCell>
+                        <TableCell>{formatLevelWithYear(p.sportLevel, (p as any).lastActiveSeason)}</TableCell>
                         <TableCell className="text-muted-foreground text-sm">
                           {formatAffiliatedTeamLabel({
                             currentTeamName: p.currentTeamName,
@@ -2121,7 +2129,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                           {isUncardedOnMlbRoster(a.player, a.rosterType) ? " (uncarded)" : ""}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {a.player.primaryPosition || "-"} | {a.rosterType.toUpperCase()} | {a.player.sportLevel}
+                          {a.player.primaryPosition || "-"} | {a.rosterType.toUpperCase()} | {formatLevelWithYear(a.player.sportLevel, (a.player as any).lastActiveSeason)}
                         </div>
                       </div>
                     </label>
@@ -2171,7 +2179,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                           {isUncardedOnMlbRoster(a.player, a.rosterType) ? " (uncarded)" : ""}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {a.player.primaryPosition || "-"} | {a.rosterType.toUpperCase()} | {a.player.sportLevel}
+                          {a.player.primaryPosition || "-"} | {a.rosterType.toUpperCase()} | {formatLevelWithYear(a.player.sportLevel, (a.player as any).lastActiveSeason)}
                         </div>
                       </div>
                     </label>
@@ -2220,7 +2228,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
               <div>
                 <p className="font-medium">{assignPlayer.fullName}</p>
                 <p className="text-sm text-muted-foreground">
-                  {assignPlayer.primaryPosition} | {assignPlayer.sportLevel} | {formatAffiliatedTeamLabel({
+                  {assignPlayer.primaryPosition} | {formatLevelWithYear(assignPlayer.sportLevel, (assignPlayer as any).lastActiveSeason)} | {formatAffiliatedTeamLabel({
                     currentTeamName: assignPlayer.currentTeamName,
                     parentOrgName: assignPlayer.parentOrgName,
                     sportLevel: assignPlayer.sportLevel,

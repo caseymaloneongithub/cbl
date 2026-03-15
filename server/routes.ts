@@ -1483,7 +1483,28 @@ export async function registerRoutes(
       });
       const counts = await storage.getRosterAssignmentCounts(leagueId, season);
 
-      res.json({ assignments, counts });
+      const mlbIds = [...new Set(assignments.map(a => a.player.mlbId).filter(id => id > 0))];
+      const lastActiveMap = new Map<number, number | null>();
+      if (mlbIds.length > 0) {
+        const result = await db.execute(sql`
+          SELECT mlb_id,
+            MAX(CASE WHEN COALESCE(hitting_plate_appearances,0) > 0 OR COALESCE(pitching_games,0) > 0 OR COALESCE(pitching_innings_pitched,0) > 0 OR COALESCE(had_hitting_stats,false) = true OR COALESCE(had_pitching_stats,false) = true THEN season ELSE NULL END)::int AS last_active_season,
+            MAX(season)::int AS max_known_season
+          FROM mlb_players WHERE mlb_id = ANY(${mlbIds}) GROUP BY mlb_id
+        `);
+        for (const row of (result.rows || []) as any[]) {
+          const mlbId = Number(row.mlb_id);
+          const lastActive = Number(row.last_active_season);
+          const maxKnown = Number(row.max_known_season);
+          lastActiveMap.set(mlbId, Number.isInteger(lastActive) && lastActive > 1900 ? lastActive : (Number.isInteger(maxKnown) && maxKnown > 1900 ? maxKnown : null));
+        }
+      }
+      const enrichedAssignments = assignments.map(a => ({
+        ...a,
+        player: { ...a.player, lastActiveSeason: lastActiveMap.get(a.player.mlbId) ?? null },
+      }));
+
+      res.json({ assignments: enrichedAssignments, counts });
     } catch (error: any) {
       console.error("Error fetching roster assignments:", error);
       res.status(500).json({ message: "Failed to fetch roster assignments" });
@@ -1512,7 +1533,28 @@ export async function registerRoutes(
       });
       const total = await storage.getUnassignedPlayerCount(leagueId, season, { search, sportLevel });
 
-      res.json({ players, total });
+      const faMlbIds = [...new Set(players.map(p => p.mlbId).filter(id => id > 0))];
+      const faLastActiveMap = new Map<number, number | null>();
+      if (faMlbIds.length > 0) {
+        const result = await db.execute(sql`
+          SELECT mlb_id,
+            MAX(CASE WHEN COALESCE(hitting_plate_appearances,0) > 0 OR COALESCE(pitching_games,0) > 0 OR COALESCE(pitching_innings_pitched,0) > 0 OR COALESCE(had_hitting_stats,false) = true OR COALESCE(had_pitching_stats,false) = true THEN season ELSE NULL END)::int AS last_active_season,
+            MAX(season)::int AS max_known_season
+          FROM mlb_players WHERE mlb_id = ANY(${faMlbIds}) GROUP BY mlb_id
+        `);
+        for (const row of (result.rows || []) as any[]) {
+          const mlbId = Number(row.mlb_id);
+          const lastActive = Number(row.last_active_season);
+          const maxKnown = Number(row.max_known_season);
+          faLastActiveMap.set(mlbId, Number.isInteger(lastActive) && lastActive > 1900 ? lastActive : (Number.isInteger(maxKnown) && maxKnown > 1900 ? maxKnown : null));
+        }
+      }
+      const enrichedPlayers = players.map(p => ({
+        ...p,
+        lastActiveSeason: faLastActiveMap.get(p.mlbId) ?? null,
+      }));
+
+      res.json({ players: enrichedPlayers, total });
     } catch (error: any) {
       console.error("Error fetching unassigned players:", error);
       res.status(500).json({ message: "Failed to fetch unassigned players" });
