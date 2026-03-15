@@ -1899,6 +1899,30 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/leagues/:id/roster-assignments/:assignmentId/cut", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+      const assignmentId = parseInt(req.params.assignmentId);
+
+      const member = await storage.getLeagueMember(leagueId, userId);
+      if (!member) return res.status(403).json({ message: "League membership required" });
+
+      const assignments = await storage.getLeagueRosterAssignments(leagueId, undefined, { userId, rosterType: "milb" });
+      const assignment = assignments.find(a => a.id === assignmentId);
+      if (!assignment) {
+        return res.status(404).json({ message: "Assignment not found on your MiLB roster" });
+      }
+
+      await storage.removeRosterAssignment(assignmentId);
+      console.log(`[Roster Cut] User ${userId} cut ${assignment.player.fullName} (assignmentId=${assignmentId}) from league ${leagueId}`);
+      res.json({ success: true, playerName: assignment.player.fullName });
+    } catch (error: any) {
+      console.error("Error cutting roster assignment:", error);
+      res.status(500).json({ message: "Failed to cut player" });
+    }
+  });
+
   // Clear all roster assignments for a league/season (commissioner only)
   app.delete("/api/leagues/:id/roster-assignments", isAuthenticated, async (req: any, res) => {
     try {

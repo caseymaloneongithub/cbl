@@ -1,9 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { stripAccents } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useLeague } from "@/hooks/useLeague";
+import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -16,11 +18,22 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Search, ClipboardList } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Search, ClipboardList, Scissors } from "lucide-react";
 import { useState, useMemo } from "react";
 import type { MlbPlayer } from "@shared/schema";
 import { getMlbAffiliationAbbreviation } from "@/lib/teamDisplay";
 import { isUncardedOnMlbRoster } from "@/lib/playerCarding";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 interface RosterAssignment {
   id: number;
@@ -79,11 +92,28 @@ function NameWithHover({ a }: { a: RosterAssignment }) {
 
 export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
   const { user } = useAuth();
+  const { toast } = useToast();
   const { selectedLeagueId, currentLeague } = useLeague();
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<"hitters" | "pitchers">("hitters");
   const [hSort, setHSort] = useState<{ key: HitterSortKey; dir: SortDir }>({ key: "name", dir: "asc" });
   const [pSort, setPSort] = useState<{ key: PitcherSortKey; dir: SortDir }>({ key: "name", dir: "asc" });
+  const [cutPlayer, setCutPlayer] = useState<RosterAssignment | null>(null);
+
+  const cutMutation = useMutation({
+    mutationFn: async (assignmentId: number) => {
+      const res = await apiRequest("DELETE", `/api/leagues/${selectedLeagueId}/roster-assignments/${assignmentId}/cut`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Player Cut", description: `${data.playerName} has been removed from your roster.` });
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues", selectedLeagueId, "roster-assignments"] });
+      setCutPlayer(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Cut Failed", description: error.message, variant: "destructive" });
+    },
+  });
   const { data, isLoading } = useQuery<{ assignments: RosterAssignment[]; counts: any[] }>({
     queryKey: ["/api/leagues", selectedLeagueId, "roster-assignments", user?.id, level],
     queryFn: async () => {
@@ -250,6 +280,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                         <TableHead className="cursor-pointer text-right" onClick={() => toggleHSort("obp")}>OBP{hs("obp")}</TableHead>
                         <TableHead className="cursor-pointer text-right" onClick={() => toggleHSort("slg")}>SLG{hs("slg")}</TableHead>
                         <TableHead className="cursor-pointer text-right" onClick={() => toggleHSort("ops")}>OPS{hs("ops")}</TableHead>
+                        {level === "milb" && <TableHead className="w-[50px]" />}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -270,6 +301,19 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                           <TableCell className="text-right font-mono">{fmtRate(a.player.hittingObp)}</TableCell>
                           <TableCell className="text-right font-mono">{fmtRate(a.player.hittingSlg)}</TableCell>
                           <TableCell className="text-right font-mono">{fmtRate(a.player.hittingOps)}</TableCell>
+                          {level === "milb" && (
+                            <TableCell>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 text-destructive hover:text-destructive"
+                                onClick={() => setCutPlayer(a)}
+                                data-testid={`button-cut-${a.id}`}
+                              >
+                                <Scissors className="h-3.5 w-3.5" />
+                              </Button>
+                            </TableCell>
+                          )}
                         </TableRow>
                       ))}
                     </TableBody>
@@ -294,6 +338,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                         <TableHead className="cursor-pointer text-right" onClick={() => togglePSort("h")}>H{ps("h")}</TableHead>
                         <TableHead className="cursor-pointer text-right" onClick={() => togglePSort("hr")}>HR{ps("hr")}</TableHead>
                         <TableHead className="cursor-pointer text-right" onClick={() => togglePSort("era")}>ERA{ps("era")}</TableHead>
+                        {level === "milb" && <TableHead className="w-[50px]" />}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -311,6 +356,19 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                           <TableCell className="text-right font-mono">{a.player.pitchingHits ?? 0}</TableCell>
                           <TableCell className="text-right font-mono">{a.player.pitchingHomeRuns ?? 0}</TableCell>
                           <TableCell className="text-right font-mono">{fmtEra(a.player.pitchingEra)}</TableCell>
+                          {level === "milb" && (
+                            <TableCell>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 text-destructive hover:text-destructive"
+                                onClick={() => setCutPlayer(a)}
+                                data-testid={`button-cut-${a.id}`}
+                              >
+                                <Scissors className="h-3.5 w-3.5" />
+                              </Button>
+                            </TableCell>
+                          )}
                         </TableRow>
                       ))}
                     </TableBody>
@@ -321,6 +379,28 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={!!cutPlayer} onOpenChange={(open) => { if (!open) setCutPlayer(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cut {cutPlayer?.player.fullName}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove {cutPlayer?.player.fullName} ({cutPlayer?.player.primaryPosition}) from your MiLB roster. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cutMutation.isPending} data-testid="button-cut-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => cutPlayer && cutMutation.mutate(cutPlayer.id)}
+              disabled={cutMutation.isPending}
+              data-testid="button-cut-confirm"
+            >
+              {cutMutation.isPending ? "Cutting..." : "Cut Player"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
