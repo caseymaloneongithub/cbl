@@ -83,6 +83,15 @@ function teamAbbrForPlayer(p: MlbPlayer): string {
   );
 }
 
+function StatLevelBadge({ stats }: { stats: RosterAssignment["stats"] }) {
+  if (!stats?.sportLevel || stats.sportLevel === "MLB") return null;
+  return (
+    <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-normal opacity-70">
+      {stats.sportLevel} stats
+    </Badge>
+  );
+}
+
 function NameWithHover({ a }: { a: RosterAssignment }) {
   return (
     <Tooltip>
@@ -93,6 +102,7 @@ function NameWithHover({ a }: { a: RosterAssignment }) {
           {a.rosterSlot === "60" && (
             <Badge variant="destructive" className="text-[10px] px-1.5 py-0">60-day IL</Badge>
           )}
+          <StatLevelBadge stats={a.stats} />
         </span>
       </TooltipTrigger>
       <TooltipContent>
