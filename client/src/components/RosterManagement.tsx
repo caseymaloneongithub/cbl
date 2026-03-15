@@ -167,8 +167,8 @@ interface DuplicateMlbAssignmentsResponse {
 }
 
 function formatLevelWithYear(sportLevel: string, lastActiveSeason?: number | null, lastActiveLevel?: string | null): string {
-  const currentYear = new Date().getFullYear();
-  if (lastActiveSeason && lastActiveSeason < currentYear) {
+  const cardYear = new Date().getFullYear() - 1;
+  if (lastActiveSeason && lastActiveSeason < cardYear) {
     const displayLevel = lastActiveLevel || sportLevel;
     return `${displayLevel} (${lastActiveSeason})`;
   }

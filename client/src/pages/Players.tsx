@@ -44,8 +44,8 @@ type SortDir = "asc" | "desc";
 const fmtRate = (v: number | null | undefined) => (v == null ? "-" : Number(v).toFixed(3));
 
 function formatLevelWithYear(sportLevel: string, lastActiveSeason?: number | null, lastActiveLevel?: string | null): string {
-  const currentYear = new Date().getFullYear();
-  if (lastActiveSeason && lastActiveSeason < currentYear) {
+  const cardYear = new Date().getFullYear() - 1;
+  if (lastActiveSeason && lastActiveSeason < cardYear) {
     const displayLevel = lastActiveLevel || sportLevel;
     return `${displayLevel} (${lastActiveSeason})`;
   }
@@ -363,7 +363,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
                         <TableHead className="cursor-pointer" onClick={() => toggleHitterSort("name")}>Name{hs("name")}</TableHead>
                         <TableHead className="cursor-pointer" onClick={() => toggleHitterSort("pos")}>Pos{hs("pos")}</TableHead>
                         <TableHead className="cursor-pointer" onClick={() => toggleHitterSort("team")}>Team{hs("team")}</TableHead>
-                        {showMilbLevel && <TableHead>Level (2025)</TableHead>}
+                        {showMilbLevel && <TableHead>Level</TableHead>}
                         <TableHead className="cursor-pointer text-right" onClick={() => toggleHitterSort("ab")}>AB{hs("ab")}</TableHead>
                         <TableHead className="cursor-pointer text-right" onClick={() => toggleHitterSort("pa")}>PA{hs("pa")}</TableHead>
                         <TableHead className="cursor-pointer text-right" onClick={() => toggleHitterSort("bb")}>BB{hs("bb")}</TableHead>
@@ -423,7 +423,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
                         <TableHead className="cursor-pointer" onClick={() => togglePitcherSort("name")}>Name{ps("name")}</TableHead>
                         <TableHead className="cursor-pointer" onClick={() => togglePitcherSort("pos")}>Pos{ps("pos")}</TableHead>
                         <TableHead className="cursor-pointer" onClick={() => togglePitcherSort("team")}>Team{ps("team")}</TableHead>
-                        {showMilbLevel && <TableHead>Level (2025)</TableHead>}
+                        {showMilbLevel && <TableHead>Level</TableHead>}
                         <TableHead className="cursor-pointer text-right" onClick={() => togglePitcherSort("g")}>G{ps("g")}</TableHead>
                         <TableHead className="cursor-pointer text-right" onClick={() => togglePitcherSort("gs")}>GS{ps("gs")}</TableHead>
                         <TableHead className="cursor-pointer text-right" onClick={() => togglePitcherSort("ip")}>IP{ps("ip")}</TableHead>

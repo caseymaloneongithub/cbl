@@ -42,6 +42,9 @@ interface RosterAssignment {
   mlbPlayerId: number;
   rosterType: string;
   season: number;
+  contractStatus: string | null;
+  minorLeagueStatus: string | null;
+  minorLeagueYears: number | null;
   player: MlbPlayer;
 }
 
@@ -53,8 +56,8 @@ type SortDir = "asc" | "desc";
 const fmtRate = (v: number | null | undefined) => (v == null ? "-" : Number(v).toFixed(3));
 
 function formatLevelWithYear(sportLevel: string, lastActiveSeason?: number | null, lastActiveLevel?: string | null): string {
-  const currentYear = new Date().getFullYear();
-  if (lastActiveSeason && lastActiveSeason < currentYear) {
+  const cardYear = new Date().getFullYear() - 1;
+  if (lastActiveSeason && lastActiveSeason < cardYear) {
     const displayLevel = lastActiveLevel || sportLevel;
     return `${displayLevel} (${lastActiveSeason})`;
   }
@@ -62,6 +65,15 @@ function formatLevelWithYear(sportLevel: string, lastActiveSeason?: number | nul
 }
 const fmtEra = (v: number | null | undefined) => (v == null ? "-" : Number(v).toFixed(2));
 const fmt1 = (v: number | null | undefined) => (v == null ? "-" : Number(v).toFixed(1));
+
+function formatAcquired(status: string | null, years: number | null): string {
+  if (!status) return "-";
+  const labels: Record<string, string> = { MH: "Homegrown", MC: "Claimed", FA: "Free Agent", D: "Draft" };
+  const label = labels[status] || status;
+  if (years == null || years === 0) return label;
+  if (status === "D") return `${label} (${years})`;
+  return `${label} (${years}yr)`;
+}
 
 function teamAbbrForPlayer(p: MlbPlayer): string {
   return (
@@ -268,7 +280,8 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                         <TableHead className="cursor-pointer" onClick={() => toggleHSort("name")}>Name{hs("name")}</TableHead>
                         <TableHead className="cursor-pointer" onClick={() => toggleHSort("pos")}>Pos{hs("pos")}</TableHead>
                         <TableHead className="cursor-pointer" onClick={() => toggleHSort("team")}>Team{hs("team")}</TableHead>
-                        {showMilbLevel && <TableHead>Level (2025)</TableHead>}
+                        {showMilbLevel && <TableHead>Level</TableHead>}
+                        {level === "milb" && <TableHead>Acquired</TableHead>}
                         <TableHead className="cursor-pointer text-right" onClick={() => toggleHSort("ab")}>AB{hs("ab")}</TableHead>
                         <TableHead className="cursor-pointer text-right" onClick={() => toggleHSort("pa")}>PA{hs("pa")}</TableHead>
                         <TableHead className="cursor-pointer text-right" onClick={() => toggleHSort("bb")}>BB{hs("bb")}</TableHead>
@@ -290,6 +303,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                           <TableCell className="font-mono text-[11px]">{a.player.primaryPosition || "-"}</TableCell>
                           <TableCell>{teamAbbrForPlayer(a.player)}</TableCell>
                           {showMilbLevel && <TableCell>{formatLevelWithYear(a.player.sportLevel, (a.player as any).lastActiveSeason, (a.player as any).lastActiveLevel)}</TableCell>}
+                          {level === "milb" && <TableCell className="text-[11px]">{formatAcquired(a.minorLeagueStatus, a.minorLeagueYears)}</TableCell>}
                           <TableCell className="text-right font-mono">{a.player.hittingAtBats ?? 0}</TableCell>
                           <TableCell className="text-right font-mono">{a.player.hittingPlateAppearances ?? 0}</TableCell>
                           <TableCell className="text-right font-mono">{a.player.hittingWalks ?? 0}</TableCell>
@@ -329,7 +343,8 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                         <TableHead className="cursor-pointer" onClick={() => togglePSort("name")}>Name{ps("name")}</TableHead>
                         <TableHead className="cursor-pointer" onClick={() => togglePSort("pos")}>Pos{ps("pos")}</TableHead>
                         <TableHead className="cursor-pointer" onClick={() => togglePSort("team")}>Team{ps("team")}</TableHead>
-                        {showMilbLevel && <TableHead>Level (2025)</TableHead>}
+                        {showMilbLevel && <TableHead>Level</TableHead>}
+                        {level === "milb" && <TableHead>Acquired</TableHead>}
                         <TableHead className="cursor-pointer text-right" onClick={() => togglePSort("g")}>G{ps("g")}</TableHead>
                         <TableHead className="cursor-pointer text-right" onClick={() => togglePSort("gs")}>GS{ps("gs")}</TableHead>
                         <TableHead className="cursor-pointer text-right" onClick={() => togglePSort("ip")}>IP{ps("ip")}</TableHead>
@@ -348,6 +363,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                           <TableCell className="font-mono text-[11px]">{a.player.primaryPosition || "-"}</TableCell>
                           <TableCell>{teamAbbrForPlayer(a.player)}</TableCell>
                           {showMilbLevel && <TableCell>{formatLevelWithYear(a.player.sportLevel, (a.player as any).lastActiveSeason, (a.player as any).lastActiveLevel)}</TableCell>}
+                          {level === "milb" && <TableCell className="text-[11px]">{formatAcquired(a.minorLeagueStatus, a.minorLeagueYears)}</TableCell>}
                           <TableCell className="text-right font-mono">{a.player.pitchingGames ?? 0}</TableCell>
                           <TableCell className="text-right font-mono">{a.player.pitchingGamesStarted ?? 0}</TableCell>
                           <TableCell className="text-right font-mono">{fmt1(a.player.pitchingInningsPitched)}</TableCell>
