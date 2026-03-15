@@ -320,6 +320,7 @@ export interface IStorage {
   
   // MLB Players reference database
   upsertMlbPlayers(players: InsertMlbPlayer[]): Promise<number>;
+  insertMlbPlayersIfNew(players: InsertMlbPlayer[]): Promise<number>;
   upsertMlbPlayerStats(stats: InsertMlbPlayerStat[]): Promise<number>;
   upsertMlbPlayerStatsFromSync(players: InsertMlbPlayer[]): Promise<number>;
   getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number; currentTeamName?: string; parentOrgName?: string; season?: number; sortBy?: string; sortDir?: string; statsSeason?: number }): Promise<(MlbPlayer & { stats: MlbPlayerStat | null })[]>;
@@ -3159,6 +3160,23 @@ export class DatabaseStorage implements IStorage {
     }
     
     return totalUpserted;
+  }
+
+  async insertMlbPlayersIfNew(players: InsertMlbPlayer[]): Promise<number> {
+    if (players.length === 0) return 0;
+
+    const BATCH_SIZE = 100;
+    let totalInserted = 0;
+
+    for (let i = 0; i < players.length; i += BATCH_SIZE) {
+      const batch = players.slice(i, i + BATCH_SIZE);
+      await db.insert(mlbPlayers)
+        .values(batch)
+        .onConflictDoNothing({ target: mlbPlayers.mlbId });
+      totalInserted += batch.length;
+    }
+
+    return totalInserted;
   }
 
   async upsertMlbPlayerStats(stats: InsertMlbPlayerStat[]): Promise<number> {

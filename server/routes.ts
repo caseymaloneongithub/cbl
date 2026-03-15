@@ -1173,10 +1173,16 @@ export async function registerRoutes(
             season: p.season,
           }));
 
-        const upserted = await storage.upsertMlbPlayers(playerData);
-        await storage.upsertMlbPlayerStatsFromSync(playerData);
-        results.push({ season, playerCount: upserted });
-        console.log(`[MLB Sync] Season ${season}: ${upserted} players synced`);
+        let playerCount: number;
+        if (season === end) {
+          playerCount = await storage.upsertMlbPlayers(playerData);
+        } else {
+          playerCount = await storage.insertMlbPlayersIfNew(playerData);
+          console.log(`[MLB Sync] Season ${season}: added new players only (no metadata overwrite)`);
+        }
+        const statsUpserted = await storage.upsertMlbPlayerStatsFromSync(playerData);
+        results.push({ season, playerCount });
+        console.log(`[MLB Sync] Season ${season}: ${playerCount} players, ${statsUpserted} stat rows`);
       }
 
       const totalPlayers = results.reduce((sum, r) => sum + r.playerCount, 0);
