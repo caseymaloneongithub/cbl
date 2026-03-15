@@ -1026,7 +1026,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
   const csvUploadTemplate = useMemo(() => {
     const teamAbbr = (activeMembers[0]?.teamAbbreviation || "NYY").toUpperCase();
     if (csvDefaultRosterType === "mlb") {
-      return `mlb_api_id,player_name,middle_name,team_abbreviation,roster_type,age,mlb_team,org,fangraphs_id,status,2026\n660271,Shohei Ohtani,,${teamAbbr},mlb,30,Los Angeles Dodgers,Dodgers,19755,ARB,45\n`;
+      return `mlb_api_id,team_abbreviation,status,2026,acquired\n660271,${teamAbbr},ARB,45,FA 2024\n`;
     }
     return `mlb_api_id,last_name,first_name,team_abbreviation,org,status,years,acquired\n,Prospect,Example James,${teamAbbr},Dodgers,MH,0,D 2026\n`;
   }, [activeMembers, csvDefaultRosterType]);
