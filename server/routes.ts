@@ -1486,17 +1486,28 @@ export async function registerRoutes(
       const mlbIds = [...new Set(assignments.map(a => a.player.mlbId).filter(id => id > 0))];
       const lastActiveMap = new Map<number, number | null>();
       if (mlbIds.length > 0) {
-        const result = await db.execute(sql`
-          SELECT mlb_id,
-            MAX(CASE WHEN COALESCE(hitting_plate_appearances,0) > 0 OR COALESCE(pitching_games,0) > 0 OR COALESCE(pitching_innings_pitched,0) > 0 OR COALESCE(had_hitting_stats,false) = true OR COALESCE(had_pitching_stats,false) = true THEN season ELSE NULL END)::int AS last_active_season,
-            MAX(season)::int AS max_known_season
-          FROM mlb_players WHERE mlb_id = ANY(${mlbIds}) GROUP BY mlb_id
-        `);
-        for (const row of (result.rows || []) as any[]) {
-          const mlbId = Number(row.mlb_id);
-          const lastActive = Number(row.last_active_season);
-          const maxKnown = Number(row.max_known_season);
-          lastActiveMap.set(mlbId, Number.isInteger(lastActive) && lastActive > 1900 ? lastActive : (Number.isInteger(maxKnown) && maxKnown > 1900 ? maxKnown : null));
+        try {
+          const rows = await db.select({
+            mlbId: mlbPlayers.mlbId,
+            season: mlbPlayers.season,
+            hadHittingStats: mlbPlayers.hadHittingStats,
+            hadPitchingStats: mlbPlayers.hadPitchingStats,
+            hittingPlateAppearances: mlbPlayers.hittingPlateAppearances,
+            pitchingGames: mlbPlayers.pitchingGames,
+            pitchingInningsPitched: mlbPlayers.pitchingInningsPitched,
+          }).from(mlbPlayers).where(inArray(mlbPlayers.mlbId, mlbIds));
+          for (const row of rows) {
+            const played = (row.hittingPlateAppearances ?? 0) > 0 || (row.pitchingGames ?? 0) > 0 || (row.pitchingInningsPitched ?? 0) > 0 || row.hadHittingStats || row.hadPitchingStats;
+            const existing = lastActiveMap.get(row.mlbId);
+            const candidate = played ? row.season : null;
+            if (candidate && (!existing || candidate > existing)) {
+              lastActiveMap.set(row.mlbId, candidate);
+            } else if (!existing) {
+              lastActiveMap.set(row.mlbId, row.season);
+            }
+          }
+        } catch (e) {
+          console.error("Error fetching lastActiveSeason for roster assignments:", e);
         }
       }
       const enrichedAssignments = assignments.map(a => ({
@@ -1536,17 +1547,28 @@ export async function registerRoutes(
       const faMlbIds = [...new Set(players.map(p => p.mlbId).filter(id => id > 0))];
       const faLastActiveMap = new Map<number, number | null>();
       if (faMlbIds.length > 0) {
-        const result = await db.execute(sql`
-          SELECT mlb_id,
-            MAX(CASE WHEN COALESCE(hitting_plate_appearances,0) > 0 OR COALESCE(pitching_games,0) > 0 OR COALESCE(pitching_innings_pitched,0) > 0 OR COALESCE(had_hitting_stats,false) = true OR COALESCE(had_pitching_stats,false) = true THEN season ELSE NULL END)::int AS last_active_season,
-            MAX(season)::int AS max_known_season
-          FROM mlb_players WHERE mlb_id = ANY(${faMlbIds}) GROUP BY mlb_id
-        `);
-        for (const row of (result.rows || []) as any[]) {
-          const mlbId = Number(row.mlb_id);
-          const lastActive = Number(row.last_active_season);
-          const maxKnown = Number(row.max_known_season);
-          faLastActiveMap.set(mlbId, Number.isInteger(lastActive) && lastActive > 1900 ? lastActive : (Number.isInteger(maxKnown) && maxKnown > 1900 ? maxKnown : null));
+        try {
+          const faRows = await db.select({
+            mlbId: mlbPlayers.mlbId,
+            season: mlbPlayers.season,
+            hadHittingStats: mlbPlayers.hadHittingStats,
+            hadPitchingStats: mlbPlayers.hadPitchingStats,
+            hittingPlateAppearances: mlbPlayers.hittingPlateAppearances,
+            pitchingGames: mlbPlayers.pitchingGames,
+            pitchingInningsPitched: mlbPlayers.pitchingInningsPitched,
+          }).from(mlbPlayers).where(inArray(mlbPlayers.mlbId, faMlbIds));
+          for (const row of faRows) {
+            const played = (row.hittingPlateAppearances ?? 0) > 0 || (row.pitchingGames ?? 0) > 0 || (row.pitchingInningsPitched ?? 0) > 0 || row.hadHittingStats || row.hadPitchingStats;
+            const existing = faLastActiveMap.get(row.mlbId);
+            const candidate = played ? row.season : null;
+            if (candidate && (!existing || candidate > existing)) {
+              faLastActiveMap.set(row.mlbId, candidate);
+            } else if (!existing) {
+              faLastActiveMap.set(row.mlbId, row.season);
+            }
+          }
+        } catch (e) {
+          console.error("Error fetching lastActiveSeason for unassigned players:", e);
         }
       }
       const enrichedPlayers = players.map(p => ({
