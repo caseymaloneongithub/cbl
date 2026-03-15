@@ -315,17 +315,17 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                           <TableCell className="text-[11px]">{formatAcquired(a.acquired)}</TableCell>
                           {level === "mlb" && <TableCell className="text-[11px]">{a.contractStatus || "-"}</TableCell>}
                           {level === "mlb" && <TableCell className="text-right text-[11px]">{a.salary2026 || "-"}</TableCell>}
-                          <TableCell className="text-right font-mono">{a.player.hittingAtBats ?? 0}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hittingPlateAppearances ?? 0}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hittingWalks ?? 0}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hittingSingles ?? 0}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hittingDoubles ?? 0}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hittingTriples ?? 0}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hittingHomeRuns ?? 0}</TableCell>
-                          <TableCell className="text-right font-mono">{fmtRate(a.player.hittingAvg)}</TableCell>
-                          <TableCell className="text-right font-mono">{fmtRate(a.player.hittingObp)}</TableCell>
-                          <TableCell className="text-right font-mono">{fmtRate(a.player.hittingSlg)}</TableCell>
-                          <TableCell className="text-right font-mono">{fmtRate(a.player.hittingOps)}</TableCell>
+                          <TableCell className="text-right font-mono">{a.player.hadHittingStats ? (a.player.hittingAtBats ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.player.hadHittingStats ? (a.player.hittingPlateAppearances ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.player.hadHittingStats ? (a.player.hittingWalks ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.player.hadHittingStats ? (a.player.hittingSingles ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.player.hadHittingStats ? (a.player.hittingDoubles ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.player.hadHittingStats ? (a.player.hittingTriples ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.player.hadHittingStats ? (a.player.hittingHomeRuns ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.player.hadHittingStats ? fmtRate(a.player.hittingAvg) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.player.hadHittingStats ? fmtRate(a.player.hittingObp) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.player.hadHittingStats ? fmtRate(a.player.hittingSlg) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.player.hadHittingStats ? fmtRate(a.player.hittingOps) : ""}</TableCell>
                           {level === "milb" && (
                             <TableCell>
                               <Button
@@ -379,14 +379,14 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                           <TableCell className="text-[11px]">{formatAcquired(a.acquired)}</TableCell>
                           {level === "mlb" && <TableCell className="text-[11px]">{a.contractStatus || "-"}</TableCell>}
                           {level === "mlb" && <TableCell className="text-right text-[11px]">{a.salary2026 || "-"}</TableCell>}
-                          <TableCell className="text-right font-mono">{a.player.pitchingGames ?? 0}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.pitchingGamesStarted ?? 0}</TableCell>
-                          <TableCell className="text-right font-mono">{fmt1(a.player.pitchingInningsPitched)}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.pitchingStrikeouts ?? 0}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.pitchingWalks ?? 0}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.pitchingHits ?? 0}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.pitchingHomeRuns ?? 0}</TableCell>
-                          <TableCell className="text-right font-mono">{fmtEra(a.player.pitchingEra)}</TableCell>
+                          <TableCell className="text-right font-mono">{a.player.hadPitchingStats ? (a.player.pitchingGames ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.player.hadPitchingStats ? (a.player.pitchingGamesStarted ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.player.hadPitchingStats ? fmt1(a.player.pitchingInningsPitched) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.player.hadPitchingStats ? (a.player.pitchingStrikeouts ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.player.hadPitchingStats ? (a.player.pitchingWalks ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.player.hadPitchingStats ? (a.player.pitchingHits ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.player.hadPitchingStats ? (a.player.pitchingHomeRuns ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.player.hadPitchingStats ? fmtEra(a.player.pitchingEra) : ""}</TableCell>
                           {level === "milb" && (
                             <TableCell>
                               <Button
