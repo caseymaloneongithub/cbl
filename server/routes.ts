@@ -20,6 +20,7 @@ import {
   draftPicks,
   autoDraftLists,
   mlbPlayers,
+  mlbPlayerStats,
   draftPlayers,
 } from "@shared/schema";
 import { eq, and, inArray, sql, desc } from "drizzle-orm";
@@ -1219,10 +1220,36 @@ export async function registerRoutes(
         count: sql<number>`COUNT(*)::int`,
       }).from(mlbPlayers).groupBy(mlbPlayers.season).orderBy(mlbPlayers.season);
 
-      res.json({ total, byLevel, twoWayQualified, season, seasonCounts });
+      const statSeasonCounts = await db.select({
+        season: mlbPlayerStats.season,
+        count: sql<number>`COUNT(*)::int`,
+      }).from(mlbPlayerStats).groupBy(mlbPlayerStats.season).orderBy(mlbPlayerStats.season);
+
+      res.json({ total, byLevel, twoWayQualified, season, seasonCounts, statSeasonCounts });
     } catch (error: any) {
       console.error("Error fetching MLB player status:", error);
       res.status(500).json({ message: "Failed to fetch MLB player status" });
+    }
+  });
+
+  app.delete("/api/admin/mlb-players/season/:season", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      if (!user?.isSuperAdmin) {
+        return res.status(403).json({ message: "Super Admin access required" });
+      }
+      const season = parseInt(req.params.season, 10);
+      if (!Number.isInteger(season) || season < 2000) {
+        return res.status(400).json({ message: "Invalid season" });
+      }
+      const deletedStats = await db.delete(mlbPlayerStats).where(eq(mlbPlayerStats.season, season));
+      const deletedPlayers = await db.delete(mlbPlayers).where(eq(mlbPlayers.season, season));
+      console.log(`[MLB Sync] Deleted season ${season} data`);
+      res.json({ message: `Deleted season ${season} data` });
+    } catch (error: any) {
+      console.error("Error deleting season data:", error);
+      res.status(500).json({ message: error.message || "Failed to delete season data" });
     }
   });
 

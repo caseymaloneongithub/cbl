@@ -59,6 +59,7 @@ function MlbPlayerSync() {
     twoWayQualified: number;
     byLevel: Record<string, { total: number; hitters: number; pitchers: number; twoWayQualified: number }>;
     seasonCounts: { season: number; count: number }[];
+    statSeasonCounts: { season: number; count: number }[];
   }>({
     queryKey: ["/api/admin/mlb-players/status", String(syncSeason)],
     queryFn: async () => {
@@ -82,7 +83,22 @@ function MlbPlayerSync() {
         twoWayQualified: toCount(raw?.twoWayQualified),
         byLevel,
         seasonCounts: Array.isArray(raw?.seasonCounts) ? raw.seasonCounts : [],
+        statSeasonCounts: Array.isArray(raw?.statSeasonCounts) ? raw.statSeasonCounts : [],
       };
+    },
+  });
+
+  const deleteSeasonMutation = useMutation({
+    mutationFn: async (season: number) => {
+      const res = await apiRequest("DELETE", `/api/admin/mlb-players/season/${season}`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Season Deleted", description: data.message });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/mlb-players/status"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Delete Failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -264,12 +280,39 @@ function MlbPlayerSync() {
       )}
 
       {seasonCounts.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {seasonCounts.map((sc: { season: number; count: number }) => (
-            <Badge key={sc.season} variant="secondary" data-testid={`badge-season-${sc.season}`}>
-              {sc.season}: {sc.count.toLocaleString()}
-            </Badge>
-          ))}
+        <div className="space-y-2">
+          <div className="text-xs font-medium text-muted-foreground">Player Directory by Season</div>
+          <div className="flex flex-wrap gap-2">
+            {seasonCounts.map((sc: { season: number; count: number }) => {
+              const statCount = (status?.statSeasonCounts || []).find((s: { season: number }) => s.season === sc.season)?.count;
+              return (
+                <Badge
+                  key={sc.season}
+                  variant={sc.season === syncSeason ? "default" : "secondary"}
+                  className="cursor-pointer group gap-1"
+                  data-testid={`badge-season-${sc.season}`}
+                  onClick={() => setSyncSeason(sc.season)}
+                >
+                  {sc.season}: {sc.count.toLocaleString()}
+                  {statCount != null && statCount !== sc.count && (
+                    <span className="text-[10px] opacity-70">({statCount.toLocaleString()} stats)</span>
+                  )}
+                  <button
+                    className="ml-1 opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (window.confirm(`Delete all ${sc.count.toLocaleString()} players and stats for season ${sc.season}?`)) {
+                        deleteSeasonMutation.mutate(sc.season);
+                      }
+                    }}
+                    data-testid={`button-delete-season-${sc.season}`}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </Badge>
+              );
+            })}
+          </div>
         </div>
       )}
 
