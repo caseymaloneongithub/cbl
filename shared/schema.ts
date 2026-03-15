@@ -833,6 +833,7 @@ export const mlbPlayerStats = pgTable("mlb_player_stats", {
   isTwoWayQualified: boolean("is_two_way_qualified").default(false),
 }, (table) => [
   index("idx_mlb_player_stats_player_season").on(table.mlbPlayerId, table.season),
+  uniqueIndex("idx_mlb_player_stats_unique").on(table.mlbPlayerId, table.season),
 ]);
 
 export const insertMlbPlayerStatsSchema = (createInsertSchema(mlbPlayerStats) as any).omit({
