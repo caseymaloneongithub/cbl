@@ -166,10 +166,11 @@ interface DuplicateMlbAssignmentsResponse {
   duplicates: DuplicateMlbPlayerRecord[];
 }
 
-function formatLevelWithYear(sportLevel: string, lastActiveSeason?: number | null): string {
+function formatLevelWithYear(sportLevel: string, lastActiveSeason?: number | null, lastActiveLevel?: string | null): string {
   const currentYear = new Date().getFullYear();
   if (lastActiveSeason && lastActiveSeason < currentYear) {
-    return `${sportLevel} (${lastActiveSeason})`;
+    const displayLevel = lastActiveLevel || sportLevel;
+    return `${displayLevel} (${lastActiveSeason})`;
   }
   return sportLevel;
 }
@@ -1917,7 +1918,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                         {isUncardedOnMlbRoster(a.player, a.rosterType) ? " (uncarded)" : ""}
                       </TableCell>
                       <TableCell>{a.player.primaryPosition || "-"}</TableCell>
-                      <TableCell>{formatLevelWithYear(a.player.sportLevel, (a.player as any).lastActiveSeason)}</TableCell>
+                      <TableCell>{formatLevelWithYear(a.player.sportLevel, (a.player as any).lastActiveSeason, (a.player as any).lastActiveLevel)}</TableCell>
                       <TableCell>{getMemberName(a.userId)}</TableCell>
                       <TableCell>{getRosterTypeBadge(a.rosterType)}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">
@@ -2019,7 +2020,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                             <Badge variant="secondary">MiLB FA</Badge>
                           )}
                         </TableCell>
-                        <TableCell>{formatLevelWithYear(p.sportLevel, (p as any).lastActiveSeason)}</TableCell>
+                        <TableCell>{formatLevelWithYear(p.sportLevel, (p as any).lastActiveSeason, (p as any).lastActiveLevel)}</TableCell>
                         <TableCell className="text-muted-foreground text-sm">
                           {formatAffiliatedTeamLabel({
                             currentTeamName: p.currentTeamName,
@@ -2129,7 +2130,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                           {isUncardedOnMlbRoster(a.player, a.rosterType) ? " (uncarded)" : ""}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {a.player.primaryPosition || "-"} | {a.rosterType.toUpperCase()} | {formatLevelWithYear(a.player.sportLevel, (a.player as any).lastActiveSeason)}
+                          {a.player.primaryPosition || "-"} | {a.rosterType.toUpperCase()} | {formatLevelWithYear(a.player.sportLevel, (a.player as any).lastActiveSeason, (a.player as any).lastActiveLevel)}
                         </div>
                       </div>
                     </label>
@@ -2179,7 +2180,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                           {isUncardedOnMlbRoster(a.player, a.rosterType) ? " (uncarded)" : ""}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {a.player.primaryPosition || "-"} | {a.rosterType.toUpperCase()} | {formatLevelWithYear(a.player.sportLevel, (a.player as any).lastActiveSeason)}
+                          {a.player.primaryPosition || "-"} | {a.rosterType.toUpperCase()} | {formatLevelWithYear(a.player.sportLevel, (a.player as any).lastActiveSeason, (a.player as any).lastActiveLevel)}
                         </div>
                       </div>
                     </label>
@@ -2228,7 +2229,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
               <div>
                 <p className="font-medium">{assignPlayer.fullName}</p>
                 <p className="text-sm text-muted-foreground">
-                  {assignPlayer.primaryPosition} | {formatLevelWithYear(assignPlayer.sportLevel, (assignPlayer as any).lastActiveSeason)} | {formatAffiliatedTeamLabel({
+                  {assignPlayer.primaryPosition} | {formatLevelWithYear(assignPlayer.sportLevel, (assignPlayer as any).lastActiveSeason, (assignPlayer as any).lastActiveLevel)} | {formatAffiliatedTeamLabel({
                     currentTeamName: assignPlayer.currentTeamName,
                     parentOrgName: assignPlayer.parentOrgName,
                     sportLevel: assignPlayer.sportLevel,

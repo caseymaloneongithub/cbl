@@ -1484,13 +1484,15 @@ export async function registerRoutes(
       const counts = await storage.getRosterAssignmentCounts(leagueId, season);
 
       const mlbIds = [...new Set(assignments.map(a => a.player.mlbId).filter(id => id > 0))];
-      const lastActiveMap = new Map<number, number | null>();
+      const lastActiveMap = new Map<number, { season: number | null; level: string | null }>();
       if (mlbIds.length > 0) {
         try {
           const rows = await db.select({
             mlbId: mlbPlayers.mlbId,
+            sportLevel: mlbPlayers.sportLevel,
             season: mlbPlayers.season,
             lastPlayedSeason: mlbPlayers.lastPlayedSeason,
+            lastPlayedLevel: mlbPlayers.lastPlayedLevel,
             hadHittingStats: mlbPlayers.hadHittingStats,
             hadPitchingStats: mlbPlayers.hadPitchingStats,
             hittingPlateAppearances: mlbPlayers.hittingPlateAppearances,
@@ -1499,20 +1501,23 @@ export async function registerRoutes(
           }).from(mlbPlayers).where(inArray(mlbPlayers.mlbId, mlbIds));
           for (const row of rows) {
             if (row.lastPlayedSeason) {
-              lastActiveMap.set(row.mlbId, row.lastPlayedSeason);
+              lastActiveMap.set(row.mlbId, { season: row.lastPlayedSeason, level: row.lastPlayedLevel || row.sportLevel });
             } else {
               const played = (row.hittingPlateAppearances ?? 0) > 0 || (row.pitchingGames ?? 0) > 0 || (row.pitchingInningsPitched ?? 0) > 0 || row.hadHittingStats || row.hadPitchingStats;
-              lastActiveMap.set(row.mlbId, played ? row.season : null);
+              lastActiveMap.set(row.mlbId, { season: played ? row.season : null, level: played ? (row.lastPlayedLevel || row.sportLevel) : null });
             }
           }
         } catch (e) {
           console.error("Error fetching lastActiveSeason for roster assignments:", e);
         }
       }
-      const enrichedAssignments = assignments.map(a => ({
-        ...a,
-        player: { ...a.player, lastActiveSeason: lastActiveMap.get(a.player.mlbId) ?? null },
-      }));
+      const enrichedAssignments = assignments.map(a => {
+        const info = lastActiveMap.get(a.player.mlbId);
+        return {
+          ...a,
+          player: { ...a.player, lastActiveSeason: info?.season ?? null, lastActiveLevel: info?.level ?? null },
+        };
+      });
 
       res.json({ assignments: enrichedAssignments, counts });
     } catch (error: any) {
@@ -1544,13 +1549,15 @@ export async function registerRoutes(
       const total = await storage.getUnassignedPlayerCount(leagueId, season, { search, sportLevel });
 
       const faMlbIds = [...new Set(players.map(p => p.mlbId).filter(id => id > 0))];
-      const faLastActiveMap = new Map<number, number | null>();
+      const faLastActiveMap = new Map<number, { season: number | null; level: string | null }>();
       if (faMlbIds.length > 0) {
         try {
           const faRows = await db.select({
             mlbId: mlbPlayers.mlbId,
+            sportLevel: mlbPlayers.sportLevel,
             season: mlbPlayers.season,
             lastPlayedSeason: mlbPlayers.lastPlayedSeason,
+            lastPlayedLevel: mlbPlayers.lastPlayedLevel,
             hadHittingStats: mlbPlayers.hadHittingStats,
             hadPitchingStats: mlbPlayers.hadPitchingStats,
             hittingPlateAppearances: mlbPlayers.hittingPlateAppearances,
@@ -1559,20 +1566,24 @@ export async function registerRoutes(
           }).from(mlbPlayers).where(inArray(mlbPlayers.mlbId, faMlbIds));
           for (const row of faRows) {
             if (row.lastPlayedSeason) {
-              faLastActiveMap.set(row.mlbId, row.lastPlayedSeason);
+              faLastActiveMap.set(row.mlbId, { season: row.lastPlayedSeason, level: row.lastPlayedLevel || row.sportLevel });
             } else {
               const played = (row.hittingPlateAppearances ?? 0) > 0 || (row.pitchingGames ?? 0) > 0 || (row.pitchingInningsPitched ?? 0) > 0 || row.hadHittingStats || row.hadPitchingStats;
-              faLastActiveMap.set(row.mlbId, played ? row.season : null);
+              faLastActiveMap.set(row.mlbId, { season: played ? row.season : null, level: played ? (row.lastPlayedLevel || row.sportLevel) : null });
             }
           }
         } catch (e) {
           console.error("Error fetching lastActiveSeason for unassigned players:", e);
         }
       }
-      const enrichedPlayers = players.map(p => ({
-        ...p,
-        lastActiveSeason: faLastActiveMap.get(p.mlbId) ?? null,
-      }));
+      const enrichedPlayers = players.map(p => {
+        const info = faLastActiveMap.get(p.mlbId);
+        return {
+          ...p,
+          lastActiveSeason: info?.season ?? null,
+          lastActiveLevel: info?.level ?? null,
+        };
+      });
 
       res.json({ players: enrichedPlayers, total });
     } catch (error: any) {
@@ -2037,17 +2048,24 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Super admin access required" });
       }
 
-      const playersWithoutLastPlayed = await db.select({
+      const SPORT_LEVEL_MAP: Record<number, string> = {
+        1: "MLB", 11: "AAA", 12: "AA", 13: "High-A", 14: "Single-A", 15: "Short-Season", 16: "Rookie", 509: "Fall League",
+      };
+
+      const playersToBackfill = await db.select({
         id: mlbPlayers.id,
         mlbId: mlbPlayers.mlbId,
         fullName: mlbPlayers.fullName,
+        sportLevel: mlbPlayers.sportLevel,
         season: mlbPlayers.season,
+        lastPlayedSeason: mlbPlayers.lastPlayedSeason,
+        lastPlayedLevel: mlbPlayers.lastPlayedLevel,
         hadHittingStats: mlbPlayers.hadHittingStats,
         hadPitchingStats: mlbPlayers.hadPitchingStats,
         hittingPlateAppearances: mlbPlayers.hittingPlateAppearances,
         pitchingGames: mlbPlayers.pitchingGames,
         pitchingInningsPitched: mlbPlayers.pitchingInningsPitched,
-      }).from(mlbPlayers).where(sql`last_played_season IS NULL`);
+      }).from(mlbPlayers).where(sql`last_played_season IS NULL OR last_played_level IS NULL`);
 
       let updated = 0;
       let skipped = 0;
@@ -2055,14 +2073,26 @@ export async function registerRoutes(
       const BATCH_SIZE = 5;
       const BATCH_DELAY = 1200;
 
-      for (let i = 0; i < playersWithoutLastPlayed.length; i += BATCH_SIZE) {
-        const batch = playersWithoutLastPlayed.slice(i, i + BATCH_SIZE);
+      for (let i = 0; i < playersToBackfill.length; i += BATCH_SIZE) {
+        const batch = playersToBackfill.slice(i, i + BATCH_SIZE);
         await Promise.all(batch.map(async (player) => {
           const played = (player.hittingPlateAppearances ?? 0) > 0 || (player.pitchingGames ?? 0) > 0 ||
             (player.pitchingInningsPitched ?? 0) > 0 || player.hadHittingStats || player.hadPitchingStats;
 
-          if (played) {
-            await db.update(mlbPlayers).set({ lastPlayedSeason: player.season }).where(and(eq(mlbPlayers.id, player.id), sql`last_played_season IS NULL`));
+          if (played && player.lastPlayedSeason && player.lastPlayedLevel) {
+            return;
+          }
+
+          if (played && !player.lastPlayedLevel) {
+            const updateSet: any = { lastPlayedLevel: player.sportLevel };
+            if (!player.lastPlayedSeason) updateSet.lastPlayedSeason = player.season;
+            await db.update(mlbPlayers).set(updateSet).where(eq(mlbPlayers.id, player.id));
+            updated++;
+            return;
+          }
+
+          if (played && !player.lastPlayedSeason) {
+            await db.update(mlbPlayers).set({ lastPlayedSeason: player.season }).where(eq(mlbPlayers.id, player.id));
             updated++;
             return;
           }
@@ -2073,24 +2103,38 @@ export async function registerRoutes(
               fetch(`https://statsapi.mlb.com/api/v1/people/${player.mlbId}/stats?stats=yearByYear&group=pitching`),
             ]);
             apiLookedUp++;
-            const parseMaxSeason = (payload: any): number | null => {
+
+            const parseLatest = (payload: any): { season: number; sportId: number } | null => {
               const splits = Array.isArray(payload?.stats?.[0]?.splits) ? payload.stats[0].splits : [];
-              let maxSeason: number | null = null;
+              let best: { season: number; sportId: number } | null = null;
               for (const split of splits) {
                 const s = Number.parseInt(String(split?.season || ""), 10);
                 if (!Number.isInteger(s) || s < 1900) continue;
-                maxSeason = maxSeason == null ? s : Math.max(maxSeason, s);
+                const sportId = split?.sport?.id ?? split?.team?.sport?.id ?? null;
+                if (best == null || s > best.season) {
+                  best = { season: s, sportId: sportId ?? 0 };
+                }
               }
-              return maxSeason;
+              return best;
             };
+
             const hittingPayload = hittingRes.ok ? await hittingRes.json() : null;
             const pitchingPayload = pitchingRes.ok ? await pitchingRes.json() : null;
-            const maxHitting = parseMaxSeason(hittingPayload);
-            const maxPitching = parseMaxSeason(pitchingPayload);
-            const resolved = maxHitting == null ? maxPitching : (maxPitching == null ? maxHitting : Math.max(maxHitting, maxPitching));
+            const latestHitting = parseLatest(hittingPayload);
+            const latestPitching = parseLatest(pitchingPayload);
+            let resolved: { season: number; sportId: number } | null = null;
+            if (latestHitting && latestPitching) {
+              resolved = latestHitting.season >= latestPitching.season ? latestHitting : latestPitching;
+            } else {
+              resolved = latestHitting || latestPitching;
+            }
 
             if (resolved) {
-              await db.update(mlbPlayers).set({ lastPlayedSeason: resolved }).where(and(eq(mlbPlayers.id, player.id), sql`last_played_season IS NULL`));
+              const level = SPORT_LEVEL_MAP[resolved.sportId] || player.sportLevel;
+              const updateSet: any = {};
+              if (!player.lastPlayedSeason) updateSet.lastPlayedSeason = resolved.season;
+              updateSet.lastPlayedLevel = level;
+              await db.update(mlbPlayers).set(updateSet).where(eq(mlbPlayers.id, player.id));
               updated++;
             } else {
               skipped++;
@@ -2101,14 +2145,14 @@ export async function registerRoutes(
           }
         }));
 
-        if (i + BATCH_SIZE < playersWithoutLastPlayed.length) {
+        if (i + BATCH_SIZE < playersToBackfill.length) {
           await new Promise(r => setTimeout(r, BATCH_DELAY));
         }
       }
 
       res.json({
         message: `Backfill complete: ${updated} updated, ${skipped} skipped (no data found), ${apiLookedUp} API lookups`,
-        total: playersWithoutLastPlayed.length,
+        total: playersToBackfill.length,
         updated,
         skipped,
         apiLookedUp,

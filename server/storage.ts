@@ -3067,10 +3067,12 @@ export class DatabaseStorage implements IStorage {
     
     for (let i = 0; i < players.length; i += BATCH_SIZE) {
       const batch = players.slice(i, i + BATCH_SIZE).map(p => {
-        if (p.lastPlayedSeason != null) return p;
         const hasActivity = (p.hittingPlateAppearances ?? 0) > 0 || (p.pitchingGames ?? 0) > 0 ||
           (p.pitchingInningsPitched ?? 0) > 0 || p.hadHittingStats || p.hadPitchingStats;
-        return hasActivity && p.season ? { ...p, lastPlayedSeason: p.season } : p;
+        const enriched = { ...p };
+        if (enriched.lastPlayedSeason == null && hasActivity && p.season) enriched.lastPlayedSeason = p.season;
+        if (enriched.lastPlayedLevel == null && hasActivity && p.sportLevel) enriched.lastPlayedLevel = p.sportLevel;
+        return enriched;
       });
       await db.insert(mlbPlayers)
         .values(batch)
@@ -3130,6 +3132,19 @@ export class DatabaseStorage implements IStorage {
                 OR COALESCE(EXCLUDED.had_pitching_stats, false) = true
               THEN GREATEST(COALESCE(${mlbPlayers.lastPlayedSeason}, 0), EXCLUDED.season)
               ELSE ${mlbPlayers.lastPlayedSeason}
+            END`,
+            lastPlayedLevel: sql`CASE
+              WHEN COALESCE(EXCLUDED.hitting_plate_appearances, 0) > 0
+                OR COALESCE(EXCLUDED.pitching_games, 0) > 0
+                OR COALESCE(EXCLUDED.pitching_innings_pitched, 0) > 0
+                OR COALESCE(EXCLUDED.had_hitting_stats, false) = true
+                OR COALESCE(EXCLUDED.had_pitching_stats, false) = true
+              THEN CASE
+                WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.lastPlayedSeason}, 0)
+                  THEN COALESCE(EXCLUDED.last_played_level, EXCLUDED.sport_level)
+                  ELSE COALESCE(${mlbPlayers.lastPlayedLevel}, EXCLUDED.last_played_level, EXCLUDED.sport_level)
+                END
+              ELSE ${mlbPlayers.lastPlayedLevel}
             END`,
             lastSyncedAt: new Date(),
           },

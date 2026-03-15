@@ -787,6 +787,7 @@ export const mlbPlayers = pgTable("mlb_players", {
   isTwoWayQualified: boolean("is_two_way_qualified").default(false),
   season: integer("season").notNull(),
   lastPlayedSeason: integer("last_played_season"),
+  lastPlayedLevel: text("last_played_level"),
   lastSyncedAt: timestamp("last_synced_at").defaultNow(),
 }, (table) => [
   index("idx_mlb_players_mlb_id").on(table.mlbId),
