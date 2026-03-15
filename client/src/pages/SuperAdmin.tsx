@@ -272,7 +272,9 @@ function MlbPlayerSync() {
   const currentYear = new Date().getFullYear();
   const maxSeason = currentYear - 1;
   const seasonOptions = Array.from({ length: maxSeason - 2018 }, (_, i) => maxSeason - i);
-  const isSyncing = syncMutation.isPending || syncRangeMutation.isPending || syncPolling;
+  const isActuallySyncing = syncMutation.isPending || syncRangeMutation.isPending ||
+    (syncPolling && syncStatusQuery.data?.running);
+  const isSyncing = isActuallySyncing;
 
   const seasonCounts: { season: number; count: number }[] = status?.seasonCounts || [];
   const syncedSeasons = new Set(seasonCounts.map((s: { season: number }) => s.season));
