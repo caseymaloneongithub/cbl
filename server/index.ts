@@ -5,6 +5,8 @@ import { createServer } from "http";
 import { storage } from "./storage";
 import { sendAuctionResultsSummaryEmail } from "./email";
 
+import { Pool } from "pg";
+
 const app = express();
 const httpServer = createServer(app);
 const REQUEST_BODY_LIMIT = process.env.REQUEST_BODY_LIMIT || "100mb";
@@ -63,7 +65,104 @@ app.use((req, res, next) => {
   next();
 });
 
+async function runPendingMigrations() {
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  try {
+    const { rows: rosterSlotCheck } = await pool.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name = 'league_roster_assignments' AND column_name = 'roster_slot'`
+    );
+    if (rosterSlotCheck.length === 0) {
+      log("Applying migration 0017: add roster_slot column", "migration");
+      await pool.query(`ALTER TABLE league_roster_assignments ADD COLUMN IF NOT EXISTS roster_slot varchar(10)`);
+      log("Migration 0017 applied", "migration");
+    }
+
+    const { rows: statsSeasonCheck } = await pool.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name = 'mlb_players' AND column_name = 'stats_season'`
+    );
+    if (statsSeasonCheck.length === 0) {
+      log("Applying migration 0018: add stats_season column", "migration");
+      await pool.query(`ALTER TABLE mlb_players ADD COLUMN IF NOT EXISTS stats_season integer`);
+      log("Migration 0018 applied", "migration");
+    }
+
+    const { rows: statsTableCheck } = await pool.query(
+      `SELECT 1 FROM information_schema.tables WHERE table_name = 'mlb_player_stats'`
+    );
+    if (statsTableCheck.length === 0) {
+      log("Applying migration 0019: create mlb_player_stats table", "migration");
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS mlb_player_stats (
+          id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          mlb_player_id integer NOT NULL REFERENCES mlb_players(id),
+          season integer NOT NULL,
+          sport_level text,
+          had_hitting_stats boolean DEFAULT false,
+          had_pitching_stats boolean DEFAULT false,
+          hitting_at_bats integer DEFAULT 0,
+          hitting_walks integer DEFAULT 0,
+          hitting_singles integer DEFAULT 0,
+          hitting_doubles integer DEFAULT 0,
+          hitting_triples integer DEFAULT 0,
+          hitting_home_runs integer DEFAULT 0,
+          hitting_avg real,
+          hitting_obp real,
+          hitting_slg real,
+          hitting_ops real,
+          pitching_games integer DEFAULT 0,
+          pitching_games_started integer DEFAULT 0,
+          pitching_strikeouts integer DEFAULT 0,
+          pitching_walks integer DEFAULT 0,
+          pitching_hits integer DEFAULT 0,
+          pitching_home_runs integer DEFAULT 0,
+          pitching_era real,
+          pitching_innings_pitched real DEFAULT 0,
+          hitting_games_started integer DEFAULT 0,
+          hitting_plate_appearances integer DEFAULT 0,
+          is_two_way_qualified boolean DEFAULT false
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_mlb_player_stats_player_season ON mlb_player_stats(mlb_player_id, season)`);
+      await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mlb_player_stats_unique ON mlb_player_stats(mlb_player_id, season)`);
+      await pool.query(`
+        INSERT INTO mlb_player_stats (
+          mlb_player_id, season, sport_level,
+          had_hitting_stats, had_pitching_stats,
+          hitting_at_bats, hitting_walks, hitting_singles, hitting_doubles, hitting_triples, hitting_home_runs,
+          hitting_avg, hitting_obp, hitting_slg, hitting_ops,
+          pitching_games, pitching_games_started, pitching_strikeouts, pitching_walks, pitching_hits, pitching_home_runs,
+          pitching_era, pitching_innings_pitched,
+          hitting_games_started, hitting_plate_appearances,
+          is_two_way_qualified
+        )
+        SELECT
+          id, COALESCE(stats_season, season), sport_level,
+          had_hitting_stats, had_pitching_stats,
+          hitting_at_bats, hitting_walks, hitting_singles, hitting_doubles, hitting_triples, hitting_home_runs,
+          hitting_avg, hitting_obp, hitting_slg, hitting_ops,
+          pitching_games, pitching_games_started, pitching_strikeouts, pitching_walks, pitching_hits, pitching_home_runs,
+          pitching_era, pitching_innings_pitched,
+          hitting_games_started, hitting_plate_appearances,
+          is_two_way_qualified
+        FROM mlb_players
+        WHERE had_hitting_stats = true OR had_pitching_stats = true
+        ON CONFLICT DO NOTHING
+      `);
+      const { rows: countRows } = await pool.query(`SELECT COUNT(*) as cnt FROM mlb_player_stats`);
+      log(`Migration 0019 applied: ${countRows[0].cnt} stat rows migrated`, "migration");
+    }
+
+    log("All migrations up to date", "migration");
+  } catch (error) {
+    log(`Migration error: ${error}`, "migration");
+    throw error;
+  } finally {
+    await pool.end();
+  }
+}
+
 (async () => {
+  await runPendingMigrations();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
