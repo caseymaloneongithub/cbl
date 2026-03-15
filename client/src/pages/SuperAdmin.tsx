@@ -285,6 +285,7 @@ function MlbPlayerSync() {
         <Select
           value={syncSeason.toString()}
           onValueChange={(v) => setSyncSeason(parseInt(v))}
+          disabled={isSyncing}
         >
           <SelectTrigger className="w-32" data-testid="select-mlb-season">
             <SelectValue />
@@ -298,7 +299,10 @@ function MlbPlayerSync() {
           </SelectContent>
         </Select>
         <Button
-          onClick={() => syncMutation.mutate(syncSeason)}
+          onClick={() => {
+            const season = syncSeason;
+            syncMutation.mutate(season);
+          }}
           disabled={isSyncing}
           data-testid="button-sync-mlb-players"
         >
