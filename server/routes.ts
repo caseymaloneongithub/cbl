@@ -10586,7 +10586,8 @@ export async function registerRoutes(
       const poolMap = new Map(draftPoolPlayers.map(dp => [dp.mlbPlayerId, dp]));
 
       let assignedCount = 0;
-      const draftAcquired = `D ${draft.season}`;
+      const cardYear = draft.season - 1;
+      const draftAcquired = `D ${cardYear}`;
       const assignments: {
         leagueId: number;
         userId: string;
