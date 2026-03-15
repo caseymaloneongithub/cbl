@@ -2070,8 +2070,8 @@ export async function registerRoutes(
       let updated = 0;
       let skipped = 0;
       let apiLookedUp = 0;
-      const BATCH_SIZE = 5;
-      const BATCH_DELAY = 1200;
+      const BATCH_SIZE = 2;
+      const BATCH_DELAY = 2000;
 
       for (let i = 0; i < playersToBackfill.length; i += BATCH_SIZE) {
         const batch = playersToBackfill.slice(i, i + BATCH_SIZE);
@@ -2098,41 +2098,34 @@ export async function registerRoutes(
           }
 
           try {
-            const [hittingRes, pitchingRes] = await Promise.all([
-              fetch(`https://statsapi.mlb.com/api/v1/people/${player.mlbId}/stats?stats=yearByYear&group=hitting`),
-              fetch(`https://statsapi.mlb.com/api/v1/people/${player.mlbId}/stats?stats=yearByYear&group=pitching`),
+            const BACKFILL_SPORT_IDS = [1, 11, 12, 13, 14, 16];
+            const fetches = BACKFILL_SPORT_IDS.flatMap(sid => [
+              fetch(`https://statsapi.mlb.com/api/v1/people/${player.mlbId}/stats?stats=yearByYear&group=hitting&sportId=${sid}`).then(r => r.ok ? r.json() : null).catch(() => null),
+              fetch(`https://statsapi.mlb.com/api/v1/people/${player.mlbId}/stats?stats=yearByYear&group=pitching&sportId=${sid}`).then(r => r.ok ? r.json() : null).catch(() => null),
             ]);
+            const results = await Promise.all(fetches);
             apiLookedUp++;
 
-            const parseLatest = (payload: any): { season: number; sportId: number } | null => {
+            let best: { season: number; sportId: number } | null = null;
+            for (let idx = 0; idx < results.length; idx++) {
+              const payload = results[idx];
+              if (!payload) continue;
+              const sportId = BACKFILL_SPORT_IDS[Math.floor(idx / 2)];
               const splits = Array.isArray(payload?.stats?.[0]?.splits) ? payload.stats[0].splits : [];
-              let best: { season: number; sportId: number } | null = null;
               for (const split of splits) {
                 const s = Number.parseInt(String(split?.season || ""), 10);
                 if (!Number.isInteger(s) || s < 1900) continue;
-                const sportId = split?.sport?.id ?? split?.team?.sport?.id ?? null;
+                const splitSportId = split?.sport?.id ?? sportId;
                 if (best == null || s > best.season) {
-                  best = { season: s, sportId: sportId ?? 0 };
+                  best = { season: s, sportId: splitSportId };
                 }
               }
-              return best;
-            };
-
-            const hittingPayload = hittingRes.ok ? await hittingRes.json() : null;
-            const pitchingPayload = pitchingRes.ok ? await pitchingRes.json() : null;
-            const latestHitting = parseLatest(hittingPayload);
-            const latestPitching = parseLatest(pitchingPayload);
-            let resolved: { season: number; sportId: number } | null = null;
-            if (latestHitting && latestPitching) {
-              resolved = latestHitting.season >= latestPitching.season ? latestHitting : latestPitching;
-            } else {
-              resolved = latestHitting || latestPitching;
             }
 
-            if (resolved) {
-              const level = SPORT_LEVEL_MAP[resolved.sportId] || player.sportLevel;
+            if (best) {
+              const level = SPORT_LEVEL_MAP[best.sportId] || player.sportLevel;
               const updateSet: any = {};
-              if (!player.lastPlayedSeason) updateSet.lastPlayedSeason = resolved.season;
+              if (!player.lastPlayedSeason) updateSet.lastPlayedSeason = best.season;
               updateSet.lastPlayedLevel = level;
               await db.update(mlbPlayers).set(updateSet).where(eq(mlbPlayers.id, player.id));
               updated++;
