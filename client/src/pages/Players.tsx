@@ -23,7 +23,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
-import type { MlbPlayer, LeagueMember } from "@shared/schema";
+import type { MlbPlayer, MlbPlayerStat, LeagueMember } from "@shared/schema";
+
+type PlayerWithStats = MlbPlayer & { stats: MlbPlayerStat | null };
 import { getMlbAffiliationAbbreviation } from "@/lib/teamDisplay";
 
 interface RosterAssignment {
@@ -131,8 +133,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
     enabled: effectiveSeason != null,
   });
 
-  // Pull full filtered pool; sorting/pagination are applied client-side across whole pool.
-  const { data: playersData, isLoading } = useQuery<{ players: MlbPlayer[]; total: number }>({
+  const { data: playersData, isLoading } = useQuery<{ players: PlayerWithStats[]; total: number }>({
     queryKey: ["/api/mlb-players", debouncedSearch, sportLevel, mlbTeamFilter, effectiveSeason, "full-pool"],
     queryFn: async () => {
       const params = new URLSearchParams({
@@ -205,11 +206,11 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
   }, [playersData?.players, leagueTeamFilter, rosterMap]);
 
   const baseHitters = useMemo(
-    () => filteredPlayers.filter((p) => p.isTwoWayQualified || p.positionType !== "Pitcher"),
+    () => filteredPlayers.filter((p) => p.stats?.isTwoWayQualified || p.positionType !== "Pitcher"),
     [filteredPlayers],
   );
   const basePitchers = useMemo(
-    () => filteredPlayers.filter((p) => p.isTwoWayQualified || p.positionType === "Pitcher"),
+    () => filteredPlayers.filter((p) => p.stats?.isTwoWayQualified || p.positionType === "Pitcher"),
     [filteredPlayers],
   );
 
@@ -225,17 +226,17 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
         case "name": cmp = s(a.fullName).localeCompare(s(b.fullName)); break;
         case "pos": cmp = s(a.primaryPosition).localeCompare(s(b.primaryPosition)); break;
         case "team": cmp = s(teamAbbrForPlayer(a)).localeCompare(s(teamAbbrForPlayer(b))); break;
-        case "ab": cmp = n(a.hittingAtBats) - n(b.hittingAtBats); break;
-        case "pa": cmp = n(a.hittingPlateAppearances) - n(b.hittingPlateAppearances); break;
-        case "bb": cmp = n(a.hittingWalks) - n(b.hittingWalks); break;
-        case "1b": cmp = n(a.hittingSingles) - n(b.hittingSingles); break;
-        case "2b": cmp = n(a.hittingDoubles) - n(b.hittingDoubles); break;
-        case "3b": cmp = n(a.hittingTriples) - n(b.hittingTriples); break;
-        case "hr": cmp = n(a.hittingHomeRuns) - n(b.hittingHomeRuns); break;
-        case "avg": cmp = n(a.hittingAvg) - n(b.hittingAvg); break;
-        case "obp": cmp = n(a.hittingObp) - n(b.hittingObp); break;
-        case "slg": cmp = n(a.hittingSlg) - n(b.hittingSlg); break;
-        case "ops": cmp = n(a.hittingOps) - n(b.hittingOps); break;
+        case "ab": cmp = n(a.stats?.hittingAtBats) - n(b.stats?.hittingAtBats); break;
+        case "pa": cmp = n(a.stats?.hittingPlateAppearances) - n(b.stats?.hittingPlateAppearances); break;
+        case "bb": cmp = n(a.stats?.hittingWalks) - n(b.stats?.hittingWalks); break;
+        case "1b": cmp = n(a.stats?.hittingSingles) - n(b.stats?.hittingSingles); break;
+        case "2b": cmp = n(a.stats?.hittingDoubles) - n(b.stats?.hittingDoubles); break;
+        case "3b": cmp = n(a.stats?.hittingTriples) - n(b.stats?.hittingTriples); break;
+        case "hr": cmp = n(a.stats?.hittingHomeRuns) - n(b.stats?.hittingHomeRuns); break;
+        case "avg": cmp = n(a.stats?.hittingAvg) - n(b.stats?.hittingAvg); break;
+        case "obp": cmp = n(a.stats?.hittingObp) - n(b.stats?.hittingObp); break;
+        case "slg": cmp = n(a.stats?.hittingSlg) - n(b.stats?.hittingSlg); break;
+        case "ops": cmp = n(a.stats?.hittingOps) - n(b.stats?.hittingOps); break;
         case "leagueTeam": cmp = teamA.localeCompare(teamB); break;
       }
       return hitterSort.dir === "asc" ? cmp : -cmp;
@@ -255,14 +256,14 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
         case "name": cmp = s(a.fullName).localeCompare(s(b.fullName)); break;
         case "pos": cmp = s(a.primaryPosition).localeCompare(s(b.primaryPosition)); break;
         case "team": cmp = s(teamAbbrForPlayer(a)).localeCompare(s(teamAbbrForPlayer(b))); break;
-        case "g": cmp = n(a.pitchingGames) - n(b.pitchingGames); break;
-        case "gs": cmp = n(a.pitchingGamesStarted) - n(b.pitchingGamesStarted); break;
-        case "ip": cmp = n(a.pitchingInningsPitched) - n(b.pitchingInningsPitched); break;
-        case "k": cmp = n(a.pitchingStrikeouts) - n(b.pitchingStrikeouts); break;
-        case "bb": cmp = n(a.pitchingWalks) - n(b.pitchingWalks); break;
-        case "h": cmp = n(a.pitchingHits) - n(b.pitchingHits); break;
-        case "hr": cmp = n(a.pitchingHomeRuns) - n(b.pitchingHomeRuns); break;
-        case "era": cmp = n(a.pitchingEra) - n(b.pitchingEra); break;
+        case "g": cmp = n(a.stats?.pitchingGames) - n(b.stats?.pitchingGames); break;
+        case "gs": cmp = n(a.stats?.pitchingGamesStarted) - n(b.stats?.pitchingGamesStarted); break;
+        case "ip": cmp = n(a.stats?.pitchingInningsPitched) - n(b.stats?.pitchingInningsPitched); break;
+        case "k": cmp = n(a.stats?.pitchingStrikeouts) - n(b.stats?.pitchingStrikeouts); break;
+        case "bb": cmp = n(a.stats?.pitchingWalks) - n(b.stats?.pitchingWalks); break;
+        case "h": cmp = n(a.stats?.pitchingHits) - n(b.stats?.pitchingHits); break;
+        case "hr": cmp = n(a.stats?.pitchingHomeRuns) - n(b.stats?.pitchingHomeRuns); break;
+        case "era": cmp = n(a.stats?.pitchingEra) - n(b.stats?.pitchingEra); break;
         case "leagueTeam": cmp = teamA.localeCompare(teamB); break;
       }
       return pitcherSort.dir === "asc" ? cmp : -cmp;
@@ -387,17 +388,17 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
                             <TableCell className="font-mono text-[11px]">{p.primaryPosition || "-"}</TableCell>
                             <TableCell>{teamAbbrForPlayer(p)}</TableCell>
                             {showMilbLevel && <TableCell>{formatLevelWithYear(p.sportLevel, p.lastPlayedSeason, p.lastPlayedLevel)}</TableCell>}
-                            <TableCell className="text-right font-mono">{p.hittingAtBats ?? 0}</TableCell>
-                            <TableCell className="text-right font-mono">{p.hittingPlateAppearances ?? 0}</TableCell>
-                            <TableCell className="text-right font-mono">{p.hittingWalks ?? 0}</TableCell>
-                            <TableCell className="text-right font-mono">{p.hittingSingles ?? 0}</TableCell>
-                            <TableCell className="text-right font-mono">{p.hittingDoubles ?? 0}</TableCell>
-                            <TableCell className="text-right font-mono">{p.hittingTriples ?? 0}</TableCell>
-                            <TableCell className="text-right font-mono">{p.hittingHomeRuns ?? 0}</TableCell>
-                            <TableCell className="text-right font-mono">{fmtRate(p.hittingAvg)}</TableCell>
-                            <TableCell className="text-right font-mono">{fmtRate(p.hittingObp)}</TableCell>
-                            <TableCell className="text-right font-mono">{fmtRate(p.hittingSlg)}</TableCell>
-                            <TableCell className="text-right font-mono">{fmtRate(p.hittingOps)}</TableCell>
+                            <TableCell className="text-right font-mono">{p.stats?.hadHittingStats ? (p.stats.hittingAtBats ?? 0) : ""}</TableCell>
+                            <TableCell className="text-right font-mono">{p.stats?.hadHittingStats ? (p.stats.hittingPlateAppearances ?? 0) : ""}</TableCell>
+                            <TableCell className="text-right font-mono">{p.stats?.hadHittingStats ? (p.stats.hittingWalks ?? 0) : ""}</TableCell>
+                            <TableCell className="text-right font-mono">{p.stats?.hadHittingStats ? (p.stats.hittingSingles ?? 0) : ""}</TableCell>
+                            <TableCell className="text-right font-mono">{p.stats?.hadHittingStats ? (p.stats.hittingDoubles ?? 0) : ""}</TableCell>
+                            <TableCell className="text-right font-mono">{p.stats?.hadHittingStats ? (p.stats.hittingTriples ?? 0) : ""}</TableCell>
+                            <TableCell className="text-right font-mono">{p.stats?.hadHittingStats ? (p.stats.hittingHomeRuns ?? 0) : ""}</TableCell>
+                            <TableCell className="text-right font-mono">{p.stats?.hadHittingStats ? fmtRate(p.stats.hittingAvg) : ""}</TableCell>
+                            <TableCell className="text-right font-mono">{p.stats?.hadHittingStats ? fmtRate(p.stats.hittingObp) : ""}</TableCell>
+                            <TableCell className="text-right font-mono">{p.stats?.hadHittingStats ? fmtRate(p.stats.hittingSlg) : ""}</TableCell>
+                            <TableCell className="text-right font-mono">{p.stats?.hadHittingStats ? fmtRate(p.stats.hittingOps) : ""}</TableCell>
                             {selectedLeagueId && <TableCell>{leagueTeam || "Free Agent"}</TableCell>}
                           </TableRow>
                         );
@@ -444,14 +445,14 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
                             <TableCell className="font-mono text-[11px]">{p.primaryPosition || "-"}</TableCell>
                             <TableCell>{teamAbbrForPlayer(p)}</TableCell>
                             {showMilbLevel && <TableCell>{formatLevelWithYear(p.sportLevel, p.lastPlayedSeason, p.lastPlayedLevel)}</TableCell>}
-                            <TableCell className="text-right font-mono">{p.pitchingGames ?? 0}</TableCell>
-                            <TableCell className="text-right font-mono">{p.pitchingGamesStarted ?? 0}</TableCell>
-                            <TableCell className="text-right font-mono">{fmt1(p.pitchingInningsPitched)}</TableCell>
-                            <TableCell className="text-right font-mono">{p.pitchingStrikeouts ?? 0}</TableCell>
-                            <TableCell className="text-right font-mono">{p.pitchingWalks ?? 0}</TableCell>
-                            <TableCell className="text-right font-mono">{p.pitchingHits ?? 0}</TableCell>
-                            <TableCell className="text-right font-mono">{p.pitchingHomeRuns ?? 0}</TableCell>
-                            <TableCell className="text-right font-mono">{fmtEra(p.pitchingEra)}</TableCell>
+                            <TableCell className="text-right font-mono">{p.stats?.hadPitchingStats ? (p.stats.pitchingGames ?? 0) : ""}</TableCell>
+                            <TableCell className="text-right font-mono">{p.stats?.hadPitchingStats ? (p.stats.pitchingGamesStarted ?? 0) : ""}</TableCell>
+                            <TableCell className="text-right font-mono">{p.stats?.hadPitchingStats ? fmt1(p.stats.pitchingInningsPitched) : ""}</TableCell>
+                            <TableCell className="text-right font-mono">{p.stats?.hadPitchingStats ? (p.stats.pitchingStrikeouts ?? 0) : ""}</TableCell>
+                            <TableCell className="text-right font-mono">{p.stats?.hadPitchingStats ? (p.stats.pitchingWalks ?? 0) : ""}</TableCell>
+                            <TableCell className="text-right font-mono">{p.stats?.hadPitchingStats ? (p.stats.pitchingHits ?? 0) : ""}</TableCell>
+                            <TableCell className="text-right font-mono">{p.stats?.hadPitchingStats ? (p.stats.pitchingHomeRuns ?? 0) : ""}</TableCell>
+                            <TableCell className="text-right font-mono">{p.stats?.hadPitchingStats ? fmtEra(p.stats.pitchingEra) : ""}</TableCell>
                             {selectedLeagueId && <TableCell>{leagueTeam || "Free Agent"}</TableCell>}
                           </TableRow>
                         );

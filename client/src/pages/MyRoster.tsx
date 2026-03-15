@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Search, ClipboardList, Scissors } from "lucide-react";
 import { useState, useMemo } from "react";
-import type { MlbPlayer } from "@shared/schema";
+import type { MlbPlayer, MlbPlayerStat } from "@shared/schema";
 import { getMlbAffiliationAbbreviation } from "@/lib/teamDisplay";
 import { isUncardedOnMlbRoster } from "@/lib/playerCarding";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -49,6 +49,7 @@ interface RosterAssignment {
   acquired: string | null;
   rosterSlot: string | null;
   player: MlbPlayer;
+  stats: MlbPlayerStat | null;
 }
 
 type HitterSortKey = "name" | "pos" | "team" | "ab" | "pa" | "bb" | "1b" | "2b" | "3b" | "hr" | "avg" | "obp" | "slg" | "ops";
@@ -88,7 +89,7 @@ function NameWithHover({ a }: { a: RosterAssignment }) {
       <TooltipTrigger asChild>
         <span className="font-medium cursor-default flex items-center gap-1.5">
           {a.player.fullName}
-          {isUncardedOnMlbRoster(a.player, a.rosterType) ? " (uncarded)" : ""}
+          {isUncardedOnMlbRoster(a.player, a.rosterType, a.stats) ? " (uncarded)" : ""}
           {a.rosterSlot === "60" && (
             <Badge variant="destructive" className="text-[10px] px-1.5 py-0">60-day IL</Badge>
           )}
@@ -152,25 +153,27 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
 
   const hittersBase = useMemo(
     () => filtered.filter((a) => {
-      const ip = a.player.pitchingInningsPitched ?? 0;
-      const pa = a.player.hittingPlateAppearances ?? 0;
+      const st = a.stats;
+      const ip = st?.pitchingInningsPitched ?? 0;
+      const pa = st?.hittingPlateAppearances ?? 0;
       const isTwoWay = ip >= 20 && pa >= 100;
       if (isTwoWay) return true;
-      const hasAnyStats = a.player.hadHittingStats || a.player.hadPitchingStats;
+      const hasAnyStats = st?.hadHittingStats || st?.hadPitchingStats;
       if (!hasAnyStats) return a.player.positionType !== "Pitcher";
-      return a.player.hadHittingStats || !a.player.hadPitchingStats;
+      return st?.hadHittingStats || !st?.hadPitchingStats;
     }),
     [filtered],
   );
   const pitchersBase = useMemo(
     () => filtered.filter((a) => {
-      const ip = a.player.pitchingInningsPitched ?? 0;
-      const pa = a.player.hittingPlateAppearances ?? 0;
+      const st = a.stats;
+      const ip = st?.pitchingInningsPitched ?? 0;
+      const pa = st?.hittingPlateAppearances ?? 0;
       const isTwoWay = ip >= 20 && pa >= 100;
       if (isTwoWay) return true;
-      const hasAnyStats = a.player.hadHittingStats || a.player.hadPitchingStats;
+      const hasAnyStats = st?.hadHittingStats || st?.hadPitchingStats;
       if (!hasAnyStats) return a.player.positionType === "Pitcher";
-      return a.player.hadPitchingStats && !a.player.hadHittingStats;
+      return st?.hadPitchingStats && !st?.hadHittingStats;
     }),
     [filtered],
   );
@@ -185,17 +188,17 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
         case "name": cmp = s(a.player.fullName).localeCompare(s(b.player.fullName)); break;
         case "pos": cmp = s(a.player.primaryPosition).localeCompare(s(b.player.primaryPosition)); break;
         case "team": cmp = s(teamAbbrForPlayer(a.player)).localeCompare(s(teamAbbrForPlayer(b.player))); break;
-        case "ab": cmp = n(a.player.hittingAtBats) - n(b.player.hittingAtBats); break;
-        case "pa": cmp = n(a.player.hittingPlateAppearances) - n(b.player.hittingPlateAppearances); break;
-        case "bb": cmp = n(a.player.hittingWalks) - n(b.player.hittingWalks); break;
-        case "1b": cmp = n(a.player.hittingSingles) - n(b.player.hittingSingles); break;
-        case "2b": cmp = n(a.player.hittingDoubles) - n(b.player.hittingDoubles); break;
-        case "3b": cmp = n(a.player.hittingTriples) - n(b.player.hittingTriples); break;
-        case "hr": cmp = n(a.player.hittingHomeRuns) - n(b.player.hittingHomeRuns); break;
-        case "avg": cmp = n(a.player.hittingAvg) - n(b.player.hittingAvg); break;
-        case "obp": cmp = n(a.player.hittingObp) - n(b.player.hittingObp); break;
-        case "slg": cmp = n(a.player.hittingSlg) - n(b.player.hittingSlg); break;
-        case "ops": cmp = n(a.player.hittingOps) - n(b.player.hittingOps); break;
+        case "ab": cmp = n(a.stats?.hittingAtBats) - n(b.stats?.hittingAtBats); break;
+        case "pa": cmp = n(a.stats?.hittingPlateAppearances) - n(b.stats?.hittingPlateAppearances); break;
+        case "bb": cmp = n(a.stats?.hittingWalks) - n(b.stats?.hittingWalks); break;
+        case "1b": cmp = n(a.stats?.hittingSingles) - n(b.stats?.hittingSingles); break;
+        case "2b": cmp = n(a.stats?.hittingDoubles) - n(b.stats?.hittingDoubles); break;
+        case "3b": cmp = n(a.stats?.hittingTriples) - n(b.stats?.hittingTriples); break;
+        case "hr": cmp = n(a.stats?.hittingHomeRuns) - n(b.stats?.hittingHomeRuns); break;
+        case "avg": cmp = n(a.stats?.hittingAvg) - n(b.stats?.hittingAvg); break;
+        case "obp": cmp = n(a.stats?.hittingObp) - n(b.stats?.hittingObp); break;
+        case "slg": cmp = n(a.stats?.hittingSlg) - n(b.stats?.hittingSlg); break;
+        case "ops": cmp = n(a.stats?.hittingOps) - n(b.stats?.hittingOps); break;
       }
       return hSort.dir === "asc" ? cmp : -cmp;
     });
@@ -212,14 +215,14 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
         case "name": cmp = s(a.player.fullName).localeCompare(s(b.player.fullName)); break;
         case "pos": cmp = s(a.player.primaryPosition).localeCompare(s(b.player.primaryPosition)); break;
         case "team": cmp = s(teamAbbrForPlayer(a.player)).localeCompare(s(teamAbbrForPlayer(b.player))); break;
-        case "g": cmp = n(a.player.pitchingGames) - n(b.player.pitchingGames); break;
-        case "gs": cmp = n(a.player.pitchingGamesStarted) - n(b.player.pitchingGamesStarted); break;
-        case "ip": cmp = n(a.player.pitchingInningsPitched) - n(b.player.pitchingInningsPitched); break;
-        case "k": cmp = n(a.player.pitchingStrikeouts) - n(b.player.pitchingStrikeouts); break;
-        case "bb": cmp = n(a.player.pitchingWalks) - n(b.player.pitchingWalks); break;
-        case "h": cmp = n(a.player.pitchingHits) - n(b.player.pitchingHits); break;
-        case "hr": cmp = n(a.player.pitchingHomeRuns) - n(b.player.pitchingHomeRuns); break;
-        case "era": cmp = n(a.player.pitchingEra) - n(b.player.pitchingEra); break;
+        case "g": cmp = n(a.stats?.pitchingGames) - n(b.stats?.pitchingGames); break;
+        case "gs": cmp = n(a.stats?.pitchingGamesStarted) - n(b.stats?.pitchingGamesStarted); break;
+        case "ip": cmp = n(a.stats?.pitchingInningsPitched) - n(b.stats?.pitchingInningsPitched); break;
+        case "k": cmp = n(a.stats?.pitchingStrikeouts) - n(b.stats?.pitchingStrikeouts); break;
+        case "bb": cmp = n(a.stats?.pitchingWalks) - n(b.stats?.pitchingWalks); break;
+        case "h": cmp = n(a.stats?.pitchingHits) - n(b.stats?.pitchingHits); break;
+        case "hr": cmp = n(a.stats?.pitchingHomeRuns) - n(b.stats?.pitchingHomeRuns); break;
+        case "era": cmp = n(a.stats?.pitchingEra) - n(b.stats?.pitchingEra); break;
       }
       return pSort.dir === "asc" ? cmp : -cmp;
     });
@@ -315,17 +318,17 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                           <TableCell className="text-[11px]">{formatAcquired(a.acquired)}</TableCell>
                           {level === "mlb" && <TableCell className="text-[11px]">{a.contractStatus || "-"}</TableCell>}
                           {level === "mlb" && <TableCell className="text-right text-[11px]">{a.salary2026 || "-"}</TableCell>}
-                          <TableCell className="text-right font-mono">{a.player.hadHittingStats ? (a.player.hittingAtBats ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hadHittingStats ? (a.player.hittingPlateAppearances ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hadHittingStats ? (a.player.hittingWalks ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hadHittingStats ? (a.player.hittingSingles ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hadHittingStats ? (a.player.hittingDoubles ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hadHittingStats ? (a.player.hittingTriples ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hadHittingStats ? (a.player.hittingHomeRuns ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hadHittingStats ? fmtRate(a.player.hittingAvg) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hadHittingStats ? fmtRate(a.player.hittingObp) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hadHittingStats ? fmtRate(a.player.hittingSlg) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hadHittingStats ? fmtRate(a.player.hittingOps) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.stats?.hadHittingStats ? (a.stats.hittingAtBats ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.stats?.hadHittingStats ? (a.stats.hittingPlateAppearances ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.stats?.hadHittingStats ? (a.stats.hittingWalks ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.stats?.hadHittingStats ? (a.stats.hittingSingles ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.stats?.hadHittingStats ? (a.stats.hittingDoubles ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.stats?.hadHittingStats ? (a.stats.hittingTriples ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.stats?.hadHittingStats ? (a.stats.hittingHomeRuns ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.stats?.hadHittingStats ? fmtRate(a.stats.hittingAvg) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.stats?.hadHittingStats ? fmtRate(a.stats.hittingObp) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.stats?.hadHittingStats ? fmtRate(a.stats.hittingSlg) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.stats?.hadHittingStats ? fmtRate(a.stats.hittingOps) : ""}</TableCell>
                           {level === "milb" && (
                             <TableCell>
                               <Button
@@ -379,14 +382,14 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                           <TableCell className="text-[11px]">{formatAcquired(a.acquired)}</TableCell>
                           {level === "mlb" && <TableCell className="text-[11px]">{a.contractStatus || "-"}</TableCell>}
                           {level === "mlb" && <TableCell className="text-right text-[11px]">{a.salary2026 || "-"}</TableCell>}
-                          <TableCell className="text-right font-mono">{a.player.hadPitchingStats ? (a.player.pitchingGames ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hadPitchingStats ? (a.player.pitchingGamesStarted ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hadPitchingStats ? fmt1(a.player.pitchingInningsPitched) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hadPitchingStats ? (a.player.pitchingStrikeouts ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hadPitchingStats ? (a.player.pitchingWalks ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hadPitchingStats ? (a.player.pitchingHits ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hadPitchingStats ? (a.player.pitchingHomeRuns ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.player.hadPitchingStats ? fmtEra(a.player.pitchingEra) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.stats?.hadPitchingStats ? (a.stats.pitchingGames ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.stats?.hadPitchingStats ? (a.stats.pitchingGamesStarted ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.stats?.hadPitchingStats ? fmt1(a.stats.pitchingInningsPitched) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.stats?.hadPitchingStats ? (a.stats.pitchingStrikeouts ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.stats?.hadPitchingStats ? (a.stats.pitchingWalks ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.stats?.hadPitchingStats ? (a.stats.pitchingHits ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.stats?.hadPitchingStats ? (a.stats.pitchingHomeRuns ?? 0) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{a.stats?.hadPitchingStats ? fmtEra(a.stats.pitchingEra) : ""}</TableCell>
                           {level === "milb" && (
                             <TableCell>
                               <Button

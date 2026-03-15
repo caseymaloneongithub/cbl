@@ -43,8 +43,11 @@ import {
   type RosterPlayer,
   type InsertRosterPlayer,
   mlbPlayers,
+  mlbPlayerStats,
   type MlbPlayer,
   type InsertMlbPlayer,
+  type MlbPlayerStat,
+  type InsertMlbPlayerStat,
   leagueRosterAssignments,
   type LeagueRosterAssignment,
   type InsertLeagueRosterAssignment,
@@ -317,7 +320,9 @@ export interface IStorage {
   
   // MLB Players reference database
   upsertMlbPlayers(players: InsertMlbPlayer[]): Promise<number>;
-  getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number; currentTeamName?: string; parentOrgName?: string; season?: number; sortBy?: string; sortDir?: string }): Promise<MlbPlayer[]>;
+  upsertMlbPlayerStats(stats: InsertMlbPlayerStat[]): Promise<number>;
+  upsertMlbPlayerStatsFromSync(players: InsertMlbPlayer[]): Promise<number>;
+  getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number; currentTeamName?: string; parentOrgName?: string; season?: number; sortBy?: string; sortDir?: string; statsSeason?: number }): Promise<(MlbPlayer & { stats: MlbPlayerStat | null })[]>;
   getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; positionTypeNot?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; isTwoWayQualified?: boolean; currentTeamName?: string; parentOrgName?: string; season?: number }): Promise<number>;
   getMlbPlayerTeams(season?: number, sportLevel?: string): Promise<string[]>;
   getMlbPlayerByMlbId(mlbId: number): Promise<MlbPlayer | undefined>;
@@ -3123,6 +3128,7 @@ export class DatabaseStorage implements IStorage {
             hittingGamesStarted: sql`EXCLUDED.hitting_games_started`,
             hittingPlateAppearances: sql`EXCLUDED.hitting_plate_appearances`,
             isTwoWayQualified: sql`EXCLUDED.is_two_way_qualified`,
+            statsSeason: sql`EXCLUDED.stats_season`,
             season: sql`EXCLUDED.season`,
             lastPlayedSeason: sql`CASE
               WHEN COALESCE(EXCLUDED.hitting_plate_appearances, 0) > 0
@@ -3155,7 +3161,110 @@ export class DatabaseStorage implements IStorage {
     return totalUpserted;
   }
 
-  async getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number; currentTeamName?: string; parentOrgName?: string; season?: number; sortBy?: string; sortDir?: string }): Promise<MlbPlayer[]> {
+  async upsertMlbPlayerStats(stats: InsertMlbPlayerStat[]): Promise<number> {
+    if (stats.length === 0) return 0;
+
+    const BATCH_SIZE = 100;
+    let totalUpserted = 0;
+
+    for (let i = 0; i < stats.length; i += BATCH_SIZE) {
+      const batch = stats.slice(i, i + BATCH_SIZE);
+      await db.insert(mlbPlayerStats)
+        .values(batch)
+        .onConflictDoUpdate({
+          target: [mlbPlayerStats.mlbPlayerId, mlbPlayerStats.season],
+          set: {
+            sportLevel: sql`EXCLUDED.sport_level`,
+            hadHittingStats: sql`EXCLUDED.had_hitting_stats`,
+            hadPitchingStats: sql`EXCLUDED.had_pitching_stats`,
+            hittingAtBats: sql`EXCLUDED.hitting_at_bats`,
+            hittingWalks: sql`EXCLUDED.hitting_walks`,
+            hittingSingles: sql`EXCLUDED.hitting_singles`,
+            hittingDoubles: sql`EXCLUDED.hitting_doubles`,
+            hittingTriples: sql`EXCLUDED.hitting_triples`,
+            hittingHomeRuns: sql`EXCLUDED.hitting_home_runs`,
+            hittingAvg: sql`EXCLUDED.hitting_avg`,
+            hittingObp: sql`EXCLUDED.hitting_obp`,
+            hittingSlg: sql`EXCLUDED.hitting_slg`,
+            hittingOps: sql`EXCLUDED.hitting_ops`,
+            pitchingGames: sql`EXCLUDED.pitching_games`,
+            pitchingGamesStarted: sql`EXCLUDED.pitching_games_started`,
+            pitchingStrikeouts: sql`EXCLUDED.pitching_strikeouts`,
+            pitchingWalks: sql`EXCLUDED.pitching_walks`,
+            pitchingHits: sql`EXCLUDED.pitching_hits`,
+            pitchingHomeRuns: sql`EXCLUDED.pitching_home_runs`,
+            pitchingEra: sql`EXCLUDED.pitching_era`,
+            pitchingInningsPitched: sql`EXCLUDED.pitching_innings_pitched`,
+            hittingGamesStarted: sql`EXCLUDED.hitting_games_started`,
+            hittingPlateAppearances: sql`EXCLUDED.hitting_plate_appearances`,
+            isTwoWayQualified: sql`EXCLUDED.is_two_way_qualified`,
+          },
+        });
+      totalUpserted += batch.length;
+    }
+
+    return totalUpserted;
+  }
+
+  async upsertMlbPlayerStatsFromSync(players: InsertMlbPlayer[]): Promise<number> {
+    if (players.length === 0) return 0;
+
+    const mlbIds = players.map(p => p.mlbId);
+    const LOOKUP_BATCH = 500;
+    const idMap = new Map<number, number>();
+
+    for (let i = 0; i < mlbIds.length; i += LOOKUP_BATCH) {
+      const batchIds = mlbIds.slice(i, i + LOOKUP_BATCH);
+      const rows = await db.select({ id: mlbPlayers.id, mlbId: mlbPlayers.mlbId })
+        .from(mlbPlayers)
+        .where(inArray(mlbPlayers.mlbId, batchIds));
+      for (const row of rows) {
+        idMap.set(row.mlbId, row.id);
+      }
+    }
+
+    const statsToInsert: InsertMlbPlayerStat[] = [];
+    for (const p of players) {
+      const dbId = idMap.get(p.mlbId);
+      if (!dbId) continue;
+      const hasStats = p.hadHittingStats || p.hadPitchingStats ||
+        (p.hittingPlateAppearances ?? 0) > 0 || (p.pitchingGames ?? 0) > 0;
+      if (!hasStats) continue;
+
+      statsToInsert.push({
+        mlbPlayerId: dbId,
+        season: p.season,
+        sportLevel: p.sportLevel ?? null,
+        hadHittingStats: p.hadHittingStats ?? false,
+        hadPitchingStats: p.hadPitchingStats ?? false,
+        hittingAtBats: p.hittingAtBats ?? 0,
+        hittingWalks: p.hittingWalks ?? 0,
+        hittingSingles: p.hittingSingles ?? 0,
+        hittingDoubles: p.hittingDoubles ?? 0,
+        hittingTriples: p.hittingTriples ?? 0,
+        hittingHomeRuns: p.hittingHomeRuns ?? 0,
+        hittingAvg: p.hittingAvg ?? null,
+        hittingObp: p.hittingObp ?? null,
+        hittingSlg: p.hittingSlg ?? null,
+        hittingOps: p.hittingOps ?? null,
+        pitchingGames: p.pitchingGames ?? 0,
+        pitchingGamesStarted: p.pitchingGamesStarted ?? 0,
+        pitchingStrikeouts: p.pitchingStrikeouts ?? 0,
+        pitchingWalks: p.pitchingWalks ?? 0,
+        pitchingHits: p.pitchingHits ?? 0,
+        pitchingHomeRuns: p.pitchingHomeRuns ?? 0,
+        pitchingEra: p.pitchingEra ?? null,
+        pitchingInningsPitched: p.pitchingInningsPitched ?? 0,
+        hittingGamesStarted: p.hittingGamesStarted ?? 0,
+        hittingPlateAppearances: p.hittingPlateAppearances ?? 0,
+        isTwoWayQualified: p.isTwoWayQualified ?? false,
+      });
+    }
+
+    return this.upsertMlbPlayerStats(statsToInsert);
+  }
+
+  async getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number; currentTeamName?: string; parentOrgName?: string; season?: number; sortBy?: string; sortDir?: string; statsSeason?: number }): Promise<(MlbPlayer & { stats: MlbPlayerStat | null })[]> {
     const conditions = [];
     if (filters?.sportLevel) {
       if (filters.sportLevel === 'MLB') {
@@ -3178,8 +3287,15 @@ export class DatabaseStorage implements IStorage {
     if (filters?.season) {
       conditions.push(eq(mlbPlayers.season, filters.season));
     }
-    
-    const query = db.select().from(mlbPlayers);
+
+    const statsSeasonVal = filters?.statsSeason ?? (filters?.season ? filters.season : new Date().getFullYear() - 1);
+
+    const query = db.select()
+      .from(mlbPlayers)
+      .leftJoin(mlbPlayerStats, and(
+        eq(mlbPlayerStats.mlbPlayerId, mlbPlayers.id),
+        eq(mlbPlayerStats.season, statsSeasonVal),
+      ));
     if (conditions.length > 0) {
       query.where(and(...conditions));
     }
@@ -3205,7 +3321,8 @@ export class DatabaseStorage implements IStorage {
       query.offset(filters.offset);
     }
     
-    return await query;
+    const rows = await query;
+    return rows.map(r => ({ ...r.mlb_players, stats: r.mlb_player_stats }));
   }
 
   async getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; positionTypeNot?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; isTwoWayQualified?: boolean; currentTeamName?: string; parentOrgName?: string; season?: number }): Promise<number> {
@@ -3334,7 +3451,7 @@ export class DatabaseStorage implements IStorage {
     return result.rowCount || 0;
   }
 
-  async getLeagueRosterAssignments(leagueId: number, season?: number, filters?: { userId?: string; rosterType?: string }): Promise<(LeagueRosterAssignment & { player: MlbPlayer })[]> {
+  async getLeagueRosterAssignments(leagueId: number, season?: number, filters?: { userId?: string; rosterType?: string; statsSeason?: number }): Promise<(LeagueRosterAssignment & { player: MlbPlayer; stats: MlbPlayerStat | null })[]> {
     const conditions = [
       eq(leagueRosterAssignments.leagueId, leagueId),
     ];
@@ -3347,13 +3464,20 @@ export class DatabaseStorage implements IStorage {
     if (filters?.rosterType) {
       conditions.push(eq(leagueRosterAssignments.rosterType, filters.rosterType));
     }
+
+    const statsSeasonVal = filters?.statsSeason ?? (season ? season - 1 : new Date().getFullYear() - 1);
+
     const rows = await db
       .select()
       .from(leagueRosterAssignments)
       .innerJoin(mlbPlayers, eq(leagueRosterAssignments.mlbPlayerId, mlbPlayers.id))
+      .leftJoin(mlbPlayerStats, and(
+        eq(mlbPlayerStats.mlbPlayerId, mlbPlayers.id),
+        eq(mlbPlayerStats.season, statsSeasonVal),
+      ))
       .where(and(...conditions))
       .orderBy(mlbPlayers.fullName);
-    return rows.map(r => ({ ...r.league_roster_assignments, player: r.mlb_players }));
+    return rows.map(r => ({ ...r.league_roster_assignments, player: r.mlb_players, stats: r.mlb_player_stats }));
   }
 
   async getRosterAssignmentCounts(leagueId: number, season?: number): Promise<{ userId: string; rosterType: string; count: number }[]> {

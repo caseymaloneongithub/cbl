@@ -1030,8 +1030,7 @@ export async function registerRoutes(
 
       const players = await fetchAllAffiliatedPlayers(syncSeason);
 
-      const upserted = await storage.upsertMlbPlayers(
-        players.map(p => ({
+      const playerData = players.map(p => ({
           mlbId: p.mlbId,
           fullName: p.fullName,
           fullFmlName: p.fullFmlName,
@@ -1076,8 +1075,12 @@ export async function registerRoutes(
           hittingPlateAppearances: p.hittingPlateAppearances,
           isTwoWayQualified: p.isTwoWayQualified,
           season: p.season,
-        }))
-      );
+        }));
+
+      const upserted = await storage.upsertMlbPlayers(playerData);
+
+      const statsUpserted = await storage.upsertMlbPlayerStatsFromSync(playerData);
+      console.log(`[MLB Sync] ${statsUpserted} stat rows written to mlb_player_stats`);
 
       const levelCounts: Record<string, number> = {};
       for (const p of players) {
@@ -1123,8 +1126,7 @@ export async function registerRoutes(
       for (let season = start; season <= end; season++) {
         console.log(`[MLB Sync] Syncing season ${season}...`);
         const players = await fetchAllAffiliatedPlayers(season);
-        const upserted = await storage.upsertMlbPlayers(
-          players.map(p => ({
+        const playerData = players.map(p => ({
             mlbId: p.mlbId,
             fullName: p.fullName,
             fullFmlName: p.fullFmlName,
@@ -1169,8 +1171,10 @@ export async function registerRoutes(
             hittingPlateAppearances: p.hittingPlateAppearances,
             isTwoWayQualified: p.isTwoWayQualified,
             season: p.season,
-          }))
-        );
+          }));
+
+        const upserted = await storage.upsertMlbPlayers(playerData);
+        await storage.upsertMlbPlayerStatsFromSync(playerData);
         results.push({ season, playerCount: upserted });
         console.log(`[MLB Sync] Season ${season}: ${upserted} players synced`);
       }

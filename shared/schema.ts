@@ -787,6 +787,7 @@ export const mlbPlayers = pgTable("mlb_players", {
   hittingGamesStarted: integer("hitting_games_started").default(0),
   hittingPlateAppearances: integer("hitting_plate_appearances").default(0),
   isTwoWayQualified: boolean("is_two_way_qualified").default(false),
+  statsSeason: integer("stats_season"),
   season: integer("season").notNull(),
   lastPlayedSeason: integer("last_played_season"),
   lastPlayedLevel: text("last_played_level"),
@@ -800,6 +801,42 @@ export const mlbPlayers = pgTable("mlb_players", {
 export const insertMlbPlayerSchema = (createInsertSchema(mlbPlayers) as any).omit({
   id: true,
   lastSyncedAt: true,
+});
+
+export const mlbPlayerStats = pgTable("mlb_player_stats", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  mlbPlayerId: integer("mlb_player_id").references(() => mlbPlayers.id).notNull(),
+  season: integer("season").notNull(),
+  sportLevel: text("sport_level"),
+  hadHittingStats: boolean("had_hitting_stats").default(false),
+  hadPitchingStats: boolean("had_pitching_stats").default(false),
+  hittingAtBats: integer("hitting_at_bats").default(0),
+  hittingWalks: integer("hitting_walks").default(0),
+  hittingSingles: integer("hitting_singles").default(0),
+  hittingDoubles: integer("hitting_doubles").default(0),
+  hittingTriples: integer("hitting_triples").default(0),
+  hittingHomeRuns: integer("hitting_home_runs").default(0),
+  hittingAvg: real("hitting_avg"),
+  hittingObp: real("hitting_obp"),
+  hittingSlg: real("hitting_slg"),
+  hittingOps: real("hitting_ops"),
+  pitchingGames: integer("pitching_games").default(0),
+  pitchingGamesStarted: integer("pitching_games_started").default(0),
+  pitchingStrikeouts: integer("pitching_strikeouts").default(0),
+  pitchingWalks: integer("pitching_walks").default(0),
+  pitchingHits: integer("pitching_hits").default(0),
+  pitchingHomeRuns: integer("pitching_home_runs").default(0),
+  pitchingEra: real("pitching_era"),
+  pitchingInningsPitched: real("pitching_innings_pitched").default(0),
+  hittingGamesStarted: integer("hitting_games_started").default(0),
+  hittingPlateAppearances: integer("hitting_plate_appearances").default(0),
+  isTwoWayQualified: boolean("is_two_way_qualified").default(false),
+}, (table) => [
+  index("idx_mlb_player_stats_player_season").on(table.mlbPlayerId, table.season),
+]);
+
+export const insertMlbPlayerStatsSchema = (createInsertSchema(mlbPlayerStats) as any).omit({
+  id: true,
 });
 
 // Types
@@ -851,6 +888,9 @@ export type InsertTeamOwnershipInvite = z.infer<typeof insertTeamOwnershipInvite
 
 export type MlbPlayer = typeof mlbPlayers.$inferSelect;
 export type InsertMlbPlayer = z.infer<typeof insertMlbPlayerSchema>;
+
+export type MlbPlayerStat = typeof mlbPlayerStats.$inferSelect;
+export type InsertMlbPlayerStat = z.infer<typeof insertMlbPlayerStatsSchema>;
 
 export type LeagueRosterAssignment = typeof leagueRosterAssignments.$inferSelect;
 export type InsertLeagueRosterAssignment = z.infer<typeof insertLeagueRosterAssignmentSchema>;

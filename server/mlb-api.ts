@@ -397,6 +397,7 @@ export interface AffiliatedPlayerRecord {
   hittingGamesStarted: number;
   hittingPlateAppearances: number;
   isTwoWayQualified: boolean;
+  statsSeason: number;
   season: number;
 }
 
@@ -747,6 +748,7 @@ export async function fetchAllAffiliatedPlayers(
 
         existing.hadHittingStats = existing.hadHittingStats || (isHitter && (existing.hittingPlateAppearances || 0) + playerHittingPlateAppearances > 0);
         existing.hadPitchingStats = existing.hadPitchingStats || (isPitcher && existing.pitchingInningsPitched + playerPitchingInnings > 0);
+        existing.statsSeason = season;
         existing.pitchingInningsPitched = prevPitchingInnings + playerPitchingInnings;
         existing.hittingGamesStarted = (existing.hittingGamesStarted || 0) + playerHittingGamesStarted;
         existing.hittingPlateAppearances = (existing.hittingPlateAppearances || 0) + playerHittingPlateAppearances;
@@ -822,6 +824,7 @@ export async function fetchAllAffiliatedPlayers(
         hittingGamesStarted: playerHittingGamesStarted,
         hittingPlateAppearances: playerHittingPlateAppearances,
         isTwoWayQualified: qualifiesTwoWay(playerPitchingInnings, playerHittingPlateAppearances),
+        statsSeason: season,
         season,
       });
       levelCount++;
