@@ -2038,14 +2038,39 @@ export async function registerRoutes(
     }
   });
 
+  const backfillStatus: {
+    running: boolean;
+    total: number;
+    processed: number;
+    updated: number;
+    skipped: number;
+    apiLookedUp: number;
+    errors: number;
+    currentPlayer: string;
+    startedAt: string | null;
+    completedAt: string | null;
+  } = {
+    running: false, total: 0, processed: 0, updated: 0, skipped: 0,
+    apiLookedUp: 0, errors: 0, currentPlayer: "", startedAt: null, completedAt: null,
+  };
+
+  app.get("/api/admin/mlb-players/backfill-status", isAuthenticated, async (req: any, res) => {
+    const userId = req.session.originalUserId || req.session.userId!;
+    const user = await storage.getUser(userId);
+    if (!user?.isSuperAdmin) return res.status(403).json({ message: "Super admin access required" });
+    res.json(backfillStatus);
+  });
+
   app.post("/api/admin/mlb-players/backfill-last-played", isAuthenticated, async (req: any, res) => {
-    req.setTimeout(600000);
-    res.setTimeout(600000);
     try {
       const userId = req.session.originalUserId || req.session.userId!;
       const user = await storage.getUser(userId);
       if (!user?.isSuperAdmin) {
         return res.status(403).json({ message: "Super admin access required" });
+      }
+
+      if (backfillStatus.running) {
+        return res.status(409).json({ message: "Backfill already in progress", status: backfillStatus });
       }
 
       const SPORT_LEVEL_MAP: Record<number, string> = {
@@ -2068,38 +2093,51 @@ export async function registerRoutes(
         pitchingInningsPitched: mlbPlayers.pitchingInningsPitched,
       }).from(mlbPlayers).where(sql`last_played_season IS NULL OR last_played_level IS NULL`);
 
-      let updated = 0;
-      let skipped = 0;
-      let apiLookedUp = 0;
-      const BATCH_DELAY = 500;
+      backfillStatus.running = true;
+      backfillStatus.total = playersToBackfill.length;
+      backfillStatus.processed = 0;
+      backfillStatus.updated = 0;
+      backfillStatus.skipped = 0;
+      backfillStatus.apiLookedUp = 0;
+      backfillStatus.errors = 0;
+      backfillStatus.currentPlayer = "";
+      backfillStatus.startedAt = new Date().toISOString();
+      backfillStatus.completedAt = null;
 
-      for (let i = 0; i < playersToBackfill.length; i++) {
-        const player = playersToBackfill[i];
-        await (async () => {
-          const played = (player.hittingPlateAppearances ?? 0) > 0 || (player.pitchingGames ?? 0) > 0 ||
-            (player.pitchingInningsPitched ?? 0) > 0 || player.hadHittingStats || player.hadPitchingStats;
+      res.json({ message: `Backfill started for ${playersToBackfill.length} players. Poll GET /api/admin/mlb-players/backfill-status for progress.`, total: playersToBackfill.length });
 
-          if (played && player.lastPlayedSeason && player.lastPlayedLevel) {
-            return;
-          }
-
-          if (played && !player.lastPlayedLevel) {
-            const updateSet: any = { lastPlayedLevel: player.sportLevel };
-            if (!player.lastPlayedSeason) updateSet.lastPlayedSeason = player.season;
-            await db.update(mlbPlayers).set(updateSet).where(eq(mlbPlayers.id, player.id));
-            updated++;
-            return;
-          }
-
-          if (played && !player.lastPlayedSeason) {
-            await db.update(mlbPlayers).set({ lastPlayedSeason: player.season }).where(eq(mlbPlayers.id, player.id));
-            updated++;
-            return;
-          }
-
+      (async () => {
+        const BATCH_DELAY = 500;
+        for (let i = 0; i < playersToBackfill.length; i++) {
+          const player = playersToBackfill[i];
+          backfillStatus.currentPlayer = player.fullName;
           try {
+            const played = (player.hittingPlateAppearances ?? 0) > 0 || (player.pitchingGames ?? 0) > 0 ||
+              (player.pitchingInningsPitched ?? 0) > 0 || player.hadHittingStats || player.hadPitchingStats;
+
+            if (played && player.lastPlayedSeason && player.lastPlayedLevel) {
+              backfillStatus.processed++;
+              continue;
+            }
+
+            if (played && !player.lastPlayedLevel) {
+              const updateSet: any = { lastPlayedLevel: player.sportLevel };
+              if (!player.lastPlayedSeason) updateSet.lastPlayedSeason = player.season;
+              await db.update(mlbPlayers).set(updateSet).where(eq(mlbPlayers.id, player.id));
+              backfillStatus.updated++;
+              backfillStatus.processed++;
+              continue;
+            }
+
+            if (played && !player.lastPlayedSeason) {
+              await db.update(mlbPlayers).set({ lastPlayedSeason: player.season }).where(eq(mlbPlayers.id, player.id));
+              backfillStatus.updated++;
+              backfillStatus.processed++;
+              continue;
+            }
+
             const BACKFILL_SPORT_IDS = [1, 11, 12, 13, 14, 16];
-            apiLookedUp++;
+            backfillStatus.apiLookedUp++;
 
             let best: { season: number; sportId: number } | null = null;
             for (const sid of BACKFILL_SPORT_IDS) {
@@ -2118,7 +2156,7 @@ export async function registerRoutes(
                       best = { season: s, sportId: splitSportId };
                     }
                   }
-                } catch { /* individual fetch fail, continue */ }
+                } catch { }
               }
               if (best) break;
             }
@@ -2129,31 +2167,33 @@ export async function registerRoutes(
               if (!player.lastPlayedSeason) updateSet.lastPlayedSeason = best.season;
               updateSet.lastPlayedLevel = level;
               await db.update(mlbPlayers).set(updateSet).where(eq(mlbPlayers.id, player.id));
-              updated++;
+              backfillStatus.updated++;
             } else {
-              skipped++;
+              backfillStatus.skipped++;
             }
           } catch (err: any) {
-            console.error(`[Backfill] Failed API lookup for mlbId=${player.mlbId} (${player.fullName}):`, err?.message || err);
-            skipped++;
+            console.error(`[Backfill] Failed for mlbId=${player.mlbId} (${player.fullName}):`, err?.message || err);
+            backfillStatus.errors++;
           }
-        })();
+          backfillStatus.processed++;
 
-        if (i + 1 < playersToBackfill.length) {
-          await new Promise(r => setTimeout(r, BATCH_DELAY));
+          if (i + 1 < playersToBackfill.length) {
+            await new Promise(r => setTimeout(r, BATCH_DELAY));
+          }
         }
-      }
-
-      res.json({
-        message: `Backfill complete: ${updated} updated, ${skipped} skipped (no data found), ${apiLookedUp} API lookups`,
-        total: playersToBackfill.length,
-        updated,
-        skipped,
-        apiLookedUp,
+        backfillStatus.running = false;
+        backfillStatus.currentPlayer = "";
+        backfillStatus.completedAt = new Date().toISOString();
+        console.log(`[Backfill] Complete: ${backfillStatus.updated} updated, ${backfillStatus.skipped} skipped, ${backfillStatus.errors} errors, ${backfillStatus.apiLookedUp} API lookups out of ${backfillStatus.total} total`);
+      })().catch(err => {
+        console.error("[Backfill] Fatal error:", err);
+        backfillStatus.running = false;
+        backfillStatus.completedAt = new Date().toISOString();
       });
     } catch (error: any) {
-      console.error("Error backfilling lastPlayedSeason:", error);
-      res.status(500).json({ message: error.message || "Failed to backfill" });
+      console.error("Error starting backfill:", error);
+      backfillStatus.running = false;
+      res.status(500).json({ message: `Backfill failed to start: ${error?.message || String(error)}` });
     }
   });
 

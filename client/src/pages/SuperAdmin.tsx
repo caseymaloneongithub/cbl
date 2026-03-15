@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -126,14 +126,44 @@ function MlbPlayerSync() {
     },
   });
 
+  const [backfillPolling, setBackfillPolling] = useState(false);
+
+  const backfillStatusQuery = useQuery<{
+    running: boolean;
+    total: number;
+    processed: number;
+    updated: number;
+    skipped: number;
+    apiLookedUp: number;
+    errors: number;
+    currentPlayer: string;
+    startedAt: string | null;
+    completedAt: string | null;
+  }>({
+    queryKey: ["/api/admin/mlb-players/backfill-status"],
+    refetchInterval: backfillPolling ? 2000 : false,
+    enabled: backfillPolling,
+  });
+
+  useEffect(() => {
+    if (backfillPolling && backfillStatusQuery.data && !backfillStatusQuery.data.running && backfillStatusQuery.data.completedAt) {
+      setBackfillPolling(false);
+      toast({
+        title: "Backfill Complete",
+        description: `${backfillStatusQuery.data.updated} updated, ${backfillStatusQuery.data.skipped} skipped, ${backfillStatusQuery.data.errors} errors out of ${backfillStatusQuery.data.total} players`,
+      });
+    }
+  }, [backfillStatusQuery.data, backfillPolling]);
+
   const backfillMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/admin/mlb-players/backfill-last-played");
       return res.json();
     },
     onSuccess: (data) => {
+      setBackfillPolling(true);
       toast({
-        title: "Backfill Complete",
+        title: "Backfill Started",
         description: data.message,
       });
     },
@@ -213,10 +243,10 @@ function MlbPlayerSync() {
         <Button
           variant="outline"
           onClick={() => backfillMutation.mutate()}
-          disabled={isSyncing}
+          disabled={isSyncing || backfillPolling}
           data-testid="button-backfill-last-played"
         >
-          {backfillMutation.isPending ? (
+          {backfillPolling ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Backfilling...
@@ -229,6 +259,42 @@ function MlbPlayerSync() {
           )}
         </Button>
       </div>
+
+      {backfillPolling && backfillStatusQuery.data && (
+        <div className="rounded-md border p-3 space-y-2" data-testid="backfill-progress">
+          <div className="flex items-center justify-between text-sm">
+            <span className="font-medium">
+              Backfill Progress: {backfillStatusQuery.data.processed} / {backfillStatusQuery.data.total}
+            </span>
+            <span className="text-muted-foreground">
+              {backfillStatusQuery.data.total > 0
+                ? Math.round((backfillStatusQuery.data.processed / backfillStatusQuery.data.total) * 100)
+                : 0}%
+            </span>
+          </div>
+          <div className="w-full bg-muted rounded-full h-2">
+            <div
+              className="bg-primary rounded-full h-2 transition-all duration-500"
+              style={{
+                width: `${backfillStatusQuery.data.total > 0
+                  ? (backfillStatusQuery.data.processed / backfillStatusQuery.data.total) * 100
+                  : 0}%`,
+              }}
+            />
+          </div>
+          <div className="flex gap-4 text-xs text-muted-foreground flex-wrap">
+            <span>Updated: {backfillStatusQuery.data.updated}</span>
+            <span>Skipped: {backfillStatusQuery.data.skipped}</span>
+            <span>API lookups: {backfillStatusQuery.data.apiLookedUp}</span>
+            <span>Errors: {backfillStatusQuery.data.errors}</span>
+          </div>
+          {backfillStatusQuery.data.currentPlayer && (
+            <div className="text-xs text-muted-foreground">
+              Current: {backfillStatusQuery.data.currentPlayer}
+            </div>
+          )}
+        </div>
+      )}
 
       {seasonCounts.length > 0 && (
         <div className="flex flex-wrap gap-2">
