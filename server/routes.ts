@@ -2163,6 +2163,37 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/admin/mlb-players/:mlbId/last-played", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      if (!user?.isSuperAdmin) {
+        const leagues = await storage.getUserLeagues(userId);
+        const isCommissioner = leagues.some((l: any) => l.role === "commissioner");
+        if (!isCommissioner) return res.status(403).json({ message: "Commissioner access required" });
+      }
+      const mlbId = parseInt(req.params.mlbId);
+      const { lastPlayedSeason, lastPlayedLevel } = req.body;
+      if (!Number.isInteger(lastPlayedSeason) || lastPlayedSeason < 1900) {
+        return res.status(400).json({ message: "Valid lastPlayedSeason required" });
+      }
+      if (!lastPlayedLevel || typeof lastPlayedLevel !== "string") {
+        return res.status(400).json({ message: "Valid lastPlayedLevel required" });
+      }
+      const [updated] = await db.update(mlbPlayers)
+        .set({ lastPlayedSeason, lastPlayedLevel })
+        .where(eq(mlbPlayers.mlbId, mlbId))
+        .returning({ id: mlbPlayers.id, fullName: mlbPlayers.fullName });
+      if (!updated) {
+        return res.status(404).json({ message: "Player not found" });
+      }
+      res.json({ message: `Updated ${updated.fullName}: ${lastPlayedLevel} (${lastPlayedSeason})` });
+    } catch (error: any) {
+      console.error("Error updating lastPlayed:", error);
+      res.status(500).json({ message: error.message || "Failed to update" });
+    }
+  });
+
   // Bulk assign via CSV payload (commissioner only)
   app.post("/api/leagues/:id/roster-assignments/upload-csv", isAuthenticated, async (req: any, res) => {
     req.setTimeout(600000);

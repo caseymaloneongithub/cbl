@@ -46,7 +46,7 @@ import { formatAffiliatedTeamLabel } from "@/lib/teamDisplay";
 import { isUncardedOnMlbRoster } from "@/lib/playerCarding";
 import { useToast } from "@/hooks/use-toast";
 import type { MlbPlayer, LeagueMember, League } from "@shared/schema";
-import { Search, UserPlus, Trash2, ArrowRightLeft, Loader2, Users, ChevronLeft, ChevronRight, AlertTriangle, Download, FileSpreadsheet } from "lucide-react";
+import { Search, UserPlus, Trash2, ArrowRightLeft, Loader2, Users, ChevronLeft, ChevronRight, AlertTriangle, Download, FileSpreadsheet, Pencil } from "lucide-react";
 
 interface RosterAssignment {
   id: number;
@@ -189,6 +189,26 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
   const [csvDefaultRosterType, setCsvDefaultRosterType] = useState<"mlb" | "milb">(
     onboardingScope || (rosterLevel === "mlb" ? "mlb" : "milb"),
   );
+
+  const [editLevelPlayer, setEditLevelPlayer] = useState<{ mlbId: number; fullName: string; sportLevel: string } | null>(null);
+  const [editLevelSeason, setEditLevelSeason] = useState("");
+  const [editLevelValue, setEditLevelValue] = useState("");
+
+  const editLevelMutation = useMutation({
+    mutationFn: async ({ mlbId, lastPlayedSeason, lastPlayedLevel }: { mlbId: number; lastPlayedSeason: number; lastPlayedLevel: string }) => {
+      const res = await apiRequest("PATCH", `/api/admin/mlb-players/${mlbId}/last-played`, { lastPlayedSeason, lastPlayedLevel });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Updated", description: data.message });
+      setEditLevelPlayer(null);
+      queryClient.invalidateQueries({ queryKey: [`/api/leagues/${leagueId}/roster-assignments`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/leagues/${leagueId}/unassigned-players`] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Update Failed", description: error.message, variant: "destructive" });
+    },
+  });
 
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [assignPlayer, setAssignPlayer] = useState<MlbPlayer | null>(null);
@@ -1918,7 +1938,24 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                         {isUncardedOnMlbRoster(a.player, a.rosterType) ? " (uncarded)" : ""}
                       </TableCell>
                       <TableCell>{a.player.primaryPosition || "-"}</TableCell>
-                      <TableCell>{formatLevelWithYear(a.player.sportLevel, (a.player as any).lastActiveSeason, (a.player as any).lastActiveLevel)}</TableCell>
+                      <TableCell>
+                        {formatLevelWithYear(a.player.sportLevel, (a.player as any).lastActiveSeason, (a.player as any).lastActiveLevel)}
+                        {isCommissioner && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-5 w-5 ml-1 inline-flex"
+                            onClick={() => {
+                              setEditLevelPlayer({ mlbId: a.player.mlbId, fullName: a.player.fullName, sportLevel: a.player.sportLevel });
+                              setEditLevelSeason((a.player as any).lastActiveSeason?.toString() || "");
+                              setEditLevelValue((a.player as any).lastActiveLevel || a.player.sportLevel || "");
+                            }}
+                            data-testid={`button-edit-level-${a.id}`}
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </TableCell>
                       <TableCell>{getMemberName(a.userId)}</TableCell>
                       <TableCell>{getRosterTypeBadge(a.rosterType)}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">
@@ -2373,6 +2410,56 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
               Move Player
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editLevelPlayer} onOpenChange={(open) => { if (!open) setEditLevelPlayer(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Edit Last Played</DialogTitle>
+          </DialogHeader>
+          {editLevelPlayer && (
+            <div className="space-y-4">
+              <p className="text-sm font-medium">{editLevelPlayer.fullName}</p>
+              <div className="space-y-2">
+                <label className="text-sm text-muted-foreground">Level</label>
+                <Select value={editLevelValue} onValueChange={setEditLevelValue}>
+                  <SelectTrigger data-testid="select-edit-level">
+                    <SelectValue placeholder="Select level" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {["MLB", "AAA", "AA", "High-A", "Single-A", "Rookie"].map(lv => (
+                      <SelectItem key={lv} value={lv}>{lv}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm text-muted-foreground">Season</label>
+                <Input
+                  type="number"
+                  value={editLevelSeason}
+                  onChange={e => setEditLevelSeason(e.target.value)}
+                  placeholder="e.g. 2022"
+                  data-testid="input-edit-level-season"
+                />
+              </div>
+              <Button
+                className="w-full"
+                disabled={editLevelMutation.isPending || !editLevelValue || !editLevelSeason}
+                onClick={() => {
+                  const s = parseInt(editLevelSeason);
+                  if (s >= 1900 && editLevelValue) {
+                    editLevelMutation.mutate({ mlbId: editLevelPlayer.mlbId, lastPlayedSeason: s, lastPlayedLevel: editLevelValue });
+                  }
+                }}
+                data-testid="button-confirm-edit-level"
+              >
+                {editLevelMutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+                Save
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
