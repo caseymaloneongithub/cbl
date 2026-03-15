@@ -1011,7 +1011,46 @@ export async function registerRoutes(
     }
   });
 
-  // Super admin: Sync professional players from MLB API into reference database
+  function mapPlayerData(players: any[]) {
+    return players.map(p => ({
+      mlbId: p.mlbId, fullName: p.fullName, fullFmlName: p.fullFmlName,
+      firstName: p.firstName, middleName: p.middleName, lastName: p.lastName,
+      primaryPosition: p.primaryPosition, positionName: p.positionName, positionType: p.positionType,
+      batSide: p.batSide, throwHand: p.throwHand,
+      currentTeamId: p.currentTeamId, currentTeamName: p.currentTeamName,
+      parentOrgId: p.parentOrgId, parentOrgName: p.parentOrgName,
+      sportId: p.sportId, sportLevel: p.sportLevel,
+      birthDate: p.birthDate, age: p.age, isActive: p.isActive,
+      hadHittingStats: p.hadHittingStats, hadPitchingStats: p.hadPitchingStats,
+      hittingAtBats: p.hittingAtBats, hittingWalks: p.hittingWalks,
+      hittingSingles: p.hittingSingles, hittingDoubles: p.hittingDoubles,
+      hittingTriples: p.hittingTriples, hittingHomeRuns: p.hittingHomeRuns,
+      hittingAvg: p.hittingAvg, hittingObp: p.hittingObp,
+      hittingSlg: p.hittingSlg, hittingOps: p.hittingOps,
+      pitchingGames: p.pitchingGames, pitchingGamesStarted: p.pitchingGamesStarted,
+      pitchingStrikeouts: p.pitchingStrikeouts, pitchingWalks: p.pitchingWalks,
+      pitchingHits: p.pitchingHits, pitchingHomeRuns: p.pitchingHomeRuns,
+      pitchingEra: p.pitchingEra, pitchingInningsPitched: p.pitchingInningsPitched,
+      hittingGamesStarted: p.hittingGamesStarted, hittingPlateAppearances: p.hittingPlateAppearances,
+      isTwoWayQualified: p.isTwoWayQualified, season: p.season,
+    }));
+  }
+
+  async function runSyncSeason(season: number, isLastInRange: boolean): Promise<{ playerCount: number; statRows: number }> {
+    const players = await fetchAllAffiliatedPlayers(season);
+    const playerData = mapPlayerData(players);
+    let playerCount: number;
+    if (isLastInRange) {
+      playerCount = await storage.upsertMlbPlayers(playerData);
+    } else {
+      playerCount = await storage.insertMlbPlayersIfNew(playerData);
+      console.log(`[MLB Sync] Season ${season}: added new players only (no metadata overwrite)`);
+    }
+    const statRows = await storage.upsertMlbPlayerStatsFromSync(playerData);
+    console.log(`[MLB Sync] Season ${season}: ${playerCount} players, ${statRows} stat rows`);
+    return { playerCount, statRows };
+  }
+
   app.post("/api/admin/mlb-players/sync", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.originalUserId || req.session.userId!;
@@ -1020,95 +1059,63 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Super Admin access required" });
       }
 
+      if (syncProgress.running) {
+        return res.status(409).json({ message: "A sync is already in progress", status: syncProgress });
+      }
+
       const { season } = req.body;
       const currentYear = new Date().getFullYear();
       const syncSeason = typeof season === "number" && season >= 2000 && season <= currentYear + 1
-        ? season
-        : currentYear;
+        ? season : currentYear;
 
-      console.log(`[MLB Sync] Starting professional players sync for season ${syncSeason}`);
+      syncProgress.running = true;
+      syncProgress.type = "single";
+      syncProgress.currentSeason = syncSeason;
+      syncProgress.totalSeasons = 1;
+      syncProgress.completedSeasons = 0;
+      syncProgress.playersInCurrentSeason = 0;
+      syncProgress.statsInCurrentSeason = 0;
+      syncProgress.results = [];
+      syncProgress.startedAt = new Date().toISOString();
+      syncProgress.completedAt = null;
+      syncProgress.error = null;
 
-      const players = await fetchAllAffiliatedPlayers(syncSeason);
+      res.json({ message: `Sync started for season ${syncSeason}. Poll GET /api/admin/mlb-players/sync-status for progress.` });
 
-      const playerData = players.map(p => ({
-          mlbId: p.mlbId,
-          fullName: p.fullName,
-          fullFmlName: p.fullFmlName,
-          firstName: p.firstName,
-          middleName: p.middleName,
-          lastName: p.lastName,
-          primaryPosition: p.primaryPosition,
-          positionName: p.positionName,
-          positionType: p.positionType,
-          batSide: p.batSide,
-          throwHand: p.throwHand,
-          currentTeamId: p.currentTeamId,
-          currentTeamName: p.currentTeamName,
-          parentOrgId: p.parentOrgId,
-          parentOrgName: p.parentOrgName,
-          sportId: p.sportId,
-          sportLevel: p.sportLevel,
-          birthDate: p.birthDate,
-          age: p.age,
-          isActive: p.isActive,
-          hadHittingStats: p.hadHittingStats,
-          hadPitchingStats: p.hadPitchingStats,
-          hittingAtBats: p.hittingAtBats,
-          hittingWalks: p.hittingWalks,
-          hittingSingles: p.hittingSingles,
-          hittingDoubles: p.hittingDoubles,
-          hittingTriples: p.hittingTriples,
-          hittingHomeRuns: p.hittingHomeRuns,
-          hittingAvg: p.hittingAvg,
-          hittingObp: p.hittingObp,
-          hittingSlg: p.hittingSlg,
-          hittingOps: p.hittingOps,
-          pitchingGames: p.pitchingGames,
-          pitchingGamesStarted: p.pitchingGamesStarted,
-          pitchingStrikeouts: p.pitchingStrikeouts,
-          pitchingWalks: p.pitchingWalks,
-          pitchingHits: p.pitchingHits,
-          pitchingHomeRuns: p.pitchingHomeRuns,
-          pitchingEra: p.pitchingEra,
-          pitchingInningsPitched: p.pitchingInningsPitched,
-          hittingGamesStarted: p.hittingGamesStarted,
-          hittingPlateAppearances: p.hittingPlateAppearances,
-          isTwoWayQualified: p.isTwoWayQualified,
-          season: p.season,
-        }));
-
-      const upserted = await storage.upsertMlbPlayers(playerData);
-
-      const statsUpserted = await storage.upsertMlbPlayerStatsFromSync(playerData);
-      console.log(`[MLB Sync] ${statsUpserted} stat rows written to mlb_player_stats`);
-
-      const levelCounts: Record<string, number> = {};
-      for (const p of players) {
-        levelCounts[p.sportLevel] = (levelCounts[p.sportLevel] || 0) + 1;
-      }
-
-      console.log(`[MLB Sync] Completed: ${upserted} players synced`);
-
-      res.json({
-        message: `Synced ${upserted} professional players for ${syncSeason} season`,
-        season: syncSeason,
-        totalPlayers: upserted,
-        byLevel: levelCounts,
-      });
+      (async () => {
+        try {
+          console.log(`[MLB Sync] Starting background sync for season ${syncSeason}`);
+          const result = await runSyncSeason(syncSeason, true);
+          syncProgress.playersInCurrentSeason = result.playerCount;
+          syncProgress.statsInCurrentSeason = result.statRows;
+          syncProgress.results.push({ season: syncSeason, playerCount: result.playerCount, statRows: result.statRows });
+          syncProgress.completedSeasons = 1;
+          console.log(`[MLB Sync] Completed: ${result.playerCount} players, ${result.statRows} stat rows`);
+        } catch (err: any) {
+          console.error("[MLB Sync] Error:", err?.message || err);
+          syncProgress.error = err?.message || String(err);
+        } finally {
+          syncProgress.running = false;
+          syncProgress.completedAt = new Date().toISOString();
+        }
+      })();
     } catch (error: any) {
-      console.error("Error syncing MLB players:", error);
-      res.status(500).json({ message: error.message || "Failed to sync MLB players" });
+      console.error("Error starting MLB sync:", error);
+      syncProgress.running = false;
+      res.status(500).json({ message: error.message || "Failed to start sync" });
     }
   });
 
   app.post("/api/admin/mlb-players/sync-range", isAuthenticated, async (req: any, res) => {
-    req.setTimeout(600000);
-    res.setTimeout(600000);
     try {
       const userId = req.session.originalUserId || req.session.userId!;
       const user = await storage.getUser(userId);
       if (!user?.isSuperAdmin) {
         return res.status(403).json({ message: "Super Admin access required" });
+      }
+
+      if (syncProgress.running) {
+        return res.status(409).json({ message: "A sync is already in progress", status: syncProgress });
       }
 
       const { startSeason, endSeason } = req.body;
@@ -1120,82 +1127,49 @@ export async function registerRoutes(
         return res.status(400).json({ message: "startSeason must be <= endSeason" });
       }
 
-      console.log(`[MLB Sync] Starting bulk sync for seasons ${start}–${end}`);
-      const results: { season: number; playerCount: number }[] = [];
+      const totalSeasons = end - start + 1;
+      syncProgress.running = true;
+      syncProgress.type = "range";
+      syncProgress.currentSeason = start;
+      syncProgress.totalSeasons = totalSeasons;
+      syncProgress.completedSeasons = 0;
+      syncProgress.playersInCurrentSeason = 0;
+      syncProgress.statsInCurrentSeason = 0;
+      syncProgress.results = [];
+      syncProgress.startedAt = new Date().toISOString();
+      syncProgress.completedAt = null;
+      syncProgress.error = null;
 
-      for (let season = start; season <= end; season++) {
-        console.log(`[MLB Sync] Syncing season ${season}...`);
-        const players = await fetchAllAffiliatedPlayers(season);
-        const playerData = players.map(p => ({
-            mlbId: p.mlbId,
-            fullName: p.fullName,
-            fullFmlName: p.fullFmlName,
-            firstName: p.firstName,
-            middleName: p.middleName,
-            lastName: p.lastName,
-            primaryPosition: p.primaryPosition,
-            positionName: p.positionName,
-            positionType: p.positionType,
-            batSide: p.batSide,
-            throwHand: p.throwHand,
-            currentTeamId: p.currentTeamId,
-            currentTeamName: p.currentTeamName,
-            parentOrgId: p.parentOrgId,
-            parentOrgName: p.parentOrgName,
-            sportId: p.sportId,
-            sportLevel: p.sportLevel,
-            birthDate: p.birthDate,
-            age: p.age,
-            isActive: p.isActive,
-            hadHittingStats: p.hadHittingStats,
-            hadPitchingStats: p.hadPitchingStats,
-            hittingAtBats: p.hittingAtBats,
-            hittingWalks: p.hittingWalks,
-            hittingSingles: p.hittingSingles,
-            hittingDoubles: p.hittingDoubles,
-            hittingTriples: p.hittingTriples,
-            hittingHomeRuns: p.hittingHomeRuns,
-            hittingAvg: p.hittingAvg,
-            hittingObp: p.hittingObp,
-            hittingSlg: p.hittingSlg,
-            hittingOps: p.hittingOps,
-            pitchingGames: p.pitchingGames,
-            pitchingGamesStarted: p.pitchingGamesStarted,
-            pitchingStrikeouts: p.pitchingStrikeouts,
-            pitchingWalks: p.pitchingWalks,
-            pitchingHits: p.pitchingHits,
-            pitchingHomeRuns: p.pitchingHomeRuns,
-            pitchingEra: p.pitchingEra,
-            pitchingInningsPitched: p.pitchingInningsPitched,
-            hittingGamesStarted: p.hittingGamesStarted,
-            hittingPlateAppearances: p.hittingPlateAppearances,
-            isTwoWayQualified: p.isTwoWayQualified,
-            season: p.season,
-          }));
+      res.json({ message: `Range sync started for ${start}–${end} (${totalSeasons} seasons). Poll GET /api/admin/mlb-players/sync-status for progress.` });
 
-        let playerCount: number;
-        if (season === end) {
-          playerCount = await storage.upsertMlbPlayers(playerData);
-        } else {
-          playerCount = await storage.insertMlbPlayersIfNew(playerData);
-          console.log(`[MLB Sync] Season ${season}: added new players only (no metadata overwrite)`);
+      (async () => {
+        try {
+          console.log(`[MLB Sync] Starting background bulk sync for seasons ${start}–${end}`);
+          for (let season = start; season <= end; season++) {
+            syncProgress.currentSeason = season;
+            syncProgress.playersInCurrentSeason = 0;
+            syncProgress.statsInCurrentSeason = 0;
+            const isLast = season === end;
+            const result = await runSyncSeason(season, isLast);
+            syncProgress.playersInCurrentSeason = result.playerCount;
+            syncProgress.statsInCurrentSeason = result.statRows;
+            syncProgress.results.push({ season, playerCount: result.playerCount, statRows: result.statRows });
+            syncProgress.completedSeasons++;
+          }
+          const total = syncProgress.results.reduce((s, r) => s + r.playerCount, 0);
+          console.log(`[MLB Sync] Bulk sync complete: ${total} total players across ${totalSeasons} seasons`);
+        } catch (err: any) {
+          console.error("[MLB Sync] Range sync error:", err?.message || err);
+          syncProgress.error = err?.message || String(err);
+        } finally {
+          syncProgress.running = false;
+          syncProgress.completedAt = new Date().toISOString();
         }
-        const statsUpserted = await storage.upsertMlbPlayerStatsFromSync(playerData);
-        results.push({ season, playerCount });
-        console.log(`[MLB Sync] Season ${season}: ${playerCount} players, ${statsUpserted} stat rows`);
-      }
-
-      const totalPlayers = results.reduce((sum, r) => sum + r.playerCount, 0);
-      console.log(`[MLB Sync] Bulk sync complete: ${totalPlayers} total players across ${results.length} seasons`);
-
-      res.json({
-        message: `Synced ${totalPlayers} players across seasons ${start}–${end}`,
-        results,
-        totalPlayers,
-      });
+      })();
     } catch (error: any) {
-      console.error("Error in bulk MLB sync:", error);
-      res.status(500).json({ message: error.message || "Failed to sync MLB players" });
+      console.error("Error starting range sync:", error);
+      syncProgress.running = false;
+      res.status(500).json({ message: error.message || "Failed to start range sync" });
     }
   });
 
@@ -2093,163 +2067,29 @@ export async function registerRoutes(
     }
   });
 
-  const backfillStatus: {
+  const syncProgress: {
     running: boolean;
-    total: number;
-    processed: number;
-    updated: number;
-    skipped: number;
-    apiLookedUp: number;
-    errors: number;
-    currentPlayer: string;
+    type: "single" | "range" | null;
+    currentSeason: number | null;
+    totalSeasons: number;
+    completedSeasons: number;
+    playersInCurrentSeason: number;
+    statsInCurrentSeason: number;
+    results: { season: number; playerCount: number; statRows: number }[];
     startedAt: string | null;
     completedAt: string | null;
+    error: string | null;
   } = {
-    running: false, total: 0, processed: 0, updated: 0, skipped: 0,
-    apiLookedUp: 0, errors: 0, currentPlayer: "", startedAt: null, completedAt: null,
+    running: false, type: null, currentSeason: null, totalSeasons: 0,
+    completedSeasons: 0, playersInCurrentSeason: 0, statsInCurrentSeason: 0,
+    results: [], startedAt: null, completedAt: null, error: null,
   };
 
-  app.get("/api/admin/mlb-players/backfill-status", isAuthenticated, async (req: any, res) => {
+  app.get("/api/admin/mlb-players/sync-status", isAuthenticated, async (req: any, res) => {
     const userId = req.session.originalUserId || req.session.userId!;
     const user = await storage.getUser(userId);
     if (!user?.isSuperAdmin) return res.status(403).json({ message: "Super admin access required" });
-    res.json(backfillStatus);
-  });
-
-  app.post("/api/admin/mlb-players/backfill-last-played", isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.session.originalUserId || req.session.userId!;
-      const user = await storage.getUser(userId);
-      if (!user?.isSuperAdmin) {
-        return res.status(403).json({ message: "Super admin access required" });
-      }
-
-      if (backfillStatus.running) {
-        return res.status(409).json({ message: "Backfill already in progress", status: backfillStatus });
-      }
-
-      const SPORT_LEVEL_MAP: Record<number, string> = {
-        1: "MLB", 11: "AAA", 12: "AA", 13: "High-A", 14: "Single-A", 15: "Short-Season", 16: "Rookie", 509: "Fall League",
-      };
-
-      const playersToBackfill = await db.select({
-        id: mlbPlayers.id,
-        mlbId: mlbPlayers.mlbId,
-        fullName: mlbPlayers.fullName,
-        sportLevel: mlbPlayers.sportLevel,
-        positionType: mlbPlayers.positionType,
-        season: mlbPlayers.season,
-        lastPlayedSeason: mlbPlayers.lastPlayedSeason,
-        lastPlayedLevel: mlbPlayers.lastPlayedLevel,
-        hadHittingStats: mlbPlayers.hadHittingStats,
-        hadPitchingStats: mlbPlayers.hadPitchingStats,
-        hittingPlateAppearances: mlbPlayers.hittingPlateAppearances,
-        pitchingGames: mlbPlayers.pitchingGames,
-        pitchingInningsPitched: mlbPlayers.pitchingInningsPitched,
-      }).from(mlbPlayers).where(sql`last_played_season IS NULL OR last_played_level IS NULL`);
-
-      backfillStatus.running = true;
-      backfillStatus.total = playersToBackfill.length;
-      backfillStatus.processed = 0;
-      backfillStatus.updated = 0;
-      backfillStatus.skipped = 0;
-      backfillStatus.apiLookedUp = 0;
-      backfillStatus.errors = 0;
-      backfillStatus.currentPlayer = "";
-      backfillStatus.startedAt = new Date().toISOString();
-      backfillStatus.completedAt = null;
-
-      res.json({ message: `Backfill started for ${playersToBackfill.length} players. Poll GET /api/admin/mlb-players/backfill-status for progress.`, total: playersToBackfill.length });
-
-      (async () => {
-        const BATCH_DELAY = 500;
-        for (let i = 0; i < playersToBackfill.length; i++) {
-          const player = playersToBackfill[i];
-          backfillStatus.currentPlayer = player.fullName;
-          try {
-            const played = (player.hittingPlateAppearances ?? 0) > 0 || (player.pitchingGames ?? 0) > 0 ||
-              (player.pitchingInningsPitched ?? 0) > 0 || player.hadHittingStats || player.hadPitchingStats;
-
-            if (played && player.lastPlayedSeason && player.lastPlayedLevel) {
-              backfillStatus.processed++;
-              continue;
-            }
-
-            if (played && !player.lastPlayedLevel) {
-              const updateSet: any = { lastPlayedLevel: player.sportLevel };
-              if (!player.lastPlayedSeason) updateSet.lastPlayedSeason = player.season;
-              await db.update(mlbPlayers).set(updateSet).where(eq(mlbPlayers.id, player.id));
-              backfillStatus.updated++;
-              backfillStatus.processed++;
-              continue;
-            }
-
-            if (played && !player.lastPlayedSeason) {
-              await db.update(mlbPlayers).set({ lastPlayedSeason: player.season }).where(eq(mlbPlayers.id, player.id));
-              backfillStatus.updated++;
-              backfillStatus.processed++;
-              continue;
-            }
-
-            const BACKFILL_SPORT_IDS = [1, 11, 12, 13, 14, 16];
-            backfillStatus.apiLookedUp++;
-
-            let best: { season: number; sportId: number } | null = null;
-            for (const sid of BACKFILL_SPORT_IDS) {
-              const groups = player.positionType === "Pitcher" ? ["pitching", "hitting"] : ["hitting", "pitching"];
-              for (const group of groups) {
-                try {
-                  const resp = await fetch(`https://statsapi.mlb.com/api/v1/people/${player.mlbId}/stats?stats=yearByYear&group=${group}&sportId=${sid}`);
-                  if (!resp.ok) continue;
-                  const payload = await resp.json();
-                  const splits = Array.isArray(payload?.stats?.[0]?.splits) ? payload.stats[0].splits : [];
-                  for (const split of splits) {
-                    const s = Number.parseInt(String(split?.season || ""), 10);
-                    if (!Number.isInteger(s) || s < 1900) continue;
-                    const splitSportId = split?.sport?.id ?? sid;
-                    if (best == null || s > best.season) {
-                      best = { season: s, sportId: splitSportId };
-                    }
-                  }
-                } catch { }
-              }
-              if (best) break;
-            }
-
-            if (best) {
-              const level = SPORT_LEVEL_MAP[best.sportId] || player.sportLevel;
-              const updateSet: any = {};
-              if (!player.lastPlayedSeason) updateSet.lastPlayedSeason = best.season;
-              updateSet.lastPlayedLevel = level;
-              await db.update(mlbPlayers).set(updateSet).where(eq(mlbPlayers.id, player.id));
-              backfillStatus.updated++;
-            } else {
-              backfillStatus.skipped++;
-            }
-          } catch (err: any) {
-            console.error(`[Backfill] Failed for mlbId=${player.mlbId} (${player.fullName}):`, err?.message || err);
-            backfillStatus.errors++;
-          }
-          backfillStatus.processed++;
-
-          if (i + 1 < playersToBackfill.length) {
-            await new Promise(r => setTimeout(r, BATCH_DELAY));
-          }
-        }
-        backfillStatus.running = false;
-        backfillStatus.currentPlayer = "";
-        backfillStatus.completedAt = new Date().toISOString();
-        console.log(`[Backfill] Complete: ${backfillStatus.updated} updated, ${backfillStatus.skipped} skipped, ${backfillStatus.errors} errors, ${backfillStatus.apiLookedUp} API lookups out of ${backfillStatus.total} total`);
-      })().catch(err => {
-        console.error("[Backfill] Fatal error:", err);
-        backfillStatus.running = false;
-        backfillStatus.completedAt = new Date().toISOString();
-      });
-    } catch (error: any) {
-      console.error("Error starting backfill:", error);
-      backfillStatus.running = false;
-      res.status(500).json({ message: `Backfill failed to start: ${error?.message || String(error)}` });
-    }
+    res.json(syncProgress);
   });
 
   app.patch("/api/admin/mlb-players/:mlbId/last-played", isAuthenticated, async (req: any, res) => {

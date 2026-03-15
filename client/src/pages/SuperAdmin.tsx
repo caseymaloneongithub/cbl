@@ -58,6 +58,7 @@ function MlbPlayerSync() {
     season: number;
     twoWayQualified: number;
     byLevel: Record<string, { total: number; hitters: number; pitchers: number; twoWayQualified: number }>;
+    seasonCounts: { season: number; count: number }[];
   }>({
     queryKey: ["/api/admin/mlb-players/status", String(syncSeason)],
     queryFn: async () => {
@@ -80,6 +81,7 @@ function MlbPlayerSync() {
         season: toCount(raw?.season),
         twoWayQualified: toCount(raw?.twoWayQualified),
         byLevel,
+        seasonCounts: Array.isArray(raw?.seasonCounts) ? raw.seasonCounts : [],
       };
     },
   });
@@ -90,18 +92,11 @@ function MlbPlayerSync() {
       return res.json();
     },
     onSuccess: (data) => {
-      toast({
-        title: "Sync Complete",
-        description: data.message,
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/mlb-players/status"] });
+      setSyncPolling(true);
+      toast({ title: "Sync Started", description: data.message });
     },
     onError: (error: Error) => {
-      toast({
-        title: "Sync Failed",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Sync Failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -111,74 +106,55 @@ function MlbPlayerSync() {
       return res.json();
     },
     onSuccess: (data) => {
-      toast({
-        title: "Bulk Sync Complete",
-        description: data.message,
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/mlb-players/status"] });
+      setSyncPolling(true);
+      toast({ title: "Range Sync Started", description: data.message });
     },
     onError: (error: Error) => {
-      toast({
-        title: "Bulk Sync Failed",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Sync Failed", description: error.message, variant: "destructive" });
     },
   });
 
-  const [backfillPolling, setBackfillPolling] = useState(false);
+  const [syncPolling, setSyncPolling] = useState(false);
 
-  const backfillStatusQuery = useQuery<{
+  const syncStatusQuery = useQuery<{
     running: boolean;
-    total: number;
-    processed: number;
-    updated: number;
-    skipped: number;
-    apiLookedUp: number;
-    errors: number;
-    currentPlayer: string;
+    type: "single" | "range" | null;
+    currentSeason: number | null;
+    totalSeasons: number;
+    completedSeasons: number;
+    playersInCurrentSeason: number;
+    statsInCurrentSeason: number;
+    results: { season: number; playerCount: number; statRows: number }[];
     startedAt: string | null;
     completedAt: string | null;
+    error: string | null;
   }>({
-    queryKey: ["/api/admin/mlb-players/backfill-status"],
-    refetchInterval: backfillPolling ? 2000 : false,
-    enabled: backfillPolling,
+    queryKey: ["/api/admin/mlb-players/sync-status"],
+    refetchInterval: syncPolling ? 2000 : false,
+    enabled: syncPolling,
   });
 
   useEffect(() => {
-    if (backfillPolling && backfillStatusQuery.data && !backfillStatusQuery.data.running && backfillStatusQuery.data.completedAt) {
-      setBackfillPolling(false);
-      toast({
-        title: "Backfill Complete",
-        description: `${backfillStatusQuery.data.updated} updated, ${backfillStatusQuery.data.skipped} skipped, ${backfillStatusQuery.data.errors} errors out of ${backfillStatusQuery.data.total} players`,
-      });
+    if (syncPolling && syncStatusQuery.data && !syncStatusQuery.data.running && syncStatusQuery.data.completedAt) {
+      setSyncPolling(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/mlb-players/status"] });
+      const d = syncStatusQuery.data;
+      if (d.error) {
+        toast({ title: "Sync Error", description: d.error, variant: "destructive" });
+      } else {
+        const totalPlayers = d.results.reduce((s, r) => s + r.playerCount, 0);
+        const totalStats = d.results.reduce((s, r) => s + r.statRows, 0);
+        toast({
+          title: "Sync Complete",
+          description: `${totalPlayers.toLocaleString()} players, ${totalStats.toLocaleString()} stat rows across ${d.results.length} season(s)`,
+        });
+      }
     }
-  }, [backfillStatusQuery.data, backfillPolling]);
-
-  const backfillMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/admin/mlb-players/backfill-last-played");
-      return res.json();
-    },
-    onSuccess: (data) => {
-      setBackfillPolling(true);
-      toast({
-        title: "Backfill Started",
-        description: data.message,
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Backfill Failed",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
+  }, [syncStatusQuery.data, syncPolling]);
 
   const currentYear = new Date().getFullYear();
   const seasonOptions = Array.from({ length: currentYear - 2018 }, (_, i) => currentYear - i);
-  const isSyncing = syncMutation.isPending || syncRangeMutation.isPending || backfillMutation.isPending;
+  const isSyncing = syncMutation.isPending || syncRangeMutation.isPending || syncPolling;
 
   const seasonCounts: { season: number; count: number }[] = status?.seasonCounts || [];
   const syncedSeasons = new Set(seasonCounts.map((s: { season: number }) => s.season));
@@ -208,10 +184,10 @@ function MlbPlayerSync() {
           disabled={isSyncing}
           data-testid="button-sync-mlb-players"
         >
-          {syncMutation.isPending ? (
+          {syncMutation.isPending || (syncPolling && syncStatusQuery.data?.type === "single") ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Syncing {syncSeason}...
+              Syncing {syncStatusQuery.data?.currentSeason ?? syncSeason}...
             </>
           ) : (
             <>
@@ -227,10 +203,10 @@ function MlbPlayerSync() {
             disabled={isSyncing}
             data-testid="button-sync-mlb-range"
           >
-            {syncRangeMutation.isPending ? (
+            {syncRangeMutation.isPending || (syncPolling && syncStatusQuery.data?.type === "range") ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Syncing 2019–{currentYear}...
+                Syncing {syncStatusQuery.data?.completedSeasons ?? 0}/{syncStatusQuery.data?.totalSeasons ?? "?"}...
               </>
             ) : (
               <>
@@ -240,57 +216,47 @@ function MlbPlayerSync() {
             )}
           </Button>
         )}
-        <Button
-          variant="outline"
-          onClick={() => backfillMutation.mutate()}
-          disabled={isSyncing || backfillPolling}
-          data-testid="button-backfill-last-played"
-        >
-          {backfillPolling ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Backfilling...
-            </>
-          ) : (
-            <>
-              <Database className="mr-2 h-4 w-4" />
-              Backfill Last Played
-            </>
-          )}
-        </Button>
       </div>
 
-      {backfillPolling && backfillStatusQuery.data && (
-        <div className="rounded-md border p-3 space-y-2" data-testid="backfill-progress">
+      {syncPolling && syncStatusQuery.data && (
+        <div className="rounded-md border p-3 space-y-2" data-testid="sync-progress">
           <div className="flex items-center justify-between text-sm">
             <span className="font-medium">
-              Backfill Progress: {backfillStatusQuery.data.processed} / {backfillStatusQuery.data.total}
+              {syncStatusQuery.data.type === "range"
+                ? `Syncing season ${syncStatusQuery.data.currentSeason} (${syncStatusQuery.data.completedSeasons}/${syncStatusQuery.data.totalSeasons})`
+                : `Syncing season ${syncStatusQuery.data.currentSeason}...`}
             </span>
-            <span className="text-muted-foreground">
-              {backfillStatusQuery.data.total > 0
-                ? Math.round((backfillStatusQuery.data.processed / backfillStatusQuery.data.total) * 100)
-                : 0}%
-            </span>
+            {syncStatusQuery.data.type === "range" && (
+              <span className="text-muted-foreground">
+                {syncStatusQuery.data.totalSeasons > 0
+                  ? Math.round((syncStatusQuery.data.completedSeasons / syncStatusQuery.data.totalSeasons) * 100)
+                  : 0}%
+              </span>
+            )}
           </div>
-          <div className="w-full bg-muted rounded-full h-2">
-            <div
-              className="bg-primary rounded-full h-2 transition-all duration-500"
-              style={{
-                width: `${backfillStatusQuery.data.total > 0
-                  ? (backfillStatusQuery.data.processed / backfillStatusQuery.data.total) * 100
-                  : 0}%`,
-              }}
-            />
-          </div>
-          <div className="flex gap-4 text-xs text-muted-foreground flex-wrap">
-            <span>Updated: {backfillStatusQuery.data.updated}</span>
-            <span>Skipped: {backfillStatusQuery.data.skipped}</span>
-            <span>API lookups: {backfillStatusQuery.data.apiLookedUp}</span>
-            <span>Errors: {backfillStatusQuery.data.errors}</span>
-          </div>
-          {backfillStatusQuery.data.currentPlayer && (
-            <div className="text-xs text-muted-foreground">
-              Current: {backfillStatusQuery.data.currentPlayer}
+          {syncStatusQuery.data.type === "range" && (
+            <div className="w-full bg-muted rounded-full h-2">
+              <div
+                className="bg-primary rounded-full h-2 transition-all duration-500"
+                style={{
+                  width: `${syncStatusQuery.data.totalSeasons > 0
+                    ? (syncStatusQuery.data.completedSeasons / syncStatusQuery.data.totalSeasons) * 100
+                    : 0}%`,
+                }}
+              />
+            </div>
+          )}
+          {syncStatusQuery.data.results.length > 0 && (
+            <div className="flex gap-4 text-xs text-muted-foreground flex-wrap">
+              {syncStatusQuery.data.results.map(r => (
+                <span key={r.season}>{r.season}: {r.playerCount.toLocaleString()} players</span>
+              ))}
+            </div>
+          )}
+          {syncStatusQuery.data.type === "single" && syncStatusQuery.data.running && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Fetching players from MLB API...
             </div>
           )}
         </div>
@@ -329,7 +295,9 @@ function MlbPlayerSync() {
       ) : (
         <div className="text-center py-6 text-muted-foreground">
           <Database className="h-10 w-10 mx-auto mb-2 opacity-50" />
-          <p>No players synced yet. Click the sync button to populate the database.</p>
+          <p>{seasonCounts.length > 0
+            ? `No players found for season ${syncSeason}. Select a synced season or sync this one.`
+            : "No players synced yet. Click the sync button to populate the database."}</p>
         </div>
       )}
     </div>
