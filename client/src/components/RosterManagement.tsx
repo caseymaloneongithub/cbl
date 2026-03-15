@@ -172,7 +172,7 @@ function formatLevelWithYear(sportLevel: string, lastActiveSeason?: number | nul
     const displayLevel = lastActiveLevel || sportLevel;
     return `${displayLevel} (${lastActiveSeason})`;
   }
-  return sportLevel;
+  return lastActiveLevel || sportLevel;
 }
 
 export default function RosterManagement({ leagueId, league, members, isCommissioner, rosterLevel, showOnboardingTools = false, onboardingScope }: RosterManagementProps) {

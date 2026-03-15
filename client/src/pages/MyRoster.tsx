@@ -45,7 +45,7 @@ function formatLevelWithYear(sportLevel: string, lastActiveSeason?: number | nul
     const displayLevel = lastActiveLevel || sportLevel;
     return `${displayLevel} (${lastActiveSeason})`;
   }
-  return sportLevel;
+  return lastActiveLevel || sportLevel;
 }
 const fmtEra = (v: number | null | undefined) => (v == null ? "-" : Number(v).toFixed(2));
 const fmt1 = (v: number | null | undefined) => (v == null ? "-" : Number(v).toFixed(1));
