@@ -27,6 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 
 interface ParsedRosterPlayer {
   playerName: string;
@@ -45,11 +46,11 @@ interface RosterUsageData {
 
 export default function CommissionerSettings() {
   const { user } = useAuth();
-  const { selectedLeagueId } = useLeague();
+  const { selectedLeagueId, currentLeague } = useLeague();
   const { toast } = useToast();
 
   const [editingLeagueCaps, setEditingLeagueCaps] = useState(false);
-  const [capsForm, setCapsForm] = useState({ budgetCap: "", ipCap: "", paCap: "" });
+  const [capsForm, setCapsForm] = useState({ budgetCap: "", ipCap: "", paCap: "", mlRosterLimit: "", milbRosterLimit: "" });
   const [rosterDragActive, setRosterDragActive] = useState(false);
   const [rosterUploadLoading, setRosterUploadLoading] = useState(false);
   const [parsedRosterPlayers, setParsedRosterPlayers] = useState<ParsedRosterPlayer[]>([]);
@@ -80,12 +81,12 @@ export default function CommissionerSettings() {
   });
 
   const updateLeagueCaps = useMutation({
-    mutationFn: async (caps: { budgetCap?: number | null; ipCap?: number | null; paCap?: number | null }) => {
+    mutationFn: async (caps: { budgetCap?: number | null; ipCap?: number | null; paCap?: number | null; mlRosterLimit?: number; milbRosterLimit?: number }) => {
       const res = await apiRequest("PATCH", `/api/leagues/${selectedLeagueId}/caps`, caps);
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "League Caps Updated", description: "Salary, IP, and PA caps have been saved." });
+      toast({ title: "League Settings Updated", description: "League caps and roster limits have been saved." });
       setEditingLeagueCaps(false);
       queryClient.invalidateQueries({ queryKey: ["/api/leagues", selectedLeagueId, "roster-usage"] });
       queryClient.invalidateQueries({ queryKey: ["/api/leagues"] });
@@ -210,6 +211,8 @@ export default function CommissionerSettings() {
                   budgetCap: rosterUsage?.caps.budgetCap?.toString() || "",
                   ipCap: rosterUsage?.caps.ipCap?.toString() || "",
                   paCap: rosterUsage?.caps.paCap?.toString() || "",
+                  mlRosterLimit: ((currentLeague as any)?.mlRosterLimit ?? 40).toString(),
+                  milbRosterLimit: ((currentLeague as any)?.milbRosterLimit ?? 150).toString(),
                 });
               }}
               data-testid="button-edit-league-caps"
@@ -368,10 +371,10 @@ export default function CommissionerSettings() {
       </Card>
 
       <Dialog open={editingLeagueCaps} onOpenChange={setEditingLeagueCaps}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Edit League Caps</DialogTitle>
-            <DialogDescription>Set maximum budget, IP, and PA limits for the league. These caps are used to calculate available capacity for auctions.</DialogDescription>
+            <DialogTitle>Edit League Settings</DialogTitle>
+            <DialogDescription>Set maximum budget, IP, and PA limits for the league, and configure roster size limits per team.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -386,16 +389,33 @@ export default function CommissionerSettings() {
               <Label htmlFor="paCap">PA Cap (Plate Appearances)</Label>
               <Input id="paCap" type="number" value={capsForm.paCap} onChange={(e) => setCapsForm({ ...capsForm, paCap: e.target.value })} placeholder="e.g., 6000" data-testid="input-pa-cap" />
             </div>
+            <Separator />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="mlRosterLimit">ML Roster Limit</Label>
+                <Input id="mlRosterLimit" type="number" value={capsForm.mlRosterLimit} onChange={(e) => setCapsForm({ ...capsForm, mlRosterLimit: e.target.value })} placeholder="40" data-testid="input-ml-roster-limit" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="milbRosterLimit">MiLB Roster Limit</Label>
+                <Input id="milbRosterLimit" type="number" value={capsForm.milbRosterLimit} onChange={(e) => setCapsForm({ ...capsForm, milbRosterLimit: e.target.value })} placeholder="150" data-testid="input-milb-roster-limit" />
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingLeagueCaps(false)}>Cancel</Button>
             <Button
-              onClick={() => updateLeagueCaps.mutate({ budgetCap: capsForm.budgetCap ? parseFloat(capsForm.budgetCap) : null, ipCap: capsForm.ipCap ? parseInt(capsForm.ipCap) : null, paCap: capsForm.paCap ? parseInt(capsForm.paCap) : null })}
+              onClick={() => updateLeagueCaps.mutate({
+                budgetCap: capsForm.budgetCap ? parseFloat(capsForm.budgetCap) : null,
+                ipCap: capsForm.ipCap ? parseInt(capsForm.ipCap) : null,
+                paCap: capsForm.paCap ? parseInt(capsForm.paCap) : null,
+                mlRosterLimit: capsForm.mlRosterLimit ? parseInt(capsForm.mlRosterLimit) : 40,
+                milbRosterLimit: capsForm.milbRosterLimit ? parseInt(capsForm.milbRosterLimit) : 150,
+              })}
               disabled={updateLeagueCaps.isPending}
               data-testid="button-save-caps"
             >
               {updateLeagueCaps.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Save Caps
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>
