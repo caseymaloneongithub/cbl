@@ -237,6 +237,14 @@ export default function CommissionerSettings() {
                 <div className="text-sm text-muted-foreground">PA Cap</div>
                 <div className="text-lg font-semibold">{rosterUsage.caps.paCap !== null ? rosterUsage.caps.paCap.toLocaleString() : "Not Set"}</div>
               </div>
+              <div className="text-center">
+                <div className="text-sm text-muted-foreground">ML Roster Limit</div>
+                <div className="text-lg font-semibold">{(currentLeague as any)?.mlRosterLimit ?? 40}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-sm text-muted-foreground">MiLB Roster Limit</div>
+                <div className="text-lg font-semibold">{(currentLeague as any)?.milbRosterLimit ?? 150}</div>
+              </div>
             </div>
           )}
 
