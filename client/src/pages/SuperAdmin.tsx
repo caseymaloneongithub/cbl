@@ -35,6 +35,114 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+type SyncData = {
+  running: boolean;
+  type: "single" | "range" | null;
+  currentSeason: number | null;
+  totalSeasons: number;
+  completedSeasons: number;
+  playersInCurrentSeason: number;
+  statsInCurrentSeason: number;
+  results: { season: number; playerCount: number; statRows: number }[];
+  startedAt: string | null;
+  completedAt: string | null;
+  error: string | null;
+  phase: string | null;
+};
+
+function SyncProgressPanel({ data }: { data: SyncData | null }) {
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    if (!data?.running) return;
+    const id = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(id);
+  }, [data?.running]);
+
+  if (!data) {
+    return (
+      <div className="rounded-md border p-3" data-testid="sync-progress">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Starting sync...
+        </div>
+      </div>
+    );
+  }
+
+  const elapsed = (() => {
+    if (!data.startedAt) return null;
+    const startMs = new Date(data.startedAt).getTime();
+    const endMs = data.completedAt ? new Date(data.completedAt).getTime() : now;
+    const secs = Math.round((endMs - startMs) / 1000);
+    return secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
+  })();
+
+  const statusLabel = data.running
+    ? data.phase
+      ? `Season ${data.currentSeason}: ${data.phase}`
+      : `Syncing season ${data.currentSeason}...`
+    : data.error
+      ? "Sync failed"
+      : "Sync complete";
+
+  return (
+    <div className="rounded-md border p-3 space-y-2" data-testid="sync-progress">
+      <div className="flex items-center justify-between text-sm">
+        <div className="flex items-center gap-2">
+          {data.running && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+          <span className="font-medium">{statusLabel}</span>
+          {elapsed && <span className="text-xs text-muted-foreground">{elapsed}</span>}
+        </div>
+        {data.type === "range" && (
+          <span className="text-muted-foreground font-medium text-sm">
+            {data.completedSeasons}/{data.totalSeasons} seasons
+            {" "}({data.totalSeasons > 0
+              ? Math.round((data.completedSeasons / data.totalSeasons) * 100)
+              : 0}%)
+          </span>
+        )}
+      </div>
+      {data.type === "range" && (
+        <div className="w-full bg-muted rounded-full h-2.5">
+          <div
+            className="bg-primary rounded-full h-2.5 transition-all duration-500"
+            style={{
+              width: `${data.totalSeasons > 0
+                ? (data.completedSeasons / data.totalSeasons) * 100
+                : 0}%`,
+            }}
+          />
+        </div>
+      )}
+      {data.type === "single" && data.running && (
+        <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
+          <div className="bg-primary rounded-full h-2.5 animate-pulse w-full" />
+        </div>
+      )}
+      {data.running && (data.playersInCurrentSeason > 0 || data.statsInCurrentSeason > 0) && (
+        <div className="text-xs text-muted-foreground">
+          {data.playersInCurrentSeason > 0 && <span>{data.playersInCurrentSeason.toLocaleString()} players</span>}
+          {data.playersInCurrentSeason > 0 && data.statsInCurrentSeason > 0 && <span>, </span>}
+          {data.statsInCurrentSeason > 0 && <span>{data.statsInCurrentSeason.toLocaleString()} stat rows</span>}
+        </div>
+      )}
+      {data.results.length > 0 && (
+        <div className="flex gap-3 text-xs text-muted-foreground flex-wrap">
+          {data.results.map(r => (
+            <span key={r.season} className="bg-muted px-2 py-0.5 rounded">
+              {r.season}: {r.playerCount.toLocaleString()} players, {r.statRows.toLocaleString()} stats
+            </span>
+          ))}
+        </div>
+      )}
+      {data.error && (
+        <div className="text-xs text-destructive">{data.error}</div>
+      )}
+    </div>
+  );
+}
+
 function MlbPlayerSync() {
   const { toast } = useToast();
   const [syncSeason, setSyncSeason] = useState(new Date().getFullYear() - 1);
@@ -130,21 +238,9 @@ function MlbPlayerSync() {
 
   const [syncPolling, setSyncPolling] = useState(false);
 
-  const syncStatusQuery = useQuery<{
-    running: boolean;
-    type: "single" | "range" | null;
-    currentSeason: number | null;
-    totalSeasons: number;
-    completedSeasons: number;
-    playersInCurrentSeason: number;
-    statsInCurrentSeason: number;
-    results: { season: number; playerCount: number; statRows: number }[];
-    startedAt: string | null;
-    completedAt: string | null;
-    error: string | null;
-  }>({
+  const syncStatusQuery = useQuery<SyncData>({
     queryKey: ["/api/admin/mlb-players/sync-status"],
-    refetchInterval: syncPolling ? 2000 : false,
+    refetchInterval: syncPolling ? 1500 : false,
     enabled: syncPolling,
   });
 
@@ -241,78 +337,7 @@ function MlbPlayerSync() {
       </div>
 
       {syncPolling && (
-        <div className="rounded-md border p-3 space-y-2" data-testid="sync-progress">
-          {syncStatusQuery.data ? (
-            <>
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                  {syncStatusQuery.data.running && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
-                  <span className="font-medium">
-                    {syncStatusQuery.data.running
-                      ? syncStatusQuery.data.type === "range"
-                        ? `Syncing season ${syncStatusQuery.data.currentSeason}`
-                        : `Syncing season ${syncStatusQuery.data.currentSeason}...`
-                      : syncStatusQuery.data.error
-                        ? "Sync failed"
-                        : "Sync complete"}
-                  </span>
-                  {syncStatusQuery.data.startedAt && (
-                    <span className="text-xs text-muted-foreground">
-                      {(() => {
-                        const startMs = new Date(syncStatusQuery.data.startedAt!).getTime();
-                        const endMs = syncStatusQuery.data.completedAt ? new Date(syncStatusQuery.data.completedAt).getTime() : Date.now();
-                        const secs = Math.round((endMs - startMs) / 1000);
-                        return secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
-                      })()}
-                    </span>
-                  )}
-                </div>
-                {syncStatusQuery.data.type === "range" && (
-                  <span className="text-muted-foreground font-medium text-sm">
-                    {syncStatusQuery.data.completedSeasons}/{syncStatusQuery.data.totalSeasons} seasons
-                    {" "}({syncStatusQuery.data.totalSeasons > 0
-                      ? Math.round((syncStatusQuery.data.completedSeasons / syncStatusQuery.data.totalSeasons) * 100)
-                      : 0}%)
-                  </span>
-                )}
-              </div>
-              {syncStatusQuery.data.type === "range" && (
-                <div className="w-full bg-muted rounded-full h-2.5">
-                  <div
-                    className="bg-primary rounded-full h-2.5 transition-all duration-500"
-                    style={{
-                      width: `${syncStatusQuery.data.totalSeasons > 0
-                        ? (syncStatusQuery.data.completedSeasons / syncStatusQuery.data.totalSeasons) * 100
-                        : 0}%`,
-                    }}
-                  />
-                </div>
-              )}
-              {syncStatusQuery.data.type === "single" && syncStatusQuery.data.running && (
-                <div className="w-full bg-muted rounded-full h-2.5">
-                  <div className="bg-primary rounded-full h-2.5 animate-pulse w-full" />
-                </div>
-              )}
-              {syncStatusQuery.data.results.length > 0 && (
-                <div className="flex gap-3 text-xs text-muted-foreground flex-wrap">
-                  {syncStatusQuery.data.results.map(r => (
-                    <span key={r.season} className="bg-muted px-2 py-0.5 rounded">
-                      {r.season}: {r.playerCount.toLocaleString()} players, {r.statRows.toLocaleString()} stats
-                    </span>
-                  ))}
-                </div>
-              )}
-              {syncStatusQuery.data.error && (
-                <div className="text-xs text-destructive">{syncStatusQuery.data.error}</div>
-              )}
-            </>
-          ) : (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Starting sync...
-            </div>
-          )}
-        </div>
+        <SyncProgressPanel data={syncStatusQuery.data ?? null} />
       )}
 
       {seasonCounts.length > 0 && (

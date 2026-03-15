@@ -1038,10 +1038,16 @@ export async function registerRoutes(
   }
 
   async function runSyncSeason(season: number): Promise<{ playerCount: number; statRows: number }> {
+    syncProgress.phase = "Fetching from MLB API...";
     const players = await fetchAllAffiliatedPlayers(season);
     const playerData = mapPlayerData(players);
+    syncProgress.phase = `Upserting ${playerData.length.toLocaleString()} players...`;
     const playerCount = await storage.upsertMlbPlayers(playerData);
+    syncProgress.playersInCurrentSeason = playerCount;
+    syncProgress.phase = "Writing stat rows...";
     const statRows = await storage.upsertMlbPlayerStatsFromSync(playerData);
+    syncProgress.statsInCurrentSeason = statRows;
+    syncProgress.phase = null;
     console.log(`[MLB Sync] Season ${season}: ${playerCount} players, ${statRows} stat rows`);
     return { playerCount, statRows };
   }
@@ -1074,6 +1080,7 @@ export async function registerRoutes(
       syncProgress.startedAt = new Date().toISOString();
       syncProgress.completedAt = null;
       syncProgress.error = null;
+      syncProgress.phase = null;
 
       res.json({ message: `Sync started for season ${syncSeason}. Poll GET /api/admin/mlb-players/sync-status for progress.` });
 
@@ -1091,12 +1098,14 @@ export async function registerRoutes(
           syncProgress.error = err?.message || String(err);
         } finally {
           syncProgress.running = false;
+          syncProgress.phase = null;
           syncProgress.completedAt = new Date().toISOString();
         }
       })();
     } catch (error: any) {
       console.error("Error starting MLB sync:", error);
       syncProgress.running = false;
+      syncProgress.phase = null;
       res.status(500).json({ message: error.message || "Failed to start sync" });
     }
   });
@@ -1134,6 +1143,7 @@ export async function registerRoutes(
       syncProgress.startedAt = new Date().toISOString();
       syncProgress.completedAt = null;
       syncProgress.error = null;
+      syncProgress.phase = null;
 
       res.json({ message: `Range sync started for ${start}–${end} (${totalSeasons} seasons). Poll GET /api/admin/mlb-players/sync-status for progress.` });
 
@@ -1157,12 +1167,14 @@ export async function registerRoutes(
           syncProgress.error = err?.message || String(err);
         } finally {
           syncProgress.running = false;
+          syncProgress.phase = null;
           syncProgress.completedAt = new Date().toISOString();
         }
       })();
     } catch (error: any) {
       console.error("Error starting range sync:", error);
       syncProgress.running = false;
+      syncProgress.phase = null;
       res.status(500).json({ message: error.message || "Failed to start range sync" });
     }
   });
@@ -2089,10 +2101,11 @@ export async function registerRoutes(
     startedAt: string | null;
     completedAt: string | null;
     error: string | null;
+    phase: string | null;
   } = {
     running: false, type: null, currentSeason: null, totalSeasons: 0,
     completedSeasons: 0, playersInCurrentSeason: 0, statsInCurrentSeason: 0,
-    results: [], startedAt: null, completedAt: null, error: null,
+    results: [], startedAt: null, completedAt: null, error: null, phase: null,
   };
 
   app.get("/api/admin/mlb-players/sync-status", isAuthenticated, async (req: any, res) => {
