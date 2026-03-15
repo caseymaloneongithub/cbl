@@ -320,17 +320,16 @@ export interface IStorage {
   
   // MLB Players reference database
   upsertMlbPlayers(players: InsertMlbPlayer[]): Promise<number>;
-  insertMlbPlayersIfNew(players: InsertMlbPlayer[]): Promise<number>;
   upsertMlbPlayerStats(stats: InsertMlbPlayerStat[]): Promise<number>;
   upsertMlbPlayerStatsFromSync(players: InsertMlbPlayer[]): Promise<number>;
   getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number; currentTeamName?: string; parentOrgName?: string; season?: number; sortBy?: string; sortDir?: string; statsSeason?: number }): Promise<(MlbPlayer & { stats: MlbPlayerStat | null })[]>;
   getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; positionTypeNot?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; isTwoWayQualified?: boolean; currentTeamName?: string; parentOrgName?: string; season?: number }): Promise<number>;
   getMlbPlayerTeams(season?: number, sportLevel?: string): Promise<string[]>;
   getMlbPlayerByMlbId(mlbId: number): Promise<MlbPlayer | undefined>;
-  getMlbPlayersByMlbIds(mlbIds: number[], season: number): Promise<MlbPlayer[]>;
+  getMlbPlayersByMlbIds(mlbIds: number[], season?: number): Promise<MlbPlayer[]>;
   getMlbPlayersByMlbIdsWithSeasonFallback(mlbIds: number[], season: number): Promise<MlbPlayer[]>;
   updateMlbPlayerMiddleNames(updates: Array<{ mlbId: number; middleName: string }>): Promise<number>;
-  clearMlbPlayers(season?: number): Promise<number>;
+  clearMlbPlayers(): Promise<number>;
   
   // League Roster Assignments
   getLeagueRosterAssignments(leagueId: number, season?: number, filters?: { userId?: string; rosterType?: string }): Promise<(LeagueRosterAssignment & { player: MlbPlayer })[]>;
@@ -3085,52 +3084,50 @@ export class DatabaseStorage implements IStorage {
         .onConflictDoUpdate({
           target: mlbPlayers.mlbId,
           set: {
-            fullName: sql`EXCLUDED.full_name`,
-            // Keep existing expanded name if current sync payload omits it.
-            fullFmlName: sql`COALESCE(NULLIF(TRIM(EXCLUDED.full_fml_name), ''), ${mlbPlayers.fullFmlName})`,
-            firstName: sql`EXCLUDED.first_name`,
-            // Preserve commissioner-entered middle names across syncs.
+            fullName: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.full_name ELSE ${mlbPlayers.fullName} END`,
+            fullFmlName: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN COALESCE(NULLIF(TRIM(EXCLUDED.full_fml_name), ''), ${mlbPlayers.fullFmlName}) ELSE ${mlbPlayers.fullFmlName} END`,
+            firstName: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.first_name ELSE ${mlbPlayers.firstName} END`,
             middleName: sql`COALESCE(NULLIF(TRIM(${mlbPlayers.middleName}), ''), EXCLUDED.middle_name)`,
-            lastName: sql`EXCLUDED.last_name`,
-            primaryPosition: sql`EXCLUDED.primary_position`,
-            positionName: sql`EXCLUDED.position_name`,
-            positionType: sql`EXCLUDED.position_type`,
-            batSide: sql`EXCLUDED.bat_side`,
-            throwHand: sql`EXCLUDED.throw_hand`,
-            currentTeamId: sql`EXCLUDED.current_team_id`,
-            currentTeamName: sql`EXCLUDED.current_team_name`,
-            parentOrgId: sql`EXCLUDED.parent_org_id`,
-            parentOrgName: sql`EXCLUDED.parent_org_name`,
-            sportId: sql`EXCLUDED.sport_id`,
-            sportLevel: sql`EXCLUDED.sport_level`,
-            birthDate: sql`EXCLUDED.birth_date`,
-            age: sql`EXCLUDED.age`,
-            isActive: sql`EXCLUDED.is_active`,
-            hadHittingStats: sql`EXCLUDED.had_hitting_stats`,
-            hadPitchingStats: sql`EXCLUDED.had_pitching_stats`,
-            hittingAtBats: sql`EXCLUDED.hitting_at_bats`,
-            hittingWalks: sql`EXCLUDED.hitting_walks`,
-            hittingSingles: sql`EXCLUDED.hitting_singles`,
-            hittingDoubles: sql`EXCLUDED.hitting_doubles`,
-            hittingTriples: sql`EXCLUDED.hitting_triples`,
-            hittingHomeRuns: sql`EXCLUDED.hitting_home_runs`,
-            hittingAvg: sql`EXCLUDED.hitting_avg`,
-            hittingObp: sql`EXCLUDED.hitting_obp`,
-            hittingSlg: sql`EXCLUDED.hitting_slg`,
-            hittingOps: sql`EXCLUDED.hitting_ops`,
-            pitchingGames: sql`EXCLUDED.pitching_games`,
-            pitchingGamesStarted: sql`EXCLUDED.pitching_games_started`,
-            pitchingStrikeouts: sql`EXCLUDED.pitching_strikeouts`,
-            pitchingWalks: sql`EXCLUDED.pitching_walks`,
-            pitchingHits: sql`EXCLUDED.pitching_hits`,
-            pitchingHomeRuns: sql`EXCLUDED.pitching_home_runs`,
-            pitchingEra: sql`EXCLUDED.pitching_era`,
-            pitchingInningsPitched: sql`EXCLUDED.pitching_innings_pitched`,
-            hittingGamesStarted: sql`EXCLUDED.hitting_games_started`,
-            hittingPlateAppearances: sql`EXCLUDED.hitting_plate_appearances`,
-            isTwoWayQualified: sql`EXCLUDED.is_two_way_qualified`,
-            statsSeason: sql`EXCLUDED.stats_season`,
-            season: sql`EXCLUDED.season`,
+            lastName: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.last_name ELSE ${mlbPlayers.lastName} END`,
+            primaryPosition: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.primary_position ELSE ${mlbPlayers.primaryPosition} END`,
+            positionName: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.position_name ELSE ${mlbPlayers.positionName} END`,
+            positionType: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.position_type ELSE ${mlbPlayers.positionType} END`,
+            batSide: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.bat_side ELSE ${mlbPlayers.batSide} END`,
+            throwHand: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.throw_hand ELSE ${mlbPlayers.throwHand} END`,
+            currentTeamId: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.current_team_id ELSE ${mlbPlayers.currentTeamId} END`,
+            currentTeamName: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.current_team_name ELSE ${mlbPlayers.currentTeamName} END`,
+            parentOrgId: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.parent_org_id ELSE ${mlbPlayers.parentOrgId} END`,
+            parentOrgName: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.parent_org_name ELSE ${mlbPlayers.parentOrgName} END`,
+            sportId: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.sport_id ELSE ${mlbPlayers.sportId} END`,
+            sportLevel: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.sport_level ELSE ${mlbPlayers.sportLevel} END`,
+            birthDate: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.birth_date ELSE ${mlbPlayers.birthDate} END`,
+            age: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.age ELSE ${mlbPlayers.age} END`,
+            isActive: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.is_active ELSE ${mlbPlayers.isActive} END`,
+            hadHittingStats: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.had_hitting_stats ELSE ${mlbPlayers.hadHittingStats} END`,
+            hadPitchingStats: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.had_pitching_stats ELSE ${mlbPlayers.hadPitchingStats} END`,
+            hittingAtBats: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.hitting_at_bats ELSE ${mlbPlayers.hittingAtBats} END`,
+            hittingWalks: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.hitting_walks ELSE ${mlbPlayers.hittingWalks} END`,
+            hittingSingles: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.hitting_singles ELSE ${mlbPlayers.hittingSingles} END`,
+            hittingDoubles: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.hitting_doubles ELSE ${mlbPlayers.hittingDoubles} END`,
+            hittingTriples: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.hitting_triples ELSE ${mlbPlayers.hittingTriples} END`,
+            hittingHomeRuns: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.hitting_home_runs ELSE ${mlbPlayers.hittingHomeRuns} END`,
+            hittingAvg: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.hitting_avg ELSE ${mlbPlayers.hittingAvg} END`,
+            hittingObp: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.hitting_obp ELSE ${mlbPlayers.hittingObp} END`,
+            hittingSlg: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.hitting_slg ELSE ${mlbPlayers.hittingSlg} END`,
+            hittingOps: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.hitting_ops ELSE ${mlbPlayers.hittingOps} END`,
+            pitchingGames: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.pitching_games ELSE ${mlbPlayers.pitchingGames} END`,
+            pitchingGamesStarted: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.pitching_games_started ELSE ${mlbPlayers.pitchingGamesStarted} END`,
+            pitchingStrikeouts: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.pitching_strikeouts ELSE ${mlbPlayers.pitchingStrikeouts} END`,
+            pitchingWalks: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.pitching_walks ELSE ${mlbPlayers.pitchingWalks} END`,
+            pitchingHits: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.pitching_hits ELSE ${mlbPlayers.pitchingHits} END`,
+            pitchingHomeRuns: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.pitching_home_runs ELSE ${mlbPlayers.pitchingHomeRuns} END`,
+            pitchingEra: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.pitching_era ELSE ${mlbPlayers.pitchingEra} END`,
+            pitchingInningsPitched: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.pitching_innings_pitched ELSE ${mlbPlayers.pitchingInningsPitched} END`,
+            hittingGamesStarted: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.hitting_games_started ELSE ${mlbPlayers.hittingGamesStarted} END`,
+            hittingPlateAppearances: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.hitting_plate_appearances ELSE ${mlbPlayers.hittingPlateAppearances} END`,
+            isTwoWayQualified: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.is_two_way_qualified ELSE ${mlbPlayers.isTwoWayQualified} END`,
+            statsSeason: sql`CASE WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.season}, 0) THEN EXCLUDED.stats_season ELSE ${mlbPlayers.statsSeason} END`,
+            season: sql`GREATEST(COALESCE(${mlbPlayers.season}, 0), EXCLUDED.season)`,
             lastPlayedSeason: sql`CASE
               WHEN COALESCE(EXCLUDED.hitting_plate_appearances, 0) > 0
                 OR COALESCE(EXCLUDED.pitching_games, 0) > 0
@@ -3160,56 +3157,6 @@ export class DatabaseStorage implements IStorage {
     }
     
     return totalUpserted;
-  }
-
-  async insertMlbPlayersIfNew(players: InsertMlbPlayer[]): Promise<number> {
-    if (players.length === 0) return 0;
-
-    const BATCH_SIZE = 100;
-    let totalInserted = 0;
-
-    for (let i = 0; i < players.length; i += BATCH_SIZE) {
-      const batch = players.slice(i, i + BATCH_SIZE).map(p => {
-        const hasActivity = (p.hittingPlateAppearances ?? 0) > 0 || (p.pitchingGames ?? 0) > 0 ||
-          (p.pitchingInningsPitched ?? 0) > 0 || p.hadHittingStats || p.hadPitchingStats;
-        const enriched = { ...p };
-        if (enriched.lastPlayedSeason == null && hasActivity && p.season) enriched.lastPlayedSeason = p.season;
-        if (enriched.lastPlayedLevel == null && hasActivity && p.sportLevel) enriched.lastPlayedLevel = p.sportLevel;
-        return enriched;
-      });
-      await db.insert(mlbPlayers)
-        .values(batch)
-        .onConflictDoUpdate({
-          target: mlbPlayers.mlbId,
-          set: {
-            lastPlayedSeason: sql`CASE
-              WHEN COALESCE(EXCLUDED.hitting_plate_appearances, 0) > 0
-                OR COALESCE(EXCLUDED.pitching_games, 0) > 0
-                OR COALESCE(EXCLUDED.pitching_innings_pitched, 0) > 0
-                OR COALESCE(EXCLUDED.had_hitting_stats, false) = true
-                OR COALESCE(EXCLUDED.had_pitching_stats, false) = true
-              THEN GREATEST(COALESCE(${mlbPlayers.lastPlayedSeason}, 0), EXCLUDED.season)
-              ELSE ${mlbPlayers.lastPlayedSeason}
-            END`,
-            lastPlayedLevel: sql`CASE
-              WHEN COALESCE(EXCLUDED.hitting_plate_appearances, 0) > 0
-                OR COALESCE(EXCLUDED.pitching_games, 0) > 0
-                OR COALESCE(EXCLUDED.pitching_innings_pitched, 0) > 0
-                OR COALESCE(EXCLUDED.had_hitting_stats, false) = true
-                OR COALESCE(EXCLUDED.had_pitching_stats, false) = true
-              THEN CASE
-                WHEN EXCLUDED.season >= COALESCE(${mlbPlayers.lastPlayedSeason}, 0)
-                  THEN COALESCE(EXCLUDED.last_played_level, EXCLUDED.sport_level)
-                  ELSE COALESCE(${mlbPlayers.lastPlayedLevel}, EXCLUDED.last_played_level, EXCLUDED.sport_level)
-                END
-              ELSE ${mlbPlayers.lastPlayedLevel}
-            END`,
-          },
-        });
-      totalInserted += batch.length;
-    }
-
-    return totalInserted;
   }
 
   async upsertMlbPlayerStats(stats: InsertMlbPlayerStat[]): Promise<number> {
@@ -3335,10 +3282,6 @@ export class DatabaseStorage implements IStorage {
     if (filters?.parentOrgName) {
       conditions.push(eq(mlbPlayers.parentOrgName, filters.parentOrgName));
     }
-    if (filters?.season) {
-      conditions.push(eq(mlbPlayers.season, filters.season));
-    }
-
     const statsSeasonVal = filters?.statsSeason ?? (filters?.season ? filters.season : new Date().getFullYear() - 1);
 
     const query = db.select()
@@ -3411,9 +3354,6 @@ export class DatabaseStorage implements IStorage {
     if (filters?.parentOrgName) {
       conditions.push(eq(mlbPlayers.parentOrgName, filters.parentOrgName));
     }
-    if (filters?.season) {
-      conditions.push(eq(mlbPlayers.season, filters.season));
-    }
     
     const query = db.select({ count: sql<number>`COUNT(*)` }).from(mlbPlayers);
     if (conditions.length > 0) {
@@ -3428,7 +3368,6 @@ export class DatabaseStorage implements IStorage {
     const useParentOrg = sportLevel === 'minors';
     const teamCol = useParentOrg ? mlbPlayers.parentOrgName : mlbPlayers.currentTeamName;
     const conditions = [sql`${teamCol} IS NOT NULL`];
-    if (season) conditions.push(eq(mlbPlayers.season, season));
     if (sportLevel) {
       if (sportLevel === 'MLB') {
         conditions.push(eq(mlbPlayers.sportLevel, 'MLB'));
@@ -3450,32 +3389,18 @@ export class DatabaseStorage implements IStorage {
     return player;
   }
 
-  async getMlbPlayersByMlbIds(mlbIds: number[], season: number): Promise<MlbPlayer[]> {
+  async getMlbPlayersByMlbIds(mlbIds: number[], season?: number): Promise<MlbPlayer[]> {
     if (mlbIds.length === 0) return [];
-    return db.select().from(mlbPlayers).where(and(
+    return db.select().from(mlbPlayers).where(
       inArray(mlbPlayers.mlbId, mlbIds),
-      eq(mlbPlayers.season, season),
-    ));
+    );
   }
 
   async getMlbPlayersByMlbIdsWithSeasonFallback(mlbIds: number[], season: number): Promise<MlbPlayer[]> {
     if (mlbIds.length === 0) return [];
-    const rows = await db
-      .select()
-      .from(mlbPlayers)
-      .where(and(
-        inArray(mlbPlayers.mlbId, mlbIds),
-        sql`${mlbPlayers.season} <= ${season}`,
-      ))
-      .orderBy(desc(mlbPlayers.season));
-
-    const picked = new Map<number, MlbPlayer>();
-    for (const row of rows) {
-      if (!picked.has(row.mlbId)) {
-        picked.set(row.mlbId, row);
-      }
-    }
-    return Array.from(picked.values());
+    return db.select().from(mlbPlayers).where(
+      inArray(mlbPlayers.mlbId, mlbIds),
+    );
   }
 
   async updateMlbPlayerMiddleNames(updates: Array<{ mlbId: number; middleName: string }>): Promise<number> {
@@ -3493,11 +3418,7 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async clearMlbPlayers(season?: number): Promise<number> {
-    if (season) {
-      const result = await db.delete(mlbPlayers).where(eq(mlbPlayers.season, season));
-      return result.rowCount || 0;
-    }
+  async clearMlbPlayers(): Promise<number> {
     const result = await db.delete(mlbPlayers);
     return result.rowCount || 0;
   }
@@ -3639,9 +3560,6 @@ export class DatabaseStorage implements IStorage {
     const conditions: any[] = [
       sql`NOT EXISTS (SELECT 1 FROM league_roster_assignments lra WHERE lra.mlb_player_id = ${mlbPlayers.id} AND lra.league_id = ${leagueId})`,
     ];
-    if (season) {
-      conditions.push(eq(mlbPlayers.season, season));
-    }
     if (filters?.search) {
       conditions.push(sql`LOWER(unaccent(${mlbPlayers.fullName})) LIKE LOWER(unaccent(${'%' + filters.search + '%'}))`);
     }
@@ -3669,9 +3587,6 @@ export class DatabaseStorage implements IStorage {
     const conditions: any[] = [
       sql`NOT EXISTS (SELECT 1 FROM league_roster_assignments lra WHERE lra.mlb_player_id = ${mlbPlayers.id} AND lra.league_id = ${leagueId})`,
     ];
-    if (season) {
-      conditions.push(eq(mlbPlayers.season, season));
-    }
     if (filters?.search) {
       conditions.push(sql`LOWER(unaccent(${mlbPlayers.fullName})) LIKE LOWER(unaccent(${'%' + filters.search + '%'}))`);
     }

@@ -55,15 +55,14 @@ function MlbPlayerSync() {
   
   const { data: status, isLoading: loadingStatus } = useQuery<{
     total: number;
-    season: number;
     twoWayQualified: number;
     byLevel: Record<string, { total: number; hitters: number; pitchers: number; twoWayQualified: number }>;
     seasonCounts: { season: number; count: number }[];
-    statSeasonCounts: { season: number; count: number }[];
+    metadataSeason: number | null;
   }>({
-    queryKey: ["/api/admin/mlb-players/status", String(syncSeason)],
+    queryKey: ["/api/admin/mlb-players/status"],
     queryFn: async () => {
-      const res = await fetch(`/api/admin/mlb-players/status?season=${syncSeason}`, { credentials: "include" });
+      const res = await fetch(`/api/admin/mlb-players/status`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch MLB player status");
       const raw = await res.json();
       const levels = ["MLB", "AAA", "AA", "High-A", "Single-A", "Rookie"];
@@ -79,11 +78,10 @@ function MlbPlayerSync() {
       }
       return {
         total: toCount(raw?.total),
-        season: toCount(raw?.season),
         twoWayQualified: toCount(raw?.twoWayQualified),
         byLevel,
         seasonCounts: Array.isArray(raw?.seasonCounts) ? raw.seasonCounts : [],
-        statSeasonCounts: Array.isArray(raw?.statSeasonCounts) ? raw.statSeasonCounts : [],
+        metadataSeason: raw?.metadataSeason ?? null,
       };
     },
   });
@@ -281,37 +279,36 @@ function MlbPlayerSync() {
 
       {seasonCounts.length > 0 && (
         <div className="space-y-2">
-          <div className="text-xs font-medium text-muted-foreground">Player Directory by Season</div>
+          <div className="text-xs font-medium text-muted-foreground">
+            Synced Stats by Season
+            {status?.metadataSeason != null && (
+              <span className="ml-2 text-[10px] opacity-70">(player metadata based on {status.metadataSeason} directory)</span>
+            )}
+          </div>
           <div className="flex flex-wrap gap-2">
-            {seasonCounts.map((sc: { season: number; count: number }) => {
-              const statCount = (status?.statSeasonCounts || []).find((s: { season: number }) => s.season === sc.season)?.count;
-              return (
-                <Badge
-                  key={sc.season}
-                  variant={sc.season === syncSeason ? "default" : "secondary"}
-                  className="cursor-pointer group gap-1"
-                  data-testid={`badge-season-${sc.season}`}
-                  onClick={() => setSyncSeason(sc.season)}
+            {seasonCounts.map((sc: { season: number; count: number }) => (
+              <Badge
+                key={sc.season}
+                variant={sc.season === syncSeason ? "default" : "secondary"}
+                className="cursor-pointer group gap-1"
+                data-testid={`badge-season-${sc.season}`}
+                onClick={() => setSyncSeason(sc.season)}
+              >
+                {sc.season}: {sc.count.toLocaleString()} stats
+                <button
+                  className="ml-1 opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (window.confirm(`Delete all ${sc.count.toLocaleString()} stat rows for season ${sc.season}?`)) {
+                      deleteSeasonMutation.mutate(sc.season);
+                    }
+                  }}
+                  data-testid={`button-delete-season-${sc.season}`}
                 >
-                  {sc.season}: {sc.count.toLocaleString()}
-                  {statCount != null && statCount !== sc.count && (
-                    <span className="text-[10px] opacity-70">({statCount.toLocaleString()} stats)</span>
-                  )}
-                  <button
-                    className="ml-1 opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (window.confirm(`Delete all ${sc.count.toLocaleString()} players and stats for season ${sc.season}?`)) {
-                        deleteSeasonMutation.mutate(sc.season);
-                      }
-                    }}
-                    data-testid={`button-delete-season-${sc.season}`}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                </Badge>
-              );
-            })}
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </Badge>
+            ))}
           </div>
         </div>
       )}

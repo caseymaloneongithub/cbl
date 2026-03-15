@@ -1037,16 +1037,10 @@ export async function registerRoutes(
     }));
   }
 
-  async function runSyncSeason(season: number, isLastInRange: boolean): Promise<{ playerCount: number; statRows: number }> {
+  async function runSyncSeason(season: number): Promise<{ playerCount: number; statRows: number }> {
     const players = await fetchAllAffiliatedPlayers(season);
     const playerData = mapPlayerData(players);
-    let playerCount: number;
-    if (isLastInRange) {
-      playerCount = await storage.upsertMlbPlayers(playerData);
-    } else {
-      playerCount = await storage.insertMlbPlayersIfNew(playerData);
-      console.log(`[MLB Sync] Season ${season}: added new players only (no metadata overwrite)`);
-    }
+    const playerCount = await storage.upsertMlbPlayers(playerData);
     const statRows = await storage.upsertMlbPlayerStatsFromSync(playerData);
     console.log(`[MLB Sync] Season ${season}: ${playerCount} players, ${statRows} stat rows`);
     return { playerCount, statRows };
@@ -1086,7 +1080,7 @@ export async function registerRoutes(
       (async () => {
         try {
           console.log(`[MLB Sync] Starting background sync for season ${syncSeason}`);
-          const result = await runSyncSeason(syncSeason, true);
+          const result = await runSyncSeason(syncSeason);
           syncProgress.playersInCurrentSeason = result.playerCount;
           syncProgress.statsInCurrentSeason = result.statRows;
           syncProgress.results.push({ season: syncSeason, playerCount: result.playerCount, statRows: result.statRows });
@@ -1150,8 +1144,7 @@ export async function registerRoutes(
             syncProgress.currentSeason = season;
             syncProgress.playersInCurrentSeason = 0;
             syncProgress.statsInCurrentSeason = 0;
-            const isLast = season === end;
-            const result = await runSyncSeason(season, isLast);
+            const result = await runSyncSeason(season);
             syncProgress.playersInCurrentSeason = result.playerCount;
             syncProgress.statsInCurrentSeason = result.statRows;
             syncProgress.results.push({ season, playerCount: result.playerCount, statRows: result.statRows });
@@ -1183,49 +1176,40 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Super Admin access required" });
       }
 
-      const season = req.query.season ? parseInt(String(req.query.season), 10) : undefined;
-      if (req.query.season && Number.isNaN(season)) {
-        return res.status(400).json({ message: "Invalid season" });
-      }
-
       const levels = ["MLB", "AAA", "AA", "High-A", "Single-A", "Rookie"];
-      const total = await storage.getMlbPlayerCount({ season });
+      const total = await storage.getMlbPlayerCount({});
 
       const byLevel: Record<string, { total: number; hitters: number; pitchers: number; twoWayQualified: number }> = {};
-      const twoWayQualified = await storage.getMlbPlayerCount({ isTwoWayQualified: true, season });
+      const twoWayQualified = await storage.getMlbPlayerCount({ isTwoWayQualified: true });
       for (const level of levels) {
-        const levelTotal = await storage.getMlbPlayerCount({ sportLevel: level, season });
+        const levelTotal = await storage.getMlbPlayerCount({ sportLevel: level });
         const hitters = await storage.getMlbPlayerCount({
           sportLevel: level,
           positionTypeNot: "Pitcher",
           isTwoWayQualified: false,
-          season,
         });
         const pitchers = await storage.getMlbPlayerCount({
           sportLevel: level,
           positionType: "Pitcher",
           isTwoWayQualified: false,
-          season,
         });
         const levelTwoWayQualified = await storage.getMlbPlayerCount({
           sportLevel: level,
           isTwoWayQualified: true,
-          season,
         });
         byLevel[level] = { total: levelTotal, hitters, pitchers, twoWayQualified: levelTwoWayQualified };
       }
 
       const seasonCounts = await db.select({
-        season: mlbPlayers.season,
-        count: sql<number>`COUNT(*)::int`,
-      }).from(mlbPlayers).groupBy(mlbPlayers.season).orderBy(mlbPlayers.season);
-
-      const statSeasonCounts = await db.select({
         season: mlbPlayerStats.season,
         count: sql<number>`COUNT(*)::int`,
       }).from(mlbPlayerStats).groupBy(mlbPlayerStats.season).orderBy(mlbPlayerStats.season);
 
-      res.json({ total, byLevel, twoWayQualified, season, seasonCounts, statSeasonCounts });
+      const metadataSeason = await db.select({
+        maxSeason: sql<number>`MAX(${mlbPlayers.season})::int`,
+      }).from(mlbPlayers);
+
+      res.json({ total, byLevel, twoWayQualified, seasonCounts, metadataSeason: metadataSeason[0]?.maxSeason ?? null });
     } catch (error: any) {
       console.error("Error fetching MLB player status:", error);
       res.status(500).json({ message: "Failed to fetch MLB player status" });
@@ -1244,9 +1228,8 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid season" });
       }
       const deletedStats = await db.delete(mlbPlayerStats).where(eq(mlbPlayerStats.season, season));
-      const deletedPlayers = await db.delete(mlbPlayers).where(eq(mlbPlayers.season, season));
-      console.log(`[MLB Sync] Deleted season ${season} data`);
-      res.json({ message: `Deleted season ${season} data` });
+      console.log(`[MLB Sync] Deleted stats for season ${season}`);
+      res.json({ message: `Deleted stats for season ${season}` });
     } catch (error: any) {
       console.error("Error deleting season data:", error);
       res.status(500).json({ message: error.message || "Failed to delete season data" });
@@ -1448,7 +1431,7 @@ export async function registerRoutes(
 
   app.get("/api/mlb-players/seasons", isAuthenticated, async (req: any, res) => {
     try {
-      const rows = await db.selectDistinct({ season: mlbPlayers.season }).from(mlbPlayers).orderBy(desc(mlbPlayers.season));
+      const rows = await db.selectDistinct({ season: mlbPlayerStats.season }).from(mlbPlayerStats).orderBy(desc(mlbPlayerStats.season));
       res.json(rows.map(r => r.season));
     } catch (error: any) {
       console.error("Error fetching MLB seasons:", error);
