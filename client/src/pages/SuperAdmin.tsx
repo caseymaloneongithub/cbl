@@ -153,12 +153,13 @@ function MlbPlayerSync() {
   }, [syncStatusQuery.data, syncPolling]);
 
   const currentYear = new Date().getFullYear();
-  const seasonOptions = Array.from({ length: currentYear - 2018 }, (_, i) => currentYear - i);
+  const maxSeason = currentYear - 1;
+  const seasonOptions = Array.from({ length: maxSeason - 2018 }, (_, i) => maxSeason - i);
   const isSyncing = syncMutation.isPending || syncRangeMutation.isPending || syncPolling;
 
   const seasonCounts: { season: number; count: number }[] = status?.seasonCounts || [];
   const syncedSeasons = new Set(seasonCounts.map((s: { season: number }) => s.season));
-  const missingSeasonsFrom2019 = Array.from({ length: currentYear - 2019 + 1 }, (_, i) => 2019 + i)
+  const missingSeasonsFrom2019 = Array.from({ length: maxSeason - 2019 + 1 }, (_, i) => 2019 + i)
     .filter(yr => !syncedSeasons.has(yr));
 
   return (
@@ -199,7 +200,7 @@ function MlbPlayerSync() {
         {missingSeasonsFrom2019.length > 0 && (
           <Button
             variant="outline"
-            onClick={() => syncRangeMutation.mutate({ startSeason: 2019, endSeason: currentYear })}
+            onClick={() => syncRangeMutation.mutate({ startSeason: 2019, endSeason: maxSeason })}
             disabled={isSyncing}
             data-testid="button-sync-mlb-range"
           >
@@ -211,7 +212,7 @@ function MlbPlayerSync() {
             ) : (
               <>
                 <Database className="mr-2 h-4 w-4" />
-                Sync All (2019–{currentYear})
+                Sync All (2019–{maxSeason})
               </>
             )}
           </Button>
