@@ -126,9 +126,29 @@ function MlbPlayerSync() {
     },
   });
 
+  const backfillMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/mlb-players/backfill-last-played");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Backfill Complete",
+        description: data.message,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Backfill Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const currentYear = new Date().getFullYear();
   const seasonOptions = Array.from({ length: currentYear - 2018 }, (_, i) => currentYear - i);
-  const isSyncing = syncMutation.isPending || syncRangeMutation.isPending;
+  const isSyncing = syncMutation.isPending || syncRangeMutation.isPending || backfillMutation.isPending;
 
   const seasonCounts: { season: number; count: number }[] = status?.seasonCounts || [];
   const syncedSeasons = new Set(seasonCounts.map((s: { season: number }) => s.season));
@@ -190,6 +210,24 @@ function MlbPlayerSync() {
             )}
           </Button>
         )}
+        <Button
+          variant="outline"
+          onClick={() => backfillMutation.mutate()}
+          disabled={isSyncing}
+          data-testid="button-backfill-last-played"
+        >
+          {backfillMutation.isPending ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Backfilling...
+            </>
+          ) : (
+            <>
+              <Database className="mr-2 h-4 w-4" />
+              Backfill Last Played
+            </>
+          )}
+        </Button>
       </div>
 
       {seasonCounts.length > 0 && (
