@@ -1970,7 +1970,7 @@ export default function Commissioner() {
 
       {/* League Caps Dialog */}
       <Dialog open={editingLeagueCaps} onOpenChange={setEditingLeagueCaps}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit League Settings</DialogTitle>
             <DialogDescription>
