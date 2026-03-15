@@ -345,7 +345,7 @@ function MlbPlayerSync() {
           <div className="text-xs font-medium text-muted-foreground">
             Synced Stats by Season
             {status?.metadataSeason != null && (
-              <span className="ml-2 text-[10px] opacity-70">(player metadata based on {status.metadataSeason} directory)</span>
+              <span className="ml-2 text-[10px] opacity-70">(player names/teams reflect {status.metadataSeason} rosters)</span>
             )}
           </div>
           <div className="flex flex-wrap gap-2">
