@@ -70,8 +70,11 @@ function CommissionerRoute({ component: Component }: { component: React.Componen
   const { user, isAuthenticated } = useAuth();
   const { hasAnyCommissionerRole, isLoadingLeagues } = useLeague();
   
-  // Redirect to landing if not authenticated
   if (!isAuthenticated) {
+    const currentPath = window.location.pathname;
+    if (currentPath && currentPath !== "/" && currentPath !== "/home") {
+      sessionStorage.setItem("returnTo", currentPath);
+    }
     return <Redirect to="/" />;
   }
   
@@ -94,8 +97,11 @@ function CommissionerRoute({ component: Component }: { component: React.Componen
 function SuperAdminRoute({ component: Component }: { component: React.ComponentType<any> }) {
   const { user, isAuthenticated } = useAuth();
   
-  // Redirect to landing if not authenticated
   if (!isAuthenticated) {
+    const currentPath = window.location.pathname;
+    if (currentPath && currentPath !== "/" && currentPath !== "/home") {
+      sessionStorage.setItem("returnTo", currentPath);
+    }
     return <Redirect to="/" />;
   }
   
@@ -110,6 +116,10 @@ function ProtectedRoute({ component: Component, componentProps }: { component: R
   const { isAuthenticated } = useAuth();
   
   if (!isAuthenticated) {
+    const currentPath = window.location.pathname;
+    if (currentPath && currentPath !== "/" && currentPath !== "/home") {
+      sessionStorage.setItem("returnTo", currentPath);
+    }
     return <Redirect to="/" />;
   }
   

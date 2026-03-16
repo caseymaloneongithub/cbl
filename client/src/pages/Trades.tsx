@@ -178,8 +178,8 @@ export default function Trades({ highlightTradeId }: { highlightTradeId?: number
                         <TableBody>
                           {proposerSends.map(item => (
                             <TableRow key={item.id}>
-                              <TableCell className="py-1.5 font-medium">{item.player.name}</TableCell>
-                              <TableCell className="py-1.5 text-muted-foreground">{item.player.position || "-"}</TableCell>
+                              <TableCell className="py-1.5 font-medium">{item.player.fullName}</TableCell>
+                              <TableCell className="py-1.5 text-muted-foreground">{item.player.primaryPosition || "-"}</TableCell>
                               <TableCell className="py-1.5">
                                 <Badge variant={item.rosterType === "mlb" ? "default" : "secondary"} className="text-xs">{item.rosterType.toUpperCase()}</Badge>
                               </TableCell>
@@ -194,8 +194,8 @@ export default function Trades({ highlightTradeId }: { highlightTradeId?: number
                         <TableBody>
                           {partnerSends.map(item => (
                             <TableRow key={item.id}>
-                              <TableCell className="py-1.5 font-medium">{item.player.name}</TableCell>
-                              <TableCell className="py-1.5 text-muted-foreground">{item.player.position || "-"}</TableCell>
+                              <TableCell className="py-1.5 font-medium">{item.player.fullName}</TableCell>
+                              <TableCell className="py-1.5 text-muted-foreground">{item.player.primaryPosition || "-"}</TableCell>
                               <TableCell className="py-1.5">
                                 <Badge variant={item.rosterType === "mlb" ? "default" : "secondary"} className="text-xs">{item.rosterType.toUpperCase()}</Badge>
                               </TableCell>

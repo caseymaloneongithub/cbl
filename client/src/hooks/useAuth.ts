@@ -30,6 +30,11 @@ export function useAuth() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       queryClient.invalidateQueries({ queryKey: ["/api/leagues"] });
+      const returnTo = sessionStorage.getItem("returnTo");
+      if (returnTo) {
+        sessionStorage.removeItem("returnTo");
+        window.location.href = returnTo;
+      }
     },
   });
 
