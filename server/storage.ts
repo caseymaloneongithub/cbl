@@ -3262,7 +3262,7 @@ export class DatabaseStorage implements IStorage {
     return this.upsertMlbPlayerStats(statsToInsert);
   }
 
-  async getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number; currentTeamName?: string; parentOrgName?: string; season?: number; sortBy?: string; sortDir?: string; statsSeason?: number }): Promise<(MlbPlayer & { stats: MlbPlayerStat | null })[]> {
+  async getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number; currentTeamName?: string; parentOrgName?: string; season?: number; sortBy?: string; sortDir?: string; statsSeason?: number; statsLevelFilter?: string; leagueIdForFreeAgents?: number }): Promise<(MlbPlayer & { stats: MlbPlayerStat | null })[]> {
     const conditions = [];
     if (filters?.sportLevel) {
       if (filters.sportLevel === 'MLB') {
@@ -3282,14 +3282,28 @@ export class DatabaseStorage implements IStorage {
     if (filters?.parentOrgName) {
       conditions.push(eq(mlbPlayers.parentOrgName, filters.parentOrgName));
     }
+    if (filters?.statsLevelFilter) {
+      conditions.push(eq(mlbPlayerStats.sportLevel, filters.statsLevelFilter));
+    }
+    if (filters?.leagueIdForFreeAgents) {
+      conditions.push(sql`NOT EXISTS (SELECT 1 FROM league_roster_assignments lra WHERE lra.mlb_player_id = ${mlbPlayers.id} AND lra.league_id = ${filters.leagueIdForFreeAgents})`);
+    }
     const statsSeasonVal = filters?.statsSeason ?? (filters?.season ? filters.season : new Date().getFullYear() - 1);
 
+    const useInnerJoin = !!filters?.statsLevelFilter;
     const query = db.select()
-      .from(mlbPlayers)
-      .leftJoin(mlbPlayerStats, and(
+      .from(mlbPlayers);
+    if (useInnerJoin) {
+      query.innerJoin(mlbPlayerStats, and(
         eq(mlbPlayerStats.mlbPlayerId, mlbPlayers.id),
         eq(mlbPlayerStats.season, statsSeasonVal),
       ));
+    } else {
+      query.leftJoin(mlbPlayerStats, and(
+        eq(mlbPlayerStats.mlbPlayerId, mlbPlayers.id),
+        eq(mlbPlayerStats.season, statsSeasonVal),
+      ));
+    }
     if (conditions.length > 0) {
       query.where(and(...conditions));
     }
@@ -3319,7 +3333,7 @@ export class DatabaseStorage implements IStorage {
     return rows.map(r => ({ ...r.mlb_players, stats: r.mlb_player_stats }));
   }
 
-  async getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; positionTypeNot?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; isTwoWayQualified?: boolean; currentTeamName?: string; parentOrgName?: string; season?: number }): Promise<number> {
+  async getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; positionTypeNot?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; isTwoWayQualified?: boolean; currentTeamName?: string; parentOrgName?: string; season?: number; statsLevelFilter?: string; leagueIdForFreeAgents?: number }): Promise<number> {
     const conditions = [];
     if (filters?.sportLevel) {
       if (filters.sportLevel === 'MLB') {
@@ -3354,8 +3368,22 @@ export class DatabaseStorage implements IStorage {
     if (filters?.parentOrgName) {
       conditions.push(eq(mlbPlayers.parentOrgName, filters.parentOrgName));
     }
+    if (filters?.statsLevelFilter) {
+      conditions.push(eq(mlbPlayerStats.sportLevel, filters.statsLevelFilter));
+    }
+    if (filters?.leagueIdForFreeAgents) {
+      conditions.push(sql`NOT EXISTS (SELECT 1 FROM league_roster_assignments lra WHERE lra.mlb_player_id = ${mlbPlayers.id} AND lra.league_id = ${filters.leagueIdForFreeAgents})`);
+    }
     
+    const statsSeasonVal = filters?.season ? filters.season : new Date().getFullYear() - 1;
+    const useInnerJoin = !!filters?.statsLevelFilter;
     const query = db.select({ count: sql<number>`COUNT(*)` }).from(mlbPlayers);
+    if (useInnerJoin) {
+      query.innerJoin(mlbPlayerStats, and(
+        eq(mlbPlayerStats.mlbPlayerId, mlbPlayers.id),
+        eq(mlbPlayerStats.season, statsSeasonVal),
+      ));
+    }
     if (conditions.length > 0) {
       query.where(and(...conditions));
     }

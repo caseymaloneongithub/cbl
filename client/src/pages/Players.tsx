@@ -1,5 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLeague } from "@/hooks/useLeague";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
@@ -21,9 +23,10 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, UserPlus } from "lucide-react";
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import type { MlbPlayer, MlbPlayerStat, LeagueMember } from "@shared/schema";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 type PlayerWithStats = MlbPlayer & { stats: MlbPlayerStat | null };
 import { getMlbAffiliationAbbreviation } from "@/lib/teamDisplay";
@@ -82,6 +85,8 @@ function NameWithHover({ p }: { p: MlbPlayer }) {
 
 export default function Players({ level }: { level: "mlb" | "milb" }) {
   const { selectedLeagueId } = useLeague();
+  const { user } = useAuth();
+  const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [mlbTeamFilter, setMlbTeamFilter] = useState("all");
@@ -134,7 +139,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
   });
 
   const { data: playersData, isLoading } = useQuery<{ players: PlayerWithStats[]; total: number }>({
-    queryKey: ["/api/mlb-players", debouncedSearch, sportLevel, mlbTeamFilter, effectiveSeason, "full-pool"],
+    queryKey: ["/api/mlb-players", debouncedSearch, sportLevel, mlbTeamFilter, effectiveSeason, level, leagueTeamFilter, selectedLeagueId, "full-pool"],
     queryFn: async () => {
       const params = new URLSearchParams({
         season: String(effectiveSeason),
@@ -146,6 +151,12 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
       if (mlbTeamFilter !== "all") {
         if (level === "milb") params.set("parentOrgName", mlbTeamFilter);
         else params.set("currentTeamName", mlbTeamFilter);
+      }
+      if (level === "mlb") {
+        params.set("statsLevelFilter", "MLB");
+      }
+      if (leagueTeamFilter === "unassigned" && selectedLeagueId) {
+        params.set("leagueIdForFreeAgents", String(selectedLeagueId));
       }
       const res = await fetch(`/api/mlb-players?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch players");
@@ -186,6 +197,22 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
     for (const m of membersData || []) map[m.userId] = m.teamName || m.teamAbbreviation || m.userId;
     return map;
   }, [membersData]);
+
+  const claimMutation = useMutation({
+    mutationFn: async (mlbPlayerId: number) => {
+      const res = await apiRequest("POST", `/api/leagues/${selectedLeagueId}/roster-assignments/claim`, { mlbPlayerId });
+      return res.json();
+    },
+    onSuccess: (_data, mlbPlayerId) => {
+      const player = playersData?.players.find(p => p.id === mlbPlayerId);
+      toast({ title: "Player Claimed", description: `${player?.fullName || "Player"} added to your roster` });
+      queryClient.invalidateQueries({ queryKey: ["/api/leagues", selectedLeagueId, "roster-assignments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mlb-players"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Claim Failed", description: error.message, variant: "destructive" });
+    },
+  });
 
   const activeMembers = useMemo(() => {
     return (membersData || [])
@@ -399,7 +426,30 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
                             <TableCell className="text-right font-mono">{p.stats?.hadHittingStats ? fmtRate(p.stats.hittingObp) : ""}</TableCell>
                             <TableCell className="text-right font-mono">{p.stats?.hadHittingStats ? fmtRate(p.stats.hittingSlg) : ""}</TableCell>
                             <TableCell className="text-right font-mono">{p.stats?.hadHittingStats ? fmtRate(p.stats.hittingOps) : ""}</TableCell>
-                            {selectedLeagueId && <TableCell>{leagueTeam || "Free Agent"}</TableCell>}
+                            {selectedLeagueId && (
+                              <TableCell>
+                                {leagueTeam ? (
+                                  leagueTeam
+                                ) : (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-muted-foreground">Free Agent</span>
+                                    {user && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 px-2 text-xs"
+                                        onClick={() => claimMutation.mutate(p.id)}
+                                        disabled={claimMutation.isPending}
+                                        data-testid={`button-claim-hitter-${p.id}`}
+                                      >
+                                        <UserPlus className="h-3.5 w-3.5 mr-1" />
+                                        Claim
+                                      </Button>
+                                    )}
+                                  </div>
+                                )}
+                              </TableCell>
+                            )}
                           </TableRow>
                         );
                       })}
@@ -453,7 +503,30 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
                             <TableCell className="text-right font-mono">{p.stats?.hadPitchingStats ? (p.stats.pitchingHits ?? 0) : ""}</TableCell>
                             <TableCell className="text-right font-mono">{p.stats?.hadPitchingStats ? (p.stats.pitchingHomeRuns ?? 0) : ""}</TableCell>
                             <TableCell className="text-right font-mono">{p.stats?.hadPitchingStats ? fmtEra(p.stats.pitchingEra) : ""}</TableCell>
-                            {selectedLeagueId && <TableCell>{leagueTeam || "Free Agent"}</TableCell>}
+                            {selectedLeagueId && (
+                              <TableCell>
+                                {leagueTeam ? (
+                                  leagueTeam
+                                ) : (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-muted-foreground">Free Agent</span>
+                                    {user && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 px-2 text-xs"
+                                        onClick={() => claimMutation.mutate(p.id)}
+                                        disabled={claimMutation.isPending}
+                                        data-testid={`button-claim-pitcher-${p.id}`}
+                                      >
+                                        <UserPlus className="h-3.5 w-3.5 mr-1" />
+                                        Claim
+                                      </Button>
+                                    )}
+                                  </div>
+                                )}
+                              </TableCell>
+                            )}
                           </TableRow>
                         );
                       })}
