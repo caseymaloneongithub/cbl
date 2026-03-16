@@ -4408,13 +4408,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createTrade(trade: InsertTrade, items: InsertTradeItem[]): Promise<TradeWithDetails> {
-    return await db.transaction(async (tx) => {
-      const [newTrade] = await tx.insert(trades).values(trade).returning();
+    const newTrade = await db.transaction(async (tx) => {
+      const [created] = await tx.insert(trades).values(trade).returning();
       if (items.length > 0) {
-        await tx.insert(tradeItems).values(items.map(i => ({ ...i, tradeId: newTrade.id })));
+        await tx.insert(tradeItems).values(items.map(i => ({ ...i, tradeId: created.id })));
       }
-      return await this.buildTradeWithDetails(newTrade);
+      return created;
     });
+    return await this.buildTradeWithDetails(newTrade);
   }
 
   async getTrade(id: number): Promise<TradeWithDetails | undefined> {

@@ -1790,10 +1790,10 @@ export async function registerRoutes(
 
           const playersOffered: TradeEmailPlayer[] = trade.items
             .filter(i => i.fromUserId === userId)
-            .map(i => ({ name: i.player.name, position: i.player.position || '', mlbTeam: i.player.mlbTeam || '', rosterType: i.rosterType }));
+            .map(i => ({ name: i.player.fullName, position: i.player.primaryPosition || '', mlbTeam: i.player.currentTeamName || '', rosterType: i.rosterType }));
           const playersRequested: TradeEmailPlayer[] = trade.items
             .filter(i => i.fromUserId === partnerUserId)
-            .map(i => ({ name: i.player.name, position: i.player.position || '', mlbTeam: i.player.mlbTeam || '', rosterType: i.rosterType }));
+            .map(i => ({ name: i.player.fullName, position: i.player.primaryPosition || '', mlbTeam: i.player.currentTeamName || '', rosterType: i.rosterType }));
 
           await sendTradeProposalEmail(
             partner.email,
@@ -1876,10 +1876,10 @@ export async function registerRoutes(
 
             const playersFromProposer: TradeEmailPlayer[] = trade.items
               .filter(i => i.fromUserId === trade.proposingUserId)
-              .map(i => ({ name: i.player.name, position: i.player.position || '', mlbTeam: i.player.mlbTeam || '', rosterType: i.rosterType }));
+              .map(i => ({ name: i.player.fullName, position: i.player.primaryPosition || '', mlbTeam: i.player.currentTeamName || '', rosterType: i.rosterType }));
             const playersFromPartner: TradeEmailPlayer[] = trade.items
               .filter(i => i.fromUserId === trade.partnerUserId)
-              .map(i => ({ name: i.player.name, position: i.player.position || '', mlbTeam: i.player.mlbTeam || '', rosterType: i.rosterType }));
+              .map(i => ({ name: i.player.fullName, position: i.player.primaryPosition || '', mlbTeam: i.player.currentTeamName || '', rosterType: i.rosterType }));
 
             const proposerName = proposer.teamName || `${proposer.firstName} ${proposer.lastName}`;
             const partnerName = partner.teamName || `${partner.firstName} ${partner.lastName}`;
