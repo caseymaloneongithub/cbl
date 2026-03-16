@@ -46,13 +46,13 @@ interface LeagueMember {
 
 export default function Transactions() {
   const { user } = useAuth();
-  const { activeLeague } = useLeague();
+  const { currentLeague, selectedLeagueId } = useLeague();
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [teamFilter, setTeamFilter] = useState<string>("all");
   const [yearFilter, setYearFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
-  const leagueId = activeLeague?.leagueId;
+  const leagueId = selectedLeagueId;
 
   const membersQuery = useQuery<LeagueMember[]>({
     queryKey: ["/api/leagues", leagueId, "members"],
@@ -75,7 +75,7 @@ export default function Transactions() {
     enabled: !!leagueId,
   });
 
-  if (!activeLeague) {
+  if (!currentLeague) {
     return (
       <div className="container mx-auto p-4">
         <Card><CardContent className="py-8 text-center text-muted-foreground">No active league selected.</CardContent></Card>

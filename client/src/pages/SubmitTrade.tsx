@@ -48,7 +48,7 @@ interface LeagueMember {
 
 export default function SubmitTrade() {
   const { user } = useAuth();
-  const { activeLeague } = useLeague();
+  const { currentLeague, selectedLeagueId } = useLeague();
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [partnerUserId, setPartnerUserId] = useState<string>("");
@@ -56,7 +56,7 @@ export default function SubmitTrade() {
   const [partnerSelectedPlayers, setPartnerSelectedPlayers] = useState<Set<number>>(new Set());
   const [notes, setNotes] = useState("");
 
-  const leagueId = activeLeague?.leagueId;
+  const leagueId = selectedLeagueId;
 
   const membersQuery = useQuery<LeagueMember[]>({
     queryKey: ["/api/leagues", leagueId, "members"],
@@ -153,7 +153,7 @@ export default function SubmitTrade() {
     submitTradeMutation.mutate({ partnerUserId, items, notes });
   };
 
-  if (!activeLeague) {
+  if (!currentLeague) {
     return (
       <div className="container mx-auto p-4">
         <Card><CardContent className="py-8 text-center text-muted-foreground">No active league selected.</CardContent></Card>

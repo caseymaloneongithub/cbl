@@ -32,12 +32,12 @@ import type { TradeWithDetails } from "@shared/schema";
 
 export default function Trades() {
   const { user } = useAuth();
-  const { activeLeague } = useLeague();
+  const { currentLeague, selectedLeagueId } = useLeague();
   const { toast } = useToast();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [confirmAction, setConfirmAction] = useState<{ tradeId: number; action: "accept" | "reject" | "cancel" } | null>(null);
 
-  const leagueId = activeLeague?.leagueId;
+  const leagueId = selectedLeagueId;
 
   const tradesQuery = useQuery<TradeWithDetails[]>({
     queryKey: ["/api/leagues", leagueId, "trades"],
@@ -67,7 +67,7 @@ export default function Trades() {
     },
   });
 
-  if (!activeLeague) {
+  if (!currentLeague) {
     return (
       <div className="container mx-auto p-4">
         <Card><CardContent className="py-8 text-center text-muted-foreground">No active league selected.</CardContent></Card>
