@@ -38,6 +38,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<{ success: b
       }
     }
 
+    console.log(`[email] Sending to ${to}: ${subject}`);
     const result = await client.emails.send({
       from: fromEmail,
       to,
@@ -47,10 +48,11 @@ export async function sendEmail(options: SendEmailOptions): Promise<{ success: b
     });
 
     if (result.error) {
-      console.error('Resend error:', result.error);
+      console.error('[email] Resend error:', result.error);
       return { success: false, error: result.error.message };
     }
 
+    console.log(`[email] Sent successfully: ${subject}`);
     return { success: true };
   } catch (error: any) {
     console.error('Email send error:', error);
