@@ -69,6 +69,15 @@ function formatLevelWithYear(sportLevel: string, lastActiveSeason?: number | nul
 }
 const fmtEra = (v: number | null | undefined) => (v == null ? "-" : Number(v).toFixed(2));
 const fmt1 = (v: number | null | undefined) => (v == null ? "-" : Number(v).toFixed(1));
+const fmtSalary = (v: string | null | undefined) => {
+  if (!v) return "-";
+  const n = parseFloat(v);
+  return isNaN(n) ? v : n.toFixed(2);
+};
+const isMinorLeagueStats = (stats: RosterAssignment["stats"]) =>
+  stats?.sportLevel != null && stats.sportLevel !== "MLB";
+const statCellClass = (stats: RosterAssignment["stats"]) =>
+  `text-right font-mono${isMinorLeagueStats(stats) ? " italic" : ""}`;
 
 function formatAcquired(acquired: string | null): string {
   if (!acquired) return "-";
@@ -327,18 +336,18 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                           {showMilbLevel && <TableCell>{formatLevelWithYear(a.player.sportLevel, (a.player as any).lastActiveSeason, (a.player as any).lastActiveLevel)}</TableCell>}
                           <TableCell className="text-[11px]">{formatAcquired(a.acquired)}</TableCell>
                           {level === "mlb" && <TableCell className="text-[11px]">{a.contractStatus || "-"}</TableCell>}
-                          {level === "mlb" && <TableCell className="text-right text-[11px]">{a.salary2026 || "-"}</TableCell>}
-                          <TableCell className="text-right font-mono">{a.stats?.hadHittingStats ? (a.stats.hittingAtBats ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.stats?.hadHittingStats ? (a.stats.hittingPlateAppearances ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.stats?.hadHittingStats ? (a.stats.hittingWalks ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.stats?.hadHittingStats ? (a.stats.hittingSingles ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.stats?.hadHittingStats ? (a.stats.hittingDoubles ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.stats?.hadHittingStats ? (a.stats.hittingTriples ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.stats?.hadHittingStats ? (a.stats.hittingHomeRuns ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.stats?.hadHittingStats ? fmtRate(a.stats.hittingAvg) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.stats?.hadHittingStats ? fmtRate(a.stats.hittingObp) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.stats?.hadHittingStats ? fmtRate(a.stats.hittingSlg) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.stats?.hadHittingStats ? fmtRate(a.stats.hittingOps) : ""}</TableCell>
+                          {level === "mlb" && <TableCell className="text-right text-[11px]">{fmtSalary(a.salary2026)}</TableCell>}
+                          <TableCell className={statCellClass(a.stats)}>{a.stats?.hadHittingStats ? (a.stats.hittingAtBats ?? 0) : ""}</TableCell>
+                          <TableCell className={statCellClass(a.stats)}>{a.stats?.hadHittingStats ? (a.stats.hittingPlateAppearances ?? 0) : ""}</TableCell>
+                          <TableCell className={statCellClass(a.stats)}>{a.stats?.hadHittingStats ? (a.stats.hittingWalks ?? 0) : ""}</TableCell>
+                          <TableCell className={statCellClass(a.stats)}>{a.stats?.hadHittingStats ? (a.stats.hittingSingles ?? 0) : ""}</TableCell>
+                          <TableCell className={statCellClass(a.stats)}>{a.stats?.hadHittingStats ? (a.stats.hittingDoubles ?? 0) : ""}</TableCell>
+                          <TableCell className={statCellClass(a.stats)}>{a.stats?.hadHittingStats ? (a.stats.hittingTriples ?? 0) : ""}</TableCell>
+                          <TableCell className={statCellClass(a.stats)}>{a.stats?.hadHittingStats ? (a.stats.hittingHomeRuns ?? 0) : ""}</TableCell>
+                          <TableCell className={statCellClass(a.stats)}>{a.stats?.hadHittingStats ? fmtRate(a.stats.hittingAvg) : ""}</TableCell>
+                          <TableCell className={statCellClass(a.stats)}>{a.stats?.hadHittingStats ? fmtRate(a.stats.hittingObp) : ""}</TableCell>
+                          <TableCell className={statCellClass(a.stats)}>{a.stats?.hadHittingStats ? fmtRate(a.stats.hittingSlg) : ""}</TableCell>
+                          <TableCell className={statCellClass(a.stats)}>{a.stats?.hadHittingStats ? fmtRate(a.stats.hittingOps) : ""}</TableCell>
                           {level === "milb" && (
                             <TableCell>
                               <Button
@@ -391,15 +400,15 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                           {showMilbLevel && <TableCell>{formatLevelWithYear(a.player.sportLevel, (a.player as any).lastActiveSeason, (a.player as any).lastActiveLevel)}</TableCell>}
                           <TableCell className="text-[11px]">{formatAcquired(a.acquired)}</TableCell>
                           {level === "mlb" && <TableCell className="text-[11px]">{a.contractStatus || "-"}</TableCell>}
-                          {level === "mlb" && <TableCell className="text-right text-[11px]">{a.salary2026 || "-"}</TableCell>}
-                          <TableCell className="text-right font-mono">{a.stats?.hadPitchingStats ? (a.stats.pitchingGames ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.stats?.hadPitchingStats ? (a.stats.pitchingGamesStarted ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.stats?.hadPitchingStats ? fmt1(a.stats.pitchingInningsPitched) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.stats?.hadPitchingStats ? (a.stats.pitchingStrikeouts ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.stats?.hadPitchingStats ? (a.stats.pitchingWalks ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.stats?.hadPitchingStats ? (a.stats.pitchingHits ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.stats?.hadPitchingStats ? (a.stats.pitchingHomeRuns ?? 0) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{a.stats?.hadPitchingStats ? fmtEra(a.stats.pitchingEra) : ""}</TableCell>
+                          {level === "mlb" && <TableCell className="text-right text-[11px]">{fmtSalary(a.salary2026)}</TableCell>}
+                          <TableCell className={statCellClass(a.stats)}>{a.stats?.hadPitchingStats ? (a.stats.pitchingGames ?? 0) : ""}</TableCell>
+                          <TableCell className={statCellClass(a.stats)}>{a.stats?.hadPitchingStats ? (a.stats.pitchingGamesStarted ?? 0) : ""}</TableCell>
+                          <TableCell className={statCellClass(a.stats)}>{a.stats?.hadPitchingStats ? fmt1(a.stats.pitchingInningsPitched) : ""}</TableCell>
+                          <TableCell className={statCellClass(a.stats)}>{a.stats?.hadPitchingStats ? (a.stats.pitchingStrikeouts ?? 0) : ""}</TableCell>
+                          <TableCell className={statCellClass(a.stats)}>{a.stats?.hadPitchingStats ? (a.stats.pitchingWalks ?? 0) : ""}</TableCell>
+                          <TableCell className={statCellClass(a.stats)}>{a.stats?.hadPitchingStats ? (a.stats.pitchingHits ?? 0) : ""}</TableCell>
+                          <TableCell className={statCellClass(a.stats)}>{a.stats?.hadPitchingStats ? (a.stats.pitchingHomeRuns ?? 0) : ""}</TableCell>
+                          <TableCell className={statCellClass(a.stats)}>{a.stats?.hadPitchingStats ? fmtEra(a.stats.pitchingEra) : ""}</TableCell>
                           {level === "milb" && (
                             <TableCell>
                               <Button
