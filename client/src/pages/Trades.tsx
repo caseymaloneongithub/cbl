@@ -93,7 +93,7 @@ export default function Trades({ highlightTradeId }: { highlightTradeId?: number
   }
 
   const filteredTrades = (tradesQuery.data || []).filter(t =>
-    statusFilter === "all" || t.status === statusFilter
+    t.status !== "cancelled" && (statusFilter === "all" || t.status === statusFilter)
   );
 
   const statusBadge = (status: string) => {
@@ -122,7 +122,6 @@ export default function Trades({ highlightTradeId }: { highlightTradeId?: number
             <SelectItem value="pending">Pending</SelectItem>
             <SelectItem value="accepted">Accepted</SelectItem>
             <SelectItem value="rejected">Rejected</SelectItem>
-            <SelectItem value="cancelled">Cancelled</SelectItem>
           </SelectContent>
         </Select>
       </div>
