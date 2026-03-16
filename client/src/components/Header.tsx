@@ -138,11 +138,14 @@ export function Header() {
   const myRosterItems = [
     { href: "/my-roster/mlb", label: "MLB" },
     { href: "/my-roster/milb", label: "MiLB" },
+    { href: "/submit-trade", label: "Submit Trade" },
+    { href: "/trades", label: "Trades" },
   ];
 
   const playersItems = [
     { href: "/players/mlb", label: "MLB" },
     { href: "/players/milb", label: "MiLB" },
+    { href: "/transactions", label: "Transactions" },
   ];
 
   const commissionerItems = [

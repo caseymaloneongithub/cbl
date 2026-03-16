@@ -30,6 +30,9 @@ import CommissionerDraftDetail from "@/pages/commissioner/CommissionerDraftDetai
 import SuperAdmin from "@/pages/SuperAdmin";
 import DraftBoard from "@/pages/DraftBoard";
 import Drafts from "@/pages/Drafts";
+import SubmitTrade from "@/pages/SubmitTrade";
+import TradesPage from "@/pages/Trades";
+import TransactionsPage from "@/pages/Transactions";
 import type { DraftWithDetails } from "@shared/schema";
 
 function AuthenticatedHome() {
@@ -151,6 +154,15 @@ function Router() {
       </Route>
       <Route path="/players/milb">
         {() => <ProtectedRoute component={() => <Players level="milb" />} />}
+      </Route>
+      <Route path="/submit-trade">
+        {() => <ProtectedRoute component={SubmitTrade} />}
+      </Route>
+      <Route path="/trades">
+        {() => <ProtectedRoute component={TradesPage} />}
+      </Route>
+      <Route path="/transactions">
+        {() => <ProtectedRoute component={TransactionsPage} />}
       </Route>
       <Route path="/commissioner">
         {() => <CommissionerRoute component={() => <Redirect to="/commissioner/free-agency" />} />}

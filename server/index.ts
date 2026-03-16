@@ -152,6 +152,39 @@ async function runPendingMigrations() {
       log(`Migration 0019 applied: ${countRows[0].cnt} stat rows migrated`, "migration");
     }
 
+    const { rows: tradesTableCheck } = await pool.query(
+      `SELECT 1 FROM information_schema.tables WHERE table_name = 'trades'`
+    );
+    if (tradesTableCheck.length === 0) {
+      log("Applying migration 0021: create trades tables", "migration");
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS trades (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          league_id INTEGER NOT NULL REFERENCES leagues(id),
+          proposing_user_id VARCHAR NOT NULL REFERENCES users(id),
+          partner_user_id VARCHAR NOT NULL REFERENCES users(id),
+          status VARCHAR(20) NOT NULL DEFAULT 'pending',
+          notes TEXT,
+          season INTEGER NOT NULL,
+          proposed_at TIMESTAMP DEFAULT NOW() NOT NULL,
+          responded_at TIMESTAMP
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_trades_league ON trades(league_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status)`);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS trade_items (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          trade_id INTEGER NOT NULL REFERENCES trades(id),
+          from_user_id VARCHAR NOT NULL REFERENCES users(id),
+          mlb_player_id INTEGER NOT NULL REFERENCES mlb_players(id),
+          roster_type VARCHAR(10) NOT NULL
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_trade_items_trade ON trade_items(trade_id)`);
+      log("Migration 0021 applied", "migration");
+    }
+
     log("All migrations up to date", "migration");
   } catch (error) {
     log(`Migration error: ${error}`, "migration");

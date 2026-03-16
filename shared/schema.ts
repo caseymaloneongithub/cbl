@@ -840,6 +840,41 @@ export const insertMlbPlayerStatsSchema = (createInsertSchema(mlbPlayerStats) as
   id: true,
 });
 
+export const trades = pgTable("trades", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  leagueId: integer("league_id").references(() => leagues.id).notNull(),
+  proposingUserId: varchar("proposing_user_id").references(() => users.id).notNull(),
+  partnerUserId: varchar("partner_user_id").references(() => users.id).notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("pending"),
+  notes: text("notes"),
+  season: integer("season").notNull(),
+  proposedAt: timestamp("proposed_at").defaultNow().notNull(),
+  respondedAt: timestamp("responded_at"),
+}, (table) => [
+  index("idx_trades_league").on(table.leagueId),
+  index("idx_trades_status").on(table.status),
+]);
+
+export const insertTradeSchema = (createInsertSchema(trades) as any).omit({
+  id: true,
+  proposedAt: true,
+  respondedAt: true,
+});
+
+export const tradeItems = pgTable("trade_items", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  tradeId: integer("trade_id").references(() => trades.id).notNull(),
+  fromUserId: varchar("from_user_id").references(() => users.id).notNull(),
+  mlbPlayerId: integer("mlb_player_id").references(() => mlbPlayers.id).notNull(),
+  rosterType: varchar("roster_type", { length: 10 }).notNull(),
+}, (table) => [
+  index("idx_trade_items_trade").on(table.tradeId),
+]);
+
+export const insertTradeItemSchema = (createInsertSchema(tradeItems) as any).omit({
+  id: true,
+});
+
 // Types
 export type League = typeof leagues.$inferSelect;
 export type InsertLeague = z.infer<typeof insertLeagueSchema>;
@@ -963,3 +998,15 @@ export type AutoDraftListWithPlayer = AutoDraftList & {
 
 export type TeamAutoDraftList = typeof teamAutoDraftLists.$inferSelect;
 export type InsertTeamAutoDraftList = z.infer<typeof insertTeamAutoDraftListSchema>;
+
+export type Trade = typeof trades.$inferSelect;
+export type InsertTrade = z.infer<typeof insertTradeSchema>;
+
+export type TradeItem = typeof tradeItems.$inferSelect;
+export type InsertTradeItem = z.infer<typeof insertTradeItemSchema>;
+
+export type TradeWithDetails = Trade & {
+  items: (TradeItem & { player: MlbPlayer })[];
+  proposingUser: Pick<User, 'id' | 'firstName' | 'lastName' | 'teamName'>;
+  partnerUser: Pick<User, 'id' | 'firstName' | 'lastName' | 'teamName'>;
+};

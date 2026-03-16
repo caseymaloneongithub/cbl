@@ -73,6 +73,13 @@ import {
   teamAutoDraftLists,
   type TeamAutoDraftList,
   draftUserSettings,
+  trades,
+  tradeItems,
+  type Trade,
+  type InsertTrade,
+  type TradeItem,
+  type InsertTradeItem,
+  type TradeWithDetails,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, lt, sql, isNull, inArray, or } from "drizzle-orm";
@@ -351,6 +358,13 @@ export interface IStorage {
   getUnassignedPlayers(leagueId: number, season?: number, filters?: { search?: string; sportLevel?: string; limit?: number; offset?: number }): Promise<MlbPlayer[]>;
   getUnassignedPlayerCount(leagueId: number, season?: number, filters?: { search?: string; sportLevel?: string }): Promise<number>;
   bulkAssignPlayers(assignments: InsertLeagueRosterAssignment[]): Promise<number>;
+  
+  // Trade operations
+  createTrade(trade: InsertTrade, items: InsertTradeItem[]): Promise<TradeWithDetails>;
+  getTrade(id: number): Promise<TradeWithDetails | undefined>;
+  getTradesForLeague(leagueId: number, filters?: { status?: string; userId?: string; season?: number }): Promise<TradeWithDetails[]>;
+  respondToTrade(tradeId: number, status: 'accepted' | 'rejected'): Promise<Trade>;
+  cancelTrade(tradeId: number): Promise<Trade>;
   
   // Draft operations
   getDraft(id: number): Promise<Draft | undefined>;
@@ -4365,6 +4379,83 @@ export class DatabaseStorage implements IStorage {
       .from(draftEmailOptOuts)
       .where(eq(draftEmailOptOuts.draftId, draftId));
     return optOuts.map(o => o.userId);
+  }
+  private async buildTradeWithDetails(trade: Trade): Promise<TradeWithDetails> {
+    const items = await db
+      .select()
+      .from(tradeItems)
+      .where(eq(tradeItems.tradeId, trade.id));
+
+    const playerIds = items.map(i => i.mlbPlayerId);
+    const players = playerIds.length > 0
+      ? await db.select().from(mlbPlayers).where(inArray(mlbPlayers.id, playerIds))
+      : [];
+    const playerMap = new Map(players.map(p => [p.id, p]));
+
+    const userIds = [trade.proposingUserId, trade.partnerUserId];
+    const usersArr = await db.select().from(users).where(inArray(users.id, userIds));
+    const userMap = new Map(usersArr.map(u => [u.id, u]));
+
+    const proposingUser = userMap.get(trade.proposingUserId)!;
+    const partnerUser = userMap.get(trade.partnerUserId)!;
+
+    return {
+      ...trade,
+      items: items.map(i => ({ ...i, player: playerMap.get(i.mlbPlayerId)! })),
+      proposingUser: { id: proposingUser.id, firstName: proposingUser.firstName, lastName: proposingUser.lastName, teamName: proposingUser.teamName },
+      partnerUser: { id: partnerUser.id, firstName: partnerUser.firstName, lastName: partnerUser.lastName, teamName: partnerUser.teamName },
+    };
+  }
+
+  async createTrade(trade: InsertTrade, items: InsertTradeItem[]): Promise<TradeWithDetails> {
+    return await db.transaction(async (tx) => {
+      const [newTrade] = await tx.insert(trades).values(trade).returning();
+      if (items.length > 0) {
+        await tx.insert(tradeItems).values(items.map(i => ({ ...i, tradeId: newTrade.id })));
+      }
+      return await this.buildTradeWithDetails(newTrade);
+    });
+  }
+
+  async getTrade(id: number): Promise<TradeWithDetails | undefined> {
+    const [trade] = await db.select().from(trades).where(eq(trades.id, id));
+    if (!trade) return undefined;
+    return await this.buildTradeWithDetails(trade);
+  }
+
+  async getTradesForLeague(leagueId: number, filters?: { status?: string; userId?: string; season?: number }): Promise<TradeWithDetails[]> {
+    const conditions = [eq(trades.leagueId, leagueId)];
+    if (filters?.status) conditions.push(eq(trades.status, filters.status));
+    if (filters?.userId) conditions.push(or(eq(trades.proposingUserId, filters.userId), eq(trades.partnerUserId, filters.userId))!);
+    if (filters?.season) conditions.push(eq(trades.season, filters.season));
+
+    const tradeRows = await db
+      .select()
+      .from(trades)
+      .where(and(...conditions))
+      .orderBy(desc(trades.proposedAt));
+
+    return await Promise.all(tradeRows.map(t => this.buildTradeWithDetails(t)));
+  }
+
+  async respondToTrade(tradeId: number, status: 'accepted' | 'rejected'): Promise<Trade> {
+    const [updated] = await db
+      .update(trades)
+      .set({ status, respondedAt: new Date() })
+      .where(and(eq(trades.id, tradeId), eq(trades.status, 'pending')))
+      .returning();
+    if (!updated) throw new Error('Trade is no longer pending');
+    return updated;
+  }
+
+  async cancelTrade(tradeId: number): Promise<Trade> {
+    const [updated] = await db
+      .update(trades)
+      .set({ status: 'cancelled', respondedAt: new Date() })
+      .where(and(eq(trades.id, tradeId), eq(trades.status, 'pending')))
+      .returning();
+    if (!updated) throw new Error('Trade is no longer pending');
+    return updated;
   }
 }
 

@@ -816,3 +816,109 @@ export async function sendDraftCatchUpEmail(
     text,
   });
 }
+
+export interface TradeEmailPlayer {
+  name: string;
+  position: string;
+  mlbTeam: string;
+  rosterType: string;
+}
+
+export async function sendTradeProposalEmail(
+  to: string,
+  leagueName: string,
+  proposerTeamName: string,
+  partnerTeamName: string,
+  playersOffered: TradeEmailPlayer[],
+  playersRequested: TradeEmailPlayer[],
+  notes: string | null,
+): Promise<{ success: boolean; error?: string }> {
+  const playerRow = (p: TradeEmailPlayer) =>
+    `<tr><td style="padding: 6px 10px; border-bottom: 1px solid #eee; font-size: 13px;">${p.name}</td><td style="padding: 6px 10px; border-bottom: 1px solid #eee; font-size: 13px; color: #555;">${p.position}, ${p.mlbTeam}</td><td style="padding: 6px 10px; border-bottom: 1px solid #eee;"><span style="display: inline-block; background: ${p.rosterType === 'mlb' ? '#1565c0' : '#6a1b9a'}; color: white; font-size: 10px; padding: 1px 5px; border-radius: 3px;">${p.rosterType.toUpperCase()}</span></td></tr>`;
+
+  const playerTable = (title: string, rows: TradeEmailPlayer[]) => rows.length === 0 ? '' : `
+    <p style="margin: 15px 0 5px; font-weight: bold; font-size: 14px; color: #333;">${title}</p>
+    <table style="width: 100%; border-collapse: collapse; background: white; border: 1px solid #ddd; border-radius: 6px;">
+      <thead><tr style="background: #f5f5f5;">
+        <th style="padding: 6px 10px; text-align: left; font-size: 11px; color: #999; text-transform: uppercase;">Player</th>
+        <th style="padding: 6px 10px; text-align: left; font-size: 11px; color: #999; text-transform: uppercase;">Info</th>
+        <th style="padding: 6px 10px; text-align: left; font-size: 11px; color: #999; text-transform: uppercase;">Roster</th>
+      </tr></thead>
+      <tbody>${rows.map(playerRow).join('')}</tbody>
+    </table>`;
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="font-family: 'Roboto', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <div style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+    <h1 style="color: white; margin: 0; font-size: 20px;">${leagueName} — Trade Proposal</h1>
+    <p style="color: #bbdefb; margin: 5px 0 0 0; font-size: 14px;">${proposerTeamName} has proposed a trade</p>
+  </div>
+  <div style="background: #f9f9f9; padding: 25px; border-radius: 0 0 8px 8px;">
+    ${playerTable(`${proposerTeamName} sends:`, playersOffered)}
+    ${playerTable(`${partnerTeamName} sends:`, playersRequested)}
+    ${notes ? `<div style="margin-top: 15px; padding: 10px; background: #fff3e0; border-left: 3px solid #ff9800; border-radius: 4px; font-size: 13px;"><strong>Notes:</strong> ${notes}</div>` : ''}
+    <p style="margin-top: 20px; font-size: 13px; color: #555;">Log in to ${APP_NAME} to accept or reject this trade.</p>
+    <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
+    <p style="color: #999; font-size: 11px; text-align: center;">This notification was sent by ${APP_NAME}.</p>
+  </div>
+</body></html>`;
+
+  const offeredText = playersOffered.map(p => `  ${p.name} (${p.position}, ${p.mlbTeam}) [${p.rosterType.toUpperCase()}]`).join('\n');
+  const requestedText = playersRequested.map(p => `  ${p.name} (${p.position}, ${p.mlbTeam}) [${p.rosterType.toUpperCase()}]`).join('\n');
+  const text = `${leagueName} — Trade Proposal\n\n${proposerTeamName} sends:\n${offeredText}\n\n${partnerTeamName} sends:\n${requestedText}\n${notes ? `\nNotes: ${notes}\n` : ''}\nLog in to ${APP_NAME} to accept or reject this trade.\n`;
+
+  return sendEmail({
+    to,
+    subject: `${leagueName} — Trade Proposal from ${proposerTeamName}`,
+    html,
+    text,
+  });
+}
+
+export async function sendTradeCompletedEmail(
+  to: string,
+  leagueName: string,
+  proposerTeamName: string,
+  partnerTeamName: string,
+  playersFromProposer: TradeEmailPlayer[],
+  playersFromPartner: TradeEmailPlayer[],
+): Promise<{ success: boolean; error?: string }> {
+  const playerRow = (p: TradeEmailPlayer) =>
+    `<tr><td style="padding: 6px 10px; border-bottom: 1px solid #eee; font-size: 13px;">${p.name}</td><td style="padding: 6px 10px; border-bottom: 1px solid #eee; font-size: 13px; color: #555;">${p.position}, ${p.mlbTeam}</td><td style="padding: 6px 10px; border-bottom: 1px solid #eee;"><span style="display: inline-block; background: ${p.rosterType === 'mlb' ? '#1565c0' : '#6a1b9a'}; color: white; font-size: 10px; padding: 1px 5px; border-radius: 3px;">${p.rosterType.toUpperCase()}</span></td></tr>`;
+
+  const playerTable = (title: string, rows: TradeEmailPlayer[]) => rows.length === 0 ? '' : `
+    <p style="margin: 15px 0 5px; font-weight: bold; font-size: 14px; color: #333;">${title}</p>
+    <table style="width: 100%; border-collapse: collapse; background: white; border: 1px solid #ddd; border-radius: 6px;">
+      <thead><tr style="background: #f5f5f5;">
+        <th style="padding: 6px 10px; text-align: left; font-size: 11px; color: #999; text-transform: uppercase;">Player</th>
+        <th style="padding: 6px 10px; text-align: left; font-size: 11px; color: #999; text-transform: uppercase;">Info</th>
+        <th style="padding: 6px 10px; text-align: left; font-size: 11px; color: #999; text-transform: uppercase;">Roster</th>
+      </tr></thead>
+      <tbody>${rows.map(playerRow).join('')}</tbody>
+    </table>`;
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="font-family: 'Roboto', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <div style="background: linear-gradient(135deg, #2e7d32 0%, #43a047 100%); padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+    <h1 style="color: white; margin: 0; font-size: 20px;">${leagueName} — Trade Completed</h1>
+    <p style="color: #c8e6c9; margin: 5px 0 0 0; font-size: 14px;">${proposerTeamName} and ${partnerTeamName} have completed a trade</p>
+  </div>
+  <div style="background: #f9f9f9; padding: 25px; border-radius: 0 0 8px 8px;">
+    ${playerTable(`${proposerTeamName} receives:`, playersFromPartner)}
+    ${playerTable(`${partnerTeamName} receives:`, playersFromProposer)}
+    <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
+    <p style="color: #999; font-size: 11px; text-align: center;">This notification was sent by ${APP_NAME}.</p>
+  </div>
+</body></html>`;
+
+  const fromProposerText = playersFromProposer.map(p => `  ${p.name} (${p.position}, ${p.mlbTeam}) [${p.rosterType.toUpperCase()}]`).join('\n');
+  const fromPartnerText = playersFromPartner.map(p => `  ${p.name} (${p.position}, ${p.mlbTeam}) [${p.rosterType.toUpperCase()}]`).join('\n');
+  const text = `${leagueName} — Trade Completed\n\n${proposerTeamName} receives:\n${fromPartnerText}\n\n${partnerTeamName} receives:\n${fromProposerText}\n`;
+
+  return sendEmail({
+    to,
+    subject: `${leagueName} — Trade: ${proposerTeamName} / ${partnerTeamName}`,
+    html,
+    text,
+  });
+}

@@ -22,6 +22,8 @@ import {
   mlbPlayers,
   mlbPlayerStats,
   draftPlayers,
+  trades,
+  tradeItems,
 } from "@shared/schema";
 import { eq, and, inArray, sql, desc } from "drizzle-orm";
 import { z } from "zod";
@@ -29,7 +31,7 @@ import { fromZonedTime } from "date-fns-tz";
 import { parse, isValid, format } from "date-fns";
 import crypto from "crypto";
 import { syncPlayerStatsFromMLB, testMLBConnection, fetchAllAffiliatedPlayers } from "./mlb-api";
-import { sendDraftPickNotificationEmail, sendDraftCatchUpEmail, type DraftPickNotification, type DraftCatchUpPick, type UpcomingPick, type RoundRecapPick } from "./email";
+import { sendDraftPickNotificationEmail, sendDraftCatchUpEmail, sendTradeProposalEmail, sendTradeCompletedEmail, type DraftPickNotification, type DraftCatchUpPick, type UpcomingPick, type RoundRecapPick, type TradeEmailPlayer } from "./email";
 import fs from "fs/promises";
 import path from "path";
 
@@ -1700,6 +1702,391 @@ export async function registerRoutes(
       }
       console.error("Error claiming player:", error);
       res.status(500).json({ message: "Failed to claim player" });
+    }
+  });
+
+  // ==================== TRADES ====================
+
+  app.get("/api/leagues/:id/trades", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+      const member = await storage.getLeagueMember(leagueId, userId);
+      if (!member) return res.status(403).json({ message: "Not a member of this league" });
+
+      const { status, season } = req.query;
+      const tradesList = await storage.getTradesForLeague(leagueId, {
+        status: status as string | undefined,
+        season: season ? parseInt(season as string) : undefined,
+      });
+      res.json(tradesList);
+    } catch (error: any) {
+      console.error("Error fetching trades:", error);
+      res.status(500).json({ message: "Failed to fetch trades" });
+    }
+  });
+
+  app.get("/api/leagues/:id/trades/:tradeId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+      const member = await storage.getLeagueMember(leagueId, userId);
+      if (!member) return res.status(403).json({ message: "Not a member of this league" });
+
+      const trade = await storage.getTrade(parseInt(req.params.tradeId));
+      if (!trade || trade.leagueId !== leagueId) return res.status(404).json({ message: "Trade not found" });
+      res.json(trade);
+    } catch (error: any) {
+      console.error("Error fetching trade:", error);
+      res.status(500).json({ message: "Failed to fetch trade" });
+    }
+  });
+
+  app.post("/api/leagues/:id/trades", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+      const member = await storage.getLeagueMember(leagueId, userId);
+      if (!member) return res.status(403).json({ message: "Not a member of this league" });
+
+      const { partnerUserId, items, notes } = req.body;
+      if (!partnerUserId || !items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ message: "partnerUserId and at least one trade item are required" });
+      }
+      if (partnerUserId === userId) {
+        return res.status(400).json({ message: "Cannot trade with yourself" });
+      }
+      const partnerMember = await storage.getLeagueMember(leagueId, partnerUserId);
+      if (!partnerMember) return res.status(400).json({ message: "Trade partner is not a league member" });
+
+      const currentYear = new Date().getFullYear();
+      const season = currentYear;
+
+      for (const item of items) {
+        if (item.fromUserId !== userId && item.fromUserId !== partnerUserId) {
+          return res.status(400).json({ message: "Trade items must belong to either the proposer or the trade partner" });
+        }
+      }
+
+      const rosterAssignments = await storage.getLeagueRosterAssignments(leagueId, season);
+      for (const item of items) {
+        const assignment = rosterAssignments.find(a => a.mlbPlayerId === item.mlbPlayerId && a.userId === item.fromUserId);
+        if (!assignment) {
+          return res.status(400).json({ message: `Player ${item.mlbPlayerId} is not on ${item.fromUserId === userId ? 'your' : "partner's"} roster` });
+        }
+      }
+
+      const trade = await storage.createTrade(
+        { leagueId, proposingUserId: userId, partnerUserId, status: 'pending', notes: notes || null, season },
+        items.map((i: any) => ({ tradeId: 0, fromUserId: i.fromUserId, mlbPlayerId: i.mlbPlayerId, rosterType: i.rosterType })),
+      );
+
+      (async () => {
+        try {
+          const partner = await storage.getUser(partnerUserId);
+          const proposer = await storage.getUser(userId);
+          const league = await storage.getLeague(leagueId);
+          if (!partner?.email || !proposer || !league) return;
+
+          const playersOffered: TradeEmailPlayer[] = trade.items
+            .filter(i => i.fromUserId === userId)
+            .map(i => ({ name: i.player.name, position: i.player.position || '', mlbTeam: i.player.mlbTeam || '', rosterType: i.rosterType }));
+          const playersRequested: TradeEmailPlayer[] = trade.items
+            .filter(i => i.fromUserId === partnerUserId)
+            .map(i => ({ name: i.player.name, position: i.player.position || '', mlbTeam: i.player.mlbTeam || '', rosterType: i.rosterType }));
+
+          await sendTradeProposalEmail(
+            partner.email,
+            league.name,
+            proposer.teamName || `${proposer.firstName} ${proposer.lastName}`,
+            partner.teamName || `${partner.firstName} ${partner.lastName}`,
+            playersOffered,
+            playersRequested,
+            trade.notes,
+          );
+        } catch (e) {
+          console.error("Failed to send trade proposal email:", e);
+        }
+      })();
+
+      res.json(trade);
+    } catch (error: any) {
+      console.error("Error creating trade:", error);
+      res.status(500).json({ message: "Failed to create trade" });
+    }
+  });
+
+  app.post("/api/leagues/:id/trades/:tradeId/respond", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+      const tradeId = parseInt(req.params.tradeId);
+      const { action } = req.body;
+
+      if (!['accept', 'reject'].includes(action)) {
+        return res.status(400).json({ message: "action must be 'accept' or 'reject'" });
+      }
+
+      const trade = await storage.getTrade(tradeId);
+      if (!trade || trade.leagueId !== leagueId) return res.status(404).json({ message: "Trade not found" });
+      if (trade.partnerUserId !== userId) return res.status(403).json({ message: "Only the trade partner can respond" });
+      if (trade.status !== 'pending') return res.status(400).json({ message: `Trade is already ${trade.status}` });
+
+      if (action === 'accept') {
+        try {
+          await storage.respondToTrade(tradeId, 'accepted');
+        } catch (e: any) {
+          return res.status(409).json({ message: "Trade is no longer pending" });
+        }
+
+        const season = trade.season;
+        const rosterAssignments = await storage.getLeagueRosterAssignments(leagueId, season);
+
+        const proposerItemIds: number[] = [];
+        const partnerItemIds: number[] = [];
+        for (const item of trade.items) {
+          const assignment = rosterAssignments.find(a => a.mlbPlayerId === item.mlbPlayerId && a.userId === item.fromUserId);
+          if (!assignment) {
+            return res.status(400).json({ message: `Player ${item.player.name} is no longer on the expected roster. Trade cannot be completed.` });
+          }
+          if (item.fromUserId === trade.proposingUserId) {
+            proposerItemIds.push(assignment.id);
+          } else {
+            partnerItemIds.push(assignment.id);
+          }
+        }
+
+        await storage.executeRosterTrade({
+          leagueId,
+          season,
+          teamAUserId: trade.proposingUserId,
+          teamBUserId: trade.partnerUserId,
+          teamAAssignmentIds: proposerItemIds,
+          teamBAssignmentIds: partnerItemIds,
+        });
+
+        (async () => {
+          try {
+            const league = await storage.getLeague(leagueId);
+            if (!league) return;
+            const members = await storage.getLeagueMembers(leagueId);
+            const proposer = await storage.getUser(trade.proposingUserId);
+            const partner = await storage.getUser(trade.partnerUserId);
+            if (!proposer || !partner) return;
+
+            const playersFromProposer: TradeEmailPlayer[] = trade.items
+              .filter(i => i.fromUserId === trade.proposingUserId)
+              .map(i => ({ name: i.player.name, position: i.player.position || '', mlbTeam: i.player.mlbTeam || '', rosterType: i.rosterType }));
+            const playersFromPartner: TradeEmailPlayer[] = trade.items
+              .filter(i => i.fromUserId === trade.partnerUserId)
+              .map(i => ({ name: i.player.name, position: i.player.position || '', mlbTeam: i.player.mlbTeam || '', rosterType: i.rosterType }));
+
+            const proposerName = proposer.teamName || `${proposer.firstName} ${proposer.lastName}`;
+            const partnerName = partner.teamName || `${partner.firstName} ${partner.lastName}`;
+
+            for (const m of members) {
+              if (m.user.email) {
+                await sendTradeCompletedEmail(m.user.email, league.name, proposerName, partnerName, playersFromProposer, playersFromPartner);
+                await new Promise(r => setTimeout(r, 600));
+              }
+            }
+          } catch (e) {
+            console.error("Failed to send trade completed emails:", e);
+          }
+        })();
+
+        const updatedTrade = await storage.getTrade(tradeId);
+        res.json(updatedTrade);
+      } else {
+        await storage.respondToTrade(tradeId, 'rejected');
+        const updatedTrade = await storage.getTrade(tradeId);
+        res.json(updatedTrade);
+      }
+    } catch (error: any) {
+      console.error("Error responding to trade:", error);
+      res.status(500).json({ message: "Failed to respond to trade" });
+    }
+  });
+
+  app.post("/api/leagues/:id/trades/:tradeId/cancel", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId!;
+      const tradeId = parseInt(req.params.tradeId);
+      const leagueId = parseInt(req.params.id);
+
+      const trade = await storage.getTrade(tradeId);
+      if (!trade || trade.leagueId !== leagueId) return res.status(404).json({ message: "Trade not found" });
+      if (trade.proposingUserId !== userId) return res.status(403).json({ message: "Only the proposer can cancel a trade" });
+      if (trade.status !== 'pending') return res.status(400).json({ message: `Trade is already ${trade.status}` });
+
+      await storage.cancelTrade(tradeId);
+      const updatedTrade = await storage.getTrade(tradeId);
+      res.json(updatedTrade);
+    } catch (error: any) {
+      console.error("Error cancelling trade:", error);
+      res.status(500).json({ message: "Failed to cancel trade" });
+    }
+  });
+
+  // ==================== TRANSACTIONS ====================
+
+  app.get("/api/leagues/:id/transactions", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const leagueId = parseInt(req.params.id);
+      const member = await storage.getLeagueMember(leagueId, userId);
+      if (!member) return res.status(403).json({ message: "Not a member of this league" });
+
+      const { type, team, year, search } = req.query;
+      const currentYear = new Date().getFullYear();
+      const filterYear = year ? parseInt(year as string) : undefined;
+      const transactions: any[] = [];
+
+      if (!type || type === 'trade') {
+        const tradesList = await storage.getTradesForLeague(leagueId, {
+          status: 'accepted',
+          season: filterYear,
+        });
+        for (const t of tradesList) {
+          const proposerName = t.proposingUser.teamName || `${t.proposingUser.firstName} ${t.proposingUser.lastName}`;
+          const partnerName = t.partnerUser.teamName || `${t.partnerUser.firstName} ${t.partnerUser.lastName}`;
+
+          for (const item of t.items) {
+            const toUserId = item.fromUserId === t.proposingUserId ? t.partnerUserId : t.proposingUserId;
+            const fromTeam = item.fromUserId === t.proposingUserId ? proposerName : partnerName;
+            const toTeam = item.fromUserId === t.proposingUserId ? partnerName : proposerName;
+
+            if (team && item.fromUserId !== team && toUserId !== team) continue;
+            if (search && !item.player.name.toLowerCase().includes((search as string).toLowerCase())) continue;
+
+            transactions.push({
+              id: `trade-${t.id}-${item.id}`,
+              type: 'trade',
+              playerName: item.player.name,
+              playerPosition: item.player.position,
+              playerMlbTeam: item.player.mlbTeam,
+              fromTeam,
+              toTeam,
+              fromUserId: item.fromUserId,
+              toUserId,
+              rosterType: item.rosterType,
+              date: t.respondedAt || t.proposedAt,
+              season: t.season,
+              details: `Traded from ${fromTeam} to ${toTeam}`,
+            });
+          }
+        }
+      }
+
+      if (!type || type === 'claim') {
+        const claimSeasons = filterYear ? [filterYear] : Array.from({ length: 5 }, (_, i) => currentYear - i);
+        const claimUserCache = new Map<string, { teamName: string }>();
+        for (const season of claimSeasons) {
+          const assignments = await storage.getLeagueRosterAssignments(leagueId, season);
+          for (const a of assignments) {
+            if (!a.acquired || !a.acquired.startsWith('FA ')) continue;
+
+            if (team && a.userId !== team) continue;
+            if (search && !a.player.name.toLowerCase().includes((search as string).toLowerCase())) continue;
+
+            if (!claimUserCache.has(a.userId)) {
+              const u = await storage.getUser(a.userId);
+              claimUserCache.set(a.userId, { teamName: u?.teamName || `${u?.firstName} ${u?.lastName}` });
+            }
+            const teamName = claimUserCache.get(a.userId)!.teamName;
+
+            transactions.push({
+              id: `claim-${a.id}`,
+              type: 'claim',
+              playerName: a.player.name,
+              playerPosition: a.player.position,
+              playerMlbTeam: a.player.mlbTeam,
+              fromTeam: 'Free Agent',
+              toTeam: teamName,
+              fromUserId: null,
+              toUserId: a.userId,
+              rosterType: a.rosterType,
+              date: a.createdAt,
+              season: season,
+              details: `Claimed by ${teamName}`,
+            });
+          }
+        }
+      }
+
+      if (!type || type === 'signing') {
+        const auctionsList = await storage.getAllAuctions();
+        const leagueAuctions = auctionsList.filter(a => a.leagueId === leagueId);
+        for (const auction of leagueAuctions) {
+          if (filterYear && auction.season !== filterYear) continue;
+          const agents = await storage.getFreeAgentsByAuction(auction.id);
+          for (const agent of agents) {
+            if (!agent.currentBid || !agent.highBidder) continue;
+            const teamName = agent.highBidder.teamName || `${agent.highBidder.firstName} ${agent.highBidder.lastName}`;
+
+            if (team && agent.highBidder.id !== team) continue;
+            if (search && !agent.playerName.toLowerCase().includes((search as string).toLowerCase())) continue;
+
+            transactions.push({
+              id: `signing-${agent.id}`,
+              type: 'signing',
+              playerName: agent.playerName,
+              playerPosition: agent.playerType === 'pitcher' ? 'P' : 'H',
+              playerMlbTeam: null,
+              fromTeam: 'Free Agent',
+              toTeam: teamName,
+              fromUserId: null,
+              toUserId: agent.highBidder.id,
+              rosterType: 'mlb',
+              date: agent.auctionEndTime,
+              season: auction.season || currentYear,
+              details: `$${agent.currentBid.amount} / ${agent.currentBid.years}yr`,
+            });
+          }
+        }
+      }
+
+      if (!type || type === 'draft') {
+        const draftsList = await storage.getDraftsByLeague(leagueId);
+        for (const draft of draftsList) {
+          if (filterYear && draft.season !== filterYear) continue;
+          const picks = await storage.getDraftPicks(draft.id);
+          for (const pick of picks) {
+            if (!pick.mlbPlayerId || !pick.player) continue;
+            const teamName = pick.user.teamName || `${pick.user.firstName} ${pick.user.lastName}`;
+
+            if (team && pick.userId !== team) continue;
+            if (search && !pick.player.name.toLowerCase().includes((search as string).toLowerCase())) continue;
+
+            transactions.push({
+              id: `draft-${pick.id}`,
+              type: 'draft',
+              playerName: pick.player.name,
+              playerPosition: pick.player.position,
+              playerMlbTeam: pick.player.mlbTeam,
+              fromTeam: 'Draft',
+              toTeam: teamName,
+              fromUserId: null,
+              toUserId: pick.userId,
+              rosterType: pick.rosterType || 'mlb',
+              date: pick.madeAt,
+              season: draft.season,
+              details: `Round ${pick.round}, Pick ${(pick.overallPickNumber || 0) + 1}`,
+            });
+          }
+        }
+      }
+
+      transactions.sort((a, b) => {
+        const dateA = a.date ? new Date(a.date).getTime() : 0;
+        const dateB = b.date ? new Date(b.date).getTime() : 0;
+        return dateB - dateA;
+      });
+
+      res.json(transactions);
+    } catch (error: any) {
+      console.error("Error fetching transactions:", error);
+      res.status(500).json({ message: "Failed to fetch transactions" });
     }
   });
 
