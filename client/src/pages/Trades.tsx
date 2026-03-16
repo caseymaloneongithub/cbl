@@ -26,16 +26,18 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ArrowLeftRight, Check, X, Clock, Ban } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { TradeWithDetails } from "@shared/schema";
 
-export default function Trades() {
+export default function Trades({ highlightTradeId }: { highlightTradeId?: number } = {}) {
   const { user } = useAuth();
   const { currentLeague, selectedLeagueId } = useLeague();
   const { toast } = useToast();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [confirmAction, setConfirmAction] = useState<{ tradeId: number; action: "accept" | "reject" | "cancel" } | null>(null);
+  const highlightRef = useRef<HTMLDivElement>(null);
+  const hasScrolled = useRef(false);
 
   const leagueId = selectedLeagueId;
 
@@ -66,6 +68,21 @@ export default function Trades() {
       setConfirmAction(null);
     },
   });
+
+  useEffect(() => {
+    if (highlightTradeId && tradesQuery.data && !hasScrolled.current) {
+      const trade = tradesQuery.data.find(t => t.id === highlightTradeId);
+      if (trade && statusFilter !== "all" && statusFilter !== trade.status) {
+        setStatusFilter("all");
+      }
+      setTimeout(() => {
+        if (highlightRef.current) {
+          highlightRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+          hasScrolled.current = true;
+        }
+      }, 100);
+    }
+  }, [highlightTradeId, tradesQuery.data, statusFilter]);
 
   if (!currentLeague) {
     return (
@@ -134,7 +151,12 @@ export default function Trades() {
             const canCancel = isProposer && trade.status === "pending";
 
             return (
-              <Card key={trade.id} data-testid={`trade-card-${trade.id}`}>
+              <Card
+                key={trade.id}
+                ref={trade.id === highlightTradeId ? highlightRef : undefined}
+                data-testid={`trade-card-${trade.id}`}
+                className={trade.id === highlightTradeId ? "ring-2 ring-primary shadow-lg" : ""}
+              >
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-3">

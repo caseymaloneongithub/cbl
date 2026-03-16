@@ -1788,6 +1788,12 @@ export async function registerRoutes(
           const league = await storage.getLeague(leagueId);
           if (!partner?.email || !proposer || !league) return;
 
+          const appUrl = process.env.REPLIT_DEV_DOMAIN
+            ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+            : process.env.REPLIT_DEPLOYMENT_DOMAIN
+              ? `https://${process.env.REPLIT_DEPLOYMENT_DOMAIN}`
+              : 'https://cbl-auctions.replit.app';
+
           const playersOffered: TradeEmailPlayer[] = trade.items
             .filter(i => i.fromUserId === userId)
             .map(i => ({ name: i.player.fullName, position: i.player.primaryPosition || '', mlbTeam: i.player.currentTeamName || '', rosterType: i.rosterType }));
@@ -1803,6 +1809,8 @@ export async function registerRoutes(
             playersOffered,
             playersRequested,
             trade.notes,
+            appUrl,
+            trade.id,
           );
         } catch (e) {
           console.error("Failed to send trade proposal email:", e);

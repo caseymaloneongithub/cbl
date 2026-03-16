@@ -844,7 +844,11 @@ export async function sendTradeProposalEmail(
   playersOffered: TradeEmailPlayer[],
   playersRequested: TradeEmailPlayer[],
   notes: string | null,
+  appUrl: string,
+  tradeId: number,
 ): Promise<{ success: boolean; error?: string }> {
+  const tradeLink = `${appUrl}/trades/${tradeId}`;
+
   const playerRow = (p: TradeEmailPlayer) =>
     `<tr><td style="padding: 6px 10px; border-bottom: 1px solid #eee; font-size: 13px;">${p.name}</td><td style="padding: 6px 10px; border-bottom: 1px solid #eee; font-size: 13px; color: #555;">${p.position}, ${p.mlbTeam}</td><td style="padding: 6px 10px; border-bottom: 1px solid #eee;"><span style="display: inline-block; background: ${p.rosterType === 'mlb' ? '#1565c0' : '#6a1b9a'}; color: white; font-size: 10px; padding: 1px 5px; border-radius: 3px;">${p.rosterType.toUpperCase()}</span></td></tr>`;
 
@@ -869,7 +873,10 @@ export async function sendTradeProposalEmail(
     ${playerTable(`${proposerTeamName} sends:`, playersOffered)}
     ${playerTable(`${partnerTeamName} sends:`, playersRequested)}
     ${notes ? `<div style="margin-top: 15px; padding: 10px; background: #fff3e0; border-left: 3px solid #ff9800; border-radius: 4px; font-size: 13px;"><strong>Notes:</strong> ${notes}</div>` : ''}
-    <p style="margin-top: 20px; font-size: 13px; color: #555;">Log in to ${APP_NAME} to accept or reject this trade.</p>
+    <div style="text-align: center; margin-top: 25px;">
+      <a href="${tradeLink}" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); color: white; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 15px; display: inline-block;">Review Trade</a>
+    </div>
+    <p style="margin-top: 15px; font-size: 12px; color: #777; text-align: center;">Or copy this link: <a href="${tradeLink}" style="color: #1565c0; word-break: break-all;">${tradeLink}</a></p>
     <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
     <p style="color: #999; font-size: 11px; text-align: center;">This notification was sent by ${APP_NAME}.</p>
   </div>
@@ -877,7 +884,7 @@ export async function sendTradeProposalEmail(
 
   const offeredText = playersOffered.map(p => `  ${p.name} (${p.position}, ${p.mlbTeam}) [${p.rosterType.toUpperCase()}]`).join('\n');
   const requestedText = playersRequested.map(p => `  ${p.name} (${p.position}, ${p.mlbTeam}) [${p.rosterType.toUpperCase()}]`).join('\n');
-  const text = `${leagueName} — Trade Proposal\n\n${proposerTeamName} sends:\n${offeredText}\n\n${partnerTeamName} sends:\n${requestedText}\n${notes ? `\nNotes: ${notes}\n` : ''}\nLog in to ${APP_NAME} to accept or reject this trade.\n`;
+  const text = `${leagueName} — Trade Proposal\n\n${proposerTeamName} sends:\n${offeredText}\n\n${partnerTeamName} sends:\n${requestedText}\n${notes ? `\nNotes: ${notes}\n` : ''}\nReview this trade: ${tradeLink}\n`;
 
   return sendEmail({
     to,

@@ -106,14 +106,14 @@ function SuperAdminRoute({ component: Component }: { component: React.ComponentT
   return <Component />;
 }
 
-function ProtectedRoute({ component: Component }: { component: React.ComponentType<any> }) {
+function ProtectedRoute({ component: Component, componentProps }: { component: React.ComponentType<any>; componentProps?: Record<string, any> }) {
   const { isAuthenticated } = useAuth();
   
   if (!isAuthenticated) {
     return <Redirect to="/" />;
   }
   
-  return <Component />;
+  return <Component {...(componentProps || {})} />;
 }
 
 function Router() {
@@ -157,6 +157,9 @@ function Router() {
       </Route>
       <Route path="/submit-trade">
         {() => <ProtectedRoute component={SubmitTrade} />}
+      </Route>
+      <Route path="/trades/:tradeId">
+        {(params: { tradeId: string }) => <ProtectedRoute component={TradesPage} componentProps={{ highlightTradeId: parseInt(params.tradeId) }} />}
       </Route>
       <Route path="/trades">
         {() => <ProtectedRoute component={TradesPage} />}
