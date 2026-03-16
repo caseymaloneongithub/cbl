@@ -28,10 +28,20 @@ export async function sendEmail(options: SendEmailOptions): Promise<{ success: b
   try {
     const { client, fromEmail } = getResendClient();
     
+    let to = options.to;
+    let subject = options.subject;
+    if (process.env.NODE_ENV !== 'production') {
+      const devRecipient = process.env.DEV_EMAIL_RECIPIENT;
+      if (devRecipient) {
+        subject = `[DEV → ${options.to}] ${options.subject}`;
+        to = devRecipient;
+      }
+    }
+
     const result = await client.emails.send({
       from: fromEmail,
-      to: options.to,
-      subject: options.subject,
+      to,
+      subject,
       html: options.html,
       text: options.text,
     });
