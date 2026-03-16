@@ -49,3 +49,7 @@ integrations = ["javascript_log_in_with_replit:1.0.0", "javascript_database:1.0.
 
 [userenv.development]
 DEV_EMAIL_RECIPIENT = "caseyemalone@protonmail.com"
+
+[userenv.shared]
+TEST_SUPER_ADMIN_EMAIL = "caseyemalone@protonmail.com"
+TEST_SUPER_ADMIN_PASSWORD = "UET*ugd1pbf0xvr.vxq"

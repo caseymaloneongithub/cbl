@@ -31,9 +31,11 @@ export function useAuth() {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       queryClient.invalidateQueries({ queryKey: ["/api/leagues"] });
       const returnTo = sessionStorage.getItem("returnTo");
-      if (returnTo) {
+      if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//")) {
         sessionStorage.removeItem("returnTo");
         window.location.href = returnTo;
+      } else {
+        sessionStorage.removeItem("returnTo");
       }
     },
   });

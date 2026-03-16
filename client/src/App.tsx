@@ -71,9 +71,9 @@ function CommissionerRoute({ component: Component }: { component: React.Componen
   const { hasAnyCommissionerRole, isLoadingLeagues } = useLeague();
   
   if (!isAuthenticated) {
-    const currentPath = window.location.pathname;
-    if (currentPath && currentPath !== "/" && currentPath !== "/home") {
-      sessionStorage.setItem("returnTo", currentPath);
+    const currentUrl = window.location.pathname + window.location.search + window.location.hash;
+    if (currentUrl && currentUrl !== "/" && currentUrl !== "/home") {
+      sessionStorage.setItem("returnTo", currentUrl);
     }
     return <Redirect to="/" />;
   }
@@ -98,9 +98,9 @@ function SuperAdminRoute({ component: Component }: { component: React.ComponentT
   const { user, isAuthenticated } = useAuth();
   
   if (!isAuthenticated) {
-    const currentPath = window.location.pathname;
-    if (currentPath && currentPath !== "/" && currentPath !== "/home") {
-      sessionStorage.setItem("returnTo", currentPath);
+    const currentUrl = window.location.pathname + window.location.search + window.location.hash;
+    if (currentUrl && currentUrl !== "/" && currentUrl !== "/home") {
+      sessionStorage.setItem("returnTo", currentUrl);
     }
     return <Redirect to="/" />;
   }
@@ -116,9 +116,9 @@ function ProtectedRoute({ component: Component, componentProps }: { component: R
   const { isAuthenticated } = useAuth();
   
   if (!isAuthenticated) {
-    const currentPath = window.location.pathname;
-    if (currentPath && currentPath !== "/" && currentPath !== "/home") {
-      sessionStorage.setItem("returnTo", currentPath);
+    const currentUrl = window.location.pathname + window.location.search + window.location.hash;
+    if (currentUrl && currentUrl !== "/" && currentUrl !== "/home") {
+      sessionStorage.setItem("returnTo", currentUrl);
     }
     return <Redirect to="/" />;
   }
