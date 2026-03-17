@@ -1689,6 +1689,22 @@ export async function registerRoutes(
       const [player] = await db.select().from(mlbPlayers).where(eq(mlbPlayers.id, Number(mlbPlayerId)));
       const rosterType = player && player.sportLevel !== 'MLB' ? 'milb' : 'mlb';
 
+      const etDateStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+      const todayMidnightETasUTC = new Date(`${etDateStr}T00:00:00-${new Date().toLocaleString("en-US", { timeZone: "America/New_York", timeZoneName: "shortOffset" }).split("GMT")[1] || "05:00"}`);
+
+      const todaysClaims = await db.select().from(leagueRosterAssignments).where(
+        and(
+          eq(leagueRosterAssignments.leagueId, leagueId),
+          eq(leagueRosterAssignments.userId, claimingUserId),
+          eq(leagueRosterAssignments.rosterType, rosterType),
+          sql`${leagueRosterAssignments.acquired} LIKE 'FA %'`,
+          sql`${leagueRosterAssignments.createdAt} >= ${todayMidnightETasUTC.toISOString()}`
+        )
+      );
+      if (todaysClaims.length > 0) {
+        return res.status(429).json({ message: `You have already claimed a free agent for your ${rosterType.toUpperCase()} roster today. You can claim again after midnight ET.` });
+      }
+
       const assignment = await storage.assignPlayerToRoster({
         leagueId,
         userId: claimingUserId,
