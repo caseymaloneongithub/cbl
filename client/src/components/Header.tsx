@@ -138,6 +138,9 @@ export function Header() {
   const myRosterItems = [
     { href: "/my-roster/mlb", label: "MLB" },
     { href: "/my-roster/milb", label: "MiLB" },
+  ];
+
+  const tradeItems = [
     { href: "/submit-trade", label: "Submit Trade" },
     { href: "/trades", label: "Trades" },
   ];
@@ -208,6 +211,12 @@ export function Header() {
                 items={playersItems}
                 location={location}
                 testId="nav-players"
+              />
+              <NavDropdown
+                label="Trade"
+                items={tradeItems}
+                location={location}
+                testId="nav-trade"
               />
               <Link href={draftHref}>
                 <Button
@@ -308,6 +317,24 @@ export function Header() {
                         <span className="text-xs text-muted-foreground font-medium">Players</span>
                       </div>
                       {playersItems.map((link) => {
+                        const isActive = location === link.href;
+                        return (
+                          <Link key={link.href} href={link.href} onClick={() => setMobileMenuOpen(false)}>
+                            <Button
+                              variant={isActive ? "secondary" : "ghost"}
+                              className="w-full justify-start"
+                              size="sm"
+                            >
+                              {link.label}
+                            </Button>
+                          </Link>
+                        );
+                      })}
+                      <div className="border-b my-2" />
+                      <div className="px-2 py-1">
+                        <span className="text-xs text-muted-foreground font-medium">Trade</span>
+                      </div>
+                      {tradeItems.map((link) => {
                         const isActive = location === link.href;
                         return (
                           <Link key={link.href} href={link.href} onClick={() => setMobileMenuOpen(false)}>
