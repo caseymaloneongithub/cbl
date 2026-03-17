@@ -7,17 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { ArrowLeftRight, Send } from "lucide-react";
+import { ArrowLeftRight, Send, Search, Plus, X, Trash2 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useLocation } from "wouter";
@@ -46,14 +38,219 @@ interface LeagueMember {
   };
 }
 
+interface TradeItem {
+  mlbPlayerId: number;
+  rosterType: string;
+  player: MlbPlayer;
+}
+
+function stripAccents(s: string) {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function PlayerSearchSelector({
+  label,
+  roster,
+  selectedItems,
+  onAdd,
+  onRemove,
+  testIdPrefix,
+}: {
+  label: string;
+  roster: RosterAssignment[];
+  selectedItems: TradeItem[];
+  onAdd: (item: TradeItem) => void;
+  onRemove: (mlbPlayerId: number) => void;
+  testIdPrefix: string;
+}) {
+  const [mlbSearch, setMlbSearch] = useState("");
+  const [milbSearch, setMilbSearch] = useState("");
+
+  const selectedIds = new Set(selectedItems.map(i => i.mlbPlayerId));
+
+  const mlbPlayers = useMemo(() => roster.filter(a => a.rosterType === "mlb"), [roster]);
+  const milbPlayers = useMemo(() => roster.filter(a => a.rosterType === "milb"), [roster]);
+
+  const mlbCandidates = useMemo(() => {
+    const needle = stripAccents(mlbSearch.trim().toLowerCase());
+    if (!needle || needle.length < 2) return [];
+    return mlbPlayers
+      .filter(a => !selectedIds.has(a.mlbPlayerId))
+      .filter(a => stripAccents(a.player.fullName?.toLowerCase() || "").includes(needle))
+      .slice(0, 10);
+  }, [mlbPlayers, mlbSearch, selectedIds]);
+
+  const milbCandidates = useMemo(() => {
+    const needle = stripAccents(milbSearch.trim().toLowerCase());
+    if (!needle || needle.length < 2) return [];
+    return milbPlayers
+      .filter(a => !selectedIds.has(a.mlbPlayerId))
+      .filter(a => stripAccents(a.player.fullName?.toLowerCase() || "").includes(needle))
+      .slice(0, 10);
+  }, [milbPlayers, milbSearch, selectedIds]);
+
+  const mlbSelected = selectedItems.filter(i => i.rosterType === "mlb");
+  const milbSelected = selectedItems.filter(i => i.rosterType === "milb");
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-lg">{label}</CardTitle>
+        <div className="text-xs text-muted-foreground">
+          {mlbPlayers.length} MLB, {milbPlayers.length} MiLB on roster
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Badge variant="default" className="text-xs shrink-0">MLB</Badge>
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                value={mlbSearch}
+                onChange={e => setMlbSearch(e.target.value)}
+                placeholder="Search MLB roster..."
+                className="pl-8 h-9 text-sm"
+                data-testid={`${testIdPrefix}-mlb-search`}
+              />
+            </div>
+          </div>
+          {mlbSearch.trim().length >= 2 && (
+            <div className="border rounded-md p-1.5 space-y-1 max-h-48 overflow-y-auto">
+              {mlbCandidates.length === 0 ? (
+                <div className="px-2 py-1 text-xs text-muted-foreground">No matching MLB players.</div>
+              ) : (
+                mlbCandidates.map(a => (
+                  <div
+                    key={a.mlbPlayerId}
+                    className="flex items-center justify-between gap-2 rounded-md border px-2 py-1.5"
+                    data-testid={`${testIdPrefix}-mlb-candidate-${a.mlbPlayerId}`}
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">{a.player.fullName}</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {a.player.primaryPosition} — {a.player.currentTeamName || "-"}
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        onAdd({ mlbPlayerId: a.mlbPlayerId, rosterType: "mlb", player: a.player });
+                        setMlbSearch("");
+                      }}
+                      data-testid={`${testIdPrefix}-mlb-add-${a.mlbPlayerId}`}
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" />
+                      Add
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+          {mlbSelected.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {mlbSelected.map(item => (
+                <Badge key={item.mlbPlayerId} variant="outline" className="text-sm gap-1 pr-1">
+                  {item.player.fullName}
+                  <span className="text-xs text-muted-foreground">({item.player.primaryPosition})</span>
+                  <button
+                    onClick={() => onRemove(item.mlbPlayerId)}
+                    className="ml-0.5 rounded-full p-0.5 hover:bg-muted"
+                    data-testid={`${testIdPrefix}-mlb-remove-${item.mlbPlayerId}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="text-xs shrink-0">MiLB</Badge>
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                value={milbSearch}
+                onChange={e => setMilbSearch(e.target.value)}
+                placeholder="Search MiLB roster..."
+                className="pl-8 h-9 text-sm"
+                data-testid={`${testIdPrefix}-milb-search`}
+              />
+            </div>
+          </div>
+          {milbSearch.trim().length >= 2 && (
+            <div className="border rounded-md p-1.5 space-y-1 max-h-48 overflow-y-auto">
+              {milbCandidates.length === 0 ? (
+                <div className="px-2 py-1 text-xs text-muted-foreground">No matching MiLB players.</div>
+              ) : (
+                milbCandidates.map(a => (
+                  <div
+                    key={a.mlbPlayerId}
+                    className="flex items-center justify-between gap-2 rounded-md border px-2 py-1.5"
+                    data-testid={`${testIdPrefix}-milb-candidate-${a.mlbPlayerId}`}
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">{a.player.fullName}</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {a.player.primaryPosition} — {a.player.currentTeamName || "-"}
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        onAdd({ mlbPlayerId: a.mlbPlayerId, rosterType: "milb", player: a.player });
+                        setMilbSearch("");
+                      }}
+                      data-testid={`${testIdPrefix}-milb-add-${a.mlbPlayerId}`}
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" />
+                      Add
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+          {milbSelected.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {milbSelected.map(item => (
+                <Badge key={item.mlbPlayerId} variant="outline" className="text-sm gap-1 pr-1">
+                  {item.player.fullName}
+                  <span className="text-xs text-muted-foreground">({item.player.primaryPosition})</span>
+                  <button
+                    onClick={() => onRemove(item.mlbPlayerId)}
+                    className="ml-0.5 rounded-full p-0.5 hover:bg-muted"
+                    data-testid={`${testIdPrefix}-milb-remove-${item.mlbPlayerId}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {selectedItems.length === 0 && (
+          <p className="text-sm text-muted-foreground text-center py-2">Search above to add players to the trade.</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function SubmitTrade() {
   const { user } = useAuth();
   const { currentLeague, selectedLeagueId } = useLeague();
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [partnerUserId, setPartnerUserId] = useState<string>("");
-  const [mySelectedPlayers, setMySelectedPlayers] = useState<Set<number>>(new Set());
-  const [partnerSelectedPlayers, setPartnerSelectedPlayers] = useState<Set<number>>(new Set());
+  const [myItems, setMyItems] = useState<TradeItem[]>([]);
+  const [partnerItems, setPartnerItems] = useState<TradeItem[]>([]);
   const [notes, setNotes] = useState("");
 
   const leagueId = selectedLeagueId;
@@ -108,47 +305,20 @@ export default function SubmitTrade() {
     return assignments.filter(a => a.rosterType === "mlb" || a.rosterType === "milb");
   }, [partnerRosterQuery.data]);
 
-  const toggleMyPlayer = (mlbPlayerId: number) => {
-    setMySelectedPlayers(prev => {
-      const next = new Set(prev);
-      if (next.has(mlbPlayerId)) next.delete(mlbPlayerId);
-      else next.add(mlbPlayerId);
-      return next;
-    });
-  };
-
-  const togglePartnerPlayer = (mlbPlayerId: number) => {
-    setPartnerSelectedPlayers(prev => {
-      const next = new Set(prev);
-      if (next.has(mlbPlayerId)) next.delete(mlbPlayerId);
-      else next.add(mlbPlayerId);
-      return next;
-    });
-  };
-
   const handleSubmit = () => {
     if (!partnerUserId) {
       toast({ title: "Error", description: "Select a trade partner", variant: "destructive" });
       return;
     }
-    if (mySelectedPlayers.size === 0 && partnerSelectedPlayers.size === 0) {
-      toast({ title: "Error", description: "Select at least one player to trade", variant: "destructive" });
+    if (myItems.length === 0 && partnerItems.length === 0) {
+      toast({ title: "Error", description: "Add at least one player to the trade", variant: "destructive" });
       return;
     }
 
-    const items: any[] = [];
-    for (const mlbPlayerId of mySelectedPlayers) {
-      const assignment = myRoster.find(a => a.mlbPlayerId === mlbPlayerId);
-      if (assignment) {
-        items.push({ fromUserId: user!.id, mlbPlayerId, rosterType: assignment.rosterType });
-      }
-    }
-    for (const mlbPlayerId of partnerSelectedPlayers) {
-      const assignment = partnerRoster.find(a => a.mlbPlayerId === mlbPlayerId);
-      if (assignment) {
-        items.push({ fromUserId: partnerUserId, mlbPlayerId, rosterType: assignment.rosterType });
-      }
-    }
+    const items: any[] = [
+      ...myItems.map(i => ({ fromUserId: user!.id, mlbPlayerId: i.mlbPlayerId, rosterType: i.rosterType })),
+      ...partnerItems.map(i => ({ fromUserId: partnerUserId, mlbPlayerId: i.mlbPlayerId, rosterType: i.rosterType })),
+    ];
 
     submitTradeMutation.mutate({ partnerUserId, items, notes });
   };
@@ -181,7 +351,7 @@ export default function SubmitTrade() {
           {membersQuery.isLoading ? (
             <Skeleton className="h-10 w-full" />
           ) : (
-            <Select value={partnerUserId} onValueChange={(val) => { setPartnerUserId(val); setPartnerSelectedPlayers(new Set()); }}>
+            <Select value={partnerUserId} onValueChange={(val) => { setPartnerUserId(val); setPartnerItems([]); }}>
               <SelectTrigger data-testid="select-trade-partner">
                 <SelectValue placeholder="Select a team to trade with" />
               </SelectTrigger>
@@ -198,115 +368,39 @@ export default function SubmitTrade() {
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Your Players</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {myRosterQuery.isLoading ? (
-              <Skeleton className="h-40 w-full" />
-            ) : myRoster.length === 0 ? (
-              <p className="text-muted-foreground text-sm">No players on your roster.</p>
-            ) : (
-              <div className="max-h-[400px] overflow-y-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-10"></TableHead>
-                      <TableHead>Player</TableHead>
-                      <TableHead>Pos</TableHead>
-                      <TableHead>Roster</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {myRoster.map(a => (
-                      <TableRow
-                        key={a.mlbPlayerId}
-                        className={mySelectedPlayers.has(a.mlbPlayerId) ? "bg-primary/10" : "cursor-pointer hover:bg-muted/50"}
-                        onClick={() => toggleMyPlayer(a.mlbPlayerId)}
-                        data-testid={`my-player-row-${a.mlbPlayerId}`}
-                      >
-                        <TableCell>
-                          <Checkbox
-                            checked={mySelectedPlayers.has(a.mlbPlayerId)}
-                            onCheckedChange={() => toggleMyPlayer(a.mlbPlayerId)}
-                            data-testid={`my-player-check-${a.mlbPlayerId}`}
-                          />
-                        </TableCell>
-                        <TableCell className="font-medium">{a.player.name}</TableCell>
-                        <TableCell className="text-muted-foreground">{a.player.position || "-"}</TableCell>
-                        <TableCell>
-                          <Badge variant={a.rosterType === "mlb" ? "default" : "secondary"} className="text-xs">
-                            {a.rosterType.toUpperCase()}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-            {mySelectedPlayers.size > 0 && (
-              <p className="text-sm text-muted-foreground mt-2">{mySelectedPlayers.size} player{mySelectedPlayers.size !== 1 ? "s" : ""} selected</p>
-            )}
-          </CardContent>
-        </Card>
+        <PlayerSearchSelector
+          label="Your Players"
+          roster={myRoster}
+          selectedItems={myItems}
+          onAdd={(item) => setMyItems(prev => [...prev, item])}
+          onRemove={(id) => setMyItems(prev => prev.filter(i => i.mlbPlayerId !== id))}
+          testIdPrefix="my"
+        />
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">{partnerDisplayName ? `${partnerDisplayName}'s Players` : "Partner's Players"}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {!partnerUserId ? (
-              <p className="text-muted-foreground text-sm">Select a trade partner first.</p>
-            ) : partnerRosterQuery.isLoading ? (
-              <Skeleton className="h-40 w-full" />
-            ) : partnerRoster.length === 0 ? (
-              <p className="text-muted-foreground text-sm">No players on partner's roster.</p>
-            ) : (
-              <div className="max-h-[400px] overflow-y-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-10"></TableHead>
-                      <TableHead>Player</TableHead>
-                      <TableHead>Pos</TableHead>
-                      <TableHead>Roster</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {partnerRoster.map(a => (
-                      <TableRow
-                        key={a.mlbPlayerId}
-                        className={partnerSelectedPlayers.has(a.mlbPlayerId) ? "bg-primary/10" : "cursor-pointer hover:bg-muted/50"}
-                        onClick={() => togglePartnerPlayer(a.mlbPlayerId)}
-                        data-testid={`partner-player-row-${a.mlbPlayerId}`}
-                      >
-                        <TableCell>
-                          <Checkbox
-                            checked={partnerSelectedPlayers.has(a.mlbPlayerId)}
-                            onCheckedChange={() => togglePartnerPlayer(a.mlbPlayerId)}
-                            data-testid={`partner-player-check-${a.mlbPlayerId}`}
-                          />
-                        </TableCell>
-                        <TableCell className="font-medium">{a.player.name}</TableCell>
-                        <TableCell className="text-muted-foreground">{a.player.position || "-"}</TableCell>
-                        <TableCell>
-                          <Badge variant={a.rosterType === "mlb" ? "default" : "secondary"} className="text-xs">
-                            {a.rosterType.toUpperCase()}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-            {partnerSelectedPlayers.size > 0 && (
-              <p className="text-sm text-muted-foreground mt-2">{partnerSelectedPlayers.size} player{partnerSelectedPlayers.size !== 1 ? "s" : ""} selected</p>
-            )}
-          </CardContent>
-        </Card>
+        {partnerUserId ? (
+          partnerRosterQuery.isLoading ? (
+            <Card>
+              <CardHeader><CardTitle className="text-lg">{partnerDisplayName ? `${partnerDisplayName}'s Players` : "Partner's Players"}</CardTitle></CardHeader>
+              <CardContent><Skeleton className="h-40 w-full" /></CardContent>
+            </Card>
+          ) : (
+            <PlayerSearchSelector
+              label={partnerDisplayName ? `${partnerDisplayName}'s Players` : "Partner's Players"}
+              roster={partnerRoster}
+              selectedItems={partnerItems}
+              onAdd={(item) => setPartnerItems(prev => [...prev, item])}
+              onRemove={(id) => setPartnerItems(prev => prev.filter(i => i.mlbPlayerId !== id))}
+              testIdPrefix="partner"
+            />
+          )
+        ) : (
+          <Card>
+            <CardHeader><CardTitle className="text-lg">Partner's Players</CardTitle></CardHeader>
+            <CardContent>
+              <p className="text-muted-foreground text-sm text-center py-4">Select a trade partner first.</p>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       <Card>
@@ -324,41 +418,47 @@ export default function SubmitTrade() {
         </CardContent>
       </Card>
 
-      {(mySelectedPlayers.size > 0 || partnerSelectedPlayers.size > 0) && (
+      {(myItems.length > 0 || partnerItems.length > 0) && (
         <Card className="border-primary/30">
           <CardHeader>
             <CardTitle className="text-lg">Trade Summary</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {mySelectedPlayers.size > 0 && (
+            {myItems.length > 0 && (
               <div>
                 <p className="text-sm font-medium text-muted-foreground mb-1">You send:</p>
                 <div className="flex flex-wrap gap-2">
-                  {Array.from(mySelectedPlayers).map(id => {
-                    const a = myRoster.find(r => r.mlbPlayerId === id);
-                    return a ? (
-                      <Badge key={id} variant="outline" className="text-sm">
-                        {a.player.name}
-                        <span className="ml-1 text-xs text-muted-foreground">({a.rosterType.toUpperCase()})</span>
-                      </Badge>
-                    ) : null;
-                  })}
+                  {myItems.map(item => (
+                    <Badge key={item.mlbPlayerId} variant="outline" className="text-sm gap-1 pr-1">
+                      {item.player.fullName}
+                      <span className="ml-1 text-xs text-muted-foreground">({item.rosterType.toUpperCase()})</span>
+                      <button
+                        onClick={() => setMyItems(prev => prev.filter(i => i.mlbPlayerId !== item.mlbPlayerId))}
+                        className="ml-0.5 rounded-full p-0.5 hover:bg-muted"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
                 </div>
               </div>
             )}
-            {partnerSelectedPlayers.size > 0 && (
+            {partnerItems.length > 0 && (
               <div>
                 <p className="text-sm font-medium text-muted-foreground mb-1">You receive:</p>
                 <div className="flex flex-wrap gap-2">
-                  {Array.from(partnerSelectedPlayers).map(id => {
-                    const a = partnerRoster.find(r => r.mlbPlayerId === id);
-                    return a ? (
-                      <Badge key={id} variant="outline" className="text-sm">
-                        {a.player.name}
-                        <span className="ml-1 text-xs text-muted-foreground">({a.rosterType.toUpperCase()})</span>
-                      </Badge>
-                    ) : null;
-                  })}
+                  {partnerItems.map(item => (
+                    <Badge key={item.mlbPlayerId} variant="outline" className="text-sm gap-1 pr-1">
+                      {item.player.fullName}
+                      <span className="ml-1 text-xs text-muted-foreground">({item.rosterType.toUpperCase()})</span>
+                      <button
+                        onClick={() => setPartnerItems(prev => prev.filter(i => i.mlbPlayerId !== item.mlbPlayerId))}
+                        className="ml-0.5 rounded-full p-0.5 hover:bg-muted"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
                 </div>
               </div>
             )}
@@ -370,7 +470,7 @@ export default function SubmitTrade() {
         <Button
           size="lg"
           onClick={handleSubmit}
-          disabled={submitTradeMutation.isPending || (!mySelectedPlayers.size && !partnerSelectedPlayers.size) || !partnerUserId}
+          disabled={submitTradeMutation.isPending || (!myItems.length && !partnerItems.length) || !partnerUserId}
           data-testid="button-submit-trade"
         >
           <Send className="h-4 w-4 mr-2" />
