@@ -144,7 +144,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
       const params = new URLSearchParams({
         season: String(effectiveSeason),
         sportLevel,
-        limit: "10000",
+        limit: "20000",
         offset: "0",
       });
       if (debouncedSearch) params.set("search", debouncedSearch);
