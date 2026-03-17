@@ -49,10 +49,13 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
   const currentLeague = leagues?.find(l => l.id === selectedLeagueId) || leagues?.[0] || null;
 
   useEffect(() => {
-    if (leagues && leagues.length > 0 && !selectedLeagueId) {
-      const firstLeague = leagues[0];
-      setSelectedLeagueId(firstLeague.id);
-      localStorage.setItem(SELECTED_LEAGUE_KEY, String(firstLeague.id));
+    if (leagues && leagues.length > 0) {
+      const match = leagues.find(l => l.id === selectedLeagueId);
+      if (!match) {
+        const firstLeague = leagues[0];
+        setSelectedLeagueId(firstLeague.id);
+        localStorage.setItem(SELECTED_LEAGUE_KEY, String(firstLeague.id));
+      }
     }
   }, [leagues, selectedLeagueId]);
 
