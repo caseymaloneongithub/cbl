@@ -344,7 +344,7 @@ export interface IStorage {
   assignPlayerToRoster(assignment: InsertLeagueRosterAssignment): Promise<LeagueRosterAssignment>;
   deleteAllRosterAssignments(leagueId: number): Promise<number>;
   deleteRosterAssignmentsByType(leagueId: number, rosterType: string): Promise<number>;
-  updateRosterAssignment(id: number, updates: { rosterType?: string; userId?: string; rosterSlot?: string | null }): Promise<LeagueRosterAssignment | undefined>;
+  updateRosterAssignment(id: number, updates: { rosterType?: string; userId?: string; rosterSlot?: string | null; contractStatus?: string | null; salary2026?: number | null; minorLeagueStatus?: string | null; minorLeagueYears?: number | null; acquired?: string | null }): Promise<LeagueRosterAssignment | undefined>;
   executeRosterTrade(params: {
     leagueId: number;
     season: number;
@@ -3528,11 +3528,16 @@ export class DatabaseStorage implements IStorage {
     return result.length;
   }
 
-  async updateRosterAssignment(id: number, updates: { rosterType?: string; userId?: string; rosterSlot?: string | null }): Promise<LeagueRosterAssignment | undefined> {
+  async updateRosterAssignment(id: number, updates: { rosterType?: string; userId?: string; rosterSlot?: string | null; contractStatus?: string | null; salary2026?: number | null; minorLeagueStatus?: string | null; minorLeagueYears?: number | null; acquired?: string | null }): Promise<LeagueRosterAssignment | undefined> {
     const setObj: any = {};
     if (updates.rosterType) setObj.rosterType = updates.rosterType;
     if (updates.userId) setObj.userId = updates.userId;
     if (updates.rosterSlot !== undefined) setObj.rosterSlot = updates.rosterSlot;
+    if (updates.contractStatus !== undefined) setObj.contractStatus = updates.contractStatus;
+    if (updates.salary2026 !== undefined) setObj.salary2026 = updates.salary2026;
+    if (updates.minorLeagueStatus !== undefined) setObj.minorLeagueStatus = updates.minorLeagueStatus;
+    if (updates.minorLeagueYears !== undefined) setObj.minorLeagueYears = updates.minorLeagueYears;
+    if (updates.acquired !== undefined) setObj.acquired = updates.acquired;
     const [result] = await db.update(leagueRosterAssignments).set(setObj).where(eq(leagueRosterAssignments.id, id)).returning();
     return result;
   }

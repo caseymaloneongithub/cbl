@@ -46,7 +46,8 @@ import { formatAffiliatedTeamLabel } from "@/lib/teamDisplay";
 import { isUncardedOnMlbRoster } from "@/lib/playerCarding";
 import { useToast } from "@/hooks/use-toast";
 import type { MlbPlayer, LeagueMember, League } from "@shared/schema";
-import { Search, UserPlus, Trash2, ArrowRightLeft, Loader2, Users, ChevronLeft, ChevronRight, AlertTriangle, Download, FileSpreadsheet, HeartPulse } from "lucide-react";
+import { Search, UserPlus, Trash2, ArrowRightLeft, Loader2, Users, ChevronLeft, ChevronRight, AlertTriangle, Download, FileSpreadsheet, HeartPulse, Pencil } from "lucide-react";
+import { Label } from "@/components/ui/label";
 
 interface RosterAssignment {
   id: number;
@@ -60,6 +61,8 @@ interface RosterAssignment {
   contractStatus: string | null;
   salary2026: string | null;
   rosterSlot: string | null;
+  minorLeagueStatus: string | null;
+  minorLeagueYears: number | null;
   player: MlbPlayer;
 }
 
@@ -246,10 +249,16 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
     return lines.length <= 6 && hasExampleProspect && hasShoheiTemplate;
   };
 
-  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
-  const [moveAssignment, setMoveAssignment] = useState<RosterAssignment | null>(null);
-  const [moveRosterType, setMoveRosterType] = useState("");
-  const [moveUserId, setMoveUserId] = useState("");
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editAssignment, setEditAssignment] = useState<RosterAssignment | null>(null);
+  const [editRosterType, setEditRosterType] = useState("");
+  const [editUserId, setEditUserId] = useState("");
+  const [editContractStatus, setEditContractStatus] = useState("");
+  const [editSalary, setEditSalary] = useState("");
+  const [editMinorLeagueStatus, setEditMinorLeagueStatus] = useState("");
+  const [editMinorLeagueYears, setEditMinorLeagueYears] = useState("");
+  const [editAcquired, setEditAcquired] = useState("");
+  const [editRosterSlot, setEditRosterSlot] = useState("");
   const [tradeDialogOpen, setTradeDialogOpen] = useState(false);
   const [tradeTeamAUserId, setTradeTeamAUserId] = useState("");
   const [tradeTeamBUserId, setTradeTeamBUserId] = useState("");
@@ -319,19 +328,19 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
     },
   });
 
-  const moveMutation = useMutation({
-    mutationFn: async (data: { id: number; rosterType?: string; userId?: string }) => {
+  const editMutation = useMutation({
+    mutationFn: async (data: { id: number; [key: string]: any }) => {
       const { id, ...body } = data;
       return apiRequest("PATCH", `/api/leagues/${leagueId}/roster-assignments/${id}`, body);
     },
     onSuccess: () => {
-      toast({ title: "Player moved" });
+      toast({ title: "Player assignment updated" });
       queryClient.invalidateQueries({ queryKey: ["/api/leagues", leagueId, "roster-assignments"] });
-      setMoveDialogOpen(false);
-      setMoveAssignment(null);
+      setEditDialogOpen(false);
+      setEditAssignment(null);
     },
     onError: (error: any) => {
-      toast({ title: "Failed to move", description: error.message, variant: "destructive" });
+      toast({ title: "Failed to update", description: error.message, variant: "destructive" });
     },
   });
 
@@ -1218,11 +1227,17 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
     setAssignDialogOpen(true);
   };
 
-  const openMoveDialog = (assignment: RosterAssignment) => {
-    setMoveAssignment(assignment);
-    setMoveRosterType(assignment.rosterType);
-    setMoveUserId(assignment.userId);
-    setMoveDialogOpen(true);
+  const openEditDialog = (assignment: RosterAssignment) => {
+    setEditAssignment(assignment);
+    setEditRosterType(assignment.rosterType);
+    setEditUserId(assignment.userId);
+    setEditContractStatus(assignment.contractStatus || "");
+    setEditSalary(assignment.salary2026 != null ? String(assignment.salary2026) : "");
+    setEditMinorLeagueStatus(assignment.minorLeagueStatus || "");
+    setEditMinorLeagueYears(assignment.minorLeagueYears != null ? String(assignment.minorLeagueYears) : "");
+    setEditAcquired(assignment.acquired || "");
+    setEditRosterSlot(assignment.rosterSlot || "");
+    setEditDialogOpen(true);
   };
 
   const parsedCsvUploadPreview = csvUploadPreview && !("error" in csvUploadPreview)
@@ -1993,10 +2008,11 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                             <Button
                               size="icon"
                               variant="ghost"
-                              onClick={() => openMoveDialog(a)}
-                              data-testid={`button-move-${a.id}`}
+                              onClick={() => openEditDialog(a)}
+                              title="Edit player assignment"
+                              data-testid={`button-edit-${a.id}`}
                             >
-                              <ArrowRightLeft className="h-4 w-4" />
+                              <Pencil className="h-4 w-4" />
                             </Button>
                             <Button
                               size="icon"
@@ -2369,68 +2385,142 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
         </DialogContent>
       </Dialog>
 
-      <Dialog open={moveDialogOpen} onOpenChange={setMoveDialogOpen}>
-        <DialogContent>
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Move Player</DialogTitle>
+            <DialogTitle>Edit Player Assignment</DialogTitle>
           </DialogHeader>
-          {moveAssignment && (
+          {editAssignment && (
             <div className="space-y-4">
               <div>
-                <p className="font-medium">
-                  {moveAssignment.player.fullName}
-                  {isUncardedOnMlbRoster(moveAssignment.player, moveAssignment.rosterType) ? " (uncarded)" : ""}
+                <p className="font-medium text-lg">
+                  {editAssignment.player.fullName}
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  Currently: {getMemberName(moveAssignment.userId)} - {moveAssignment.rosterType.toUpperCase()}
+                  {editAssignment.player.primaryPosition} · {editAssignment.player.currentTeamName || "—"} · {editAssignment.player.sportLevel || "—"}
                 </p>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Move to Team</label>
-                <Select value={moveUserId} onValueChange={setMoveUserId}>
-                  <SelectTrigger data-testid="select-move-team">
-                    <SelectValue placeholder="Select team" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeMembers.map(m => (
-                      <SelectItem key={m.userId} value={m.userId}>
-                        {m.teamName || m.teamAbbreviation || m.userId}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Roster Type</label>
-                <Select value={moveRosterType} onValueChange={setMoveRosterType}>
-                  <SelectTrigger data-testid="select-move-roster-type">
-                    <SelectValue placeholder="Select roster" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="mlb">MLB Roster</SelectItem>
-                    <SelectItem value="milb">MiLB System</SelectItem>
-                    <SelectItem value="draft">Draft List</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label>Team</Label>
+                  <Select value={editUserId} onValueChange={setEditUserId}>
+                    <SelectTrigger data-testid="select-edit-team">
+                      <SelectValue placeholder="Select team" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {activeMembers.map(m => (
+                        <SelectItem key={m.userId} value={m.userId}>
+                          {m.teamName || m.teamAbbreviation || m.userId}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Roster Type</Label>
+                  <Select value={editRosterType} onValueChange={setEditRosterType}>
+                    <SelectTrigger data-testid="select-edit-roster-type">
+                      <SelectValue placeholder="Select roster" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="mlb">MLB Roster</SelectItem>
+                      <SelectItem value="milb">MiLB System</SelectItem>
+                      <SelectItem value="draft">Draft List</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Contract Status</Label>
+                  <Input
+                    value={editContractStatus}
+                    onChange={(e) => setEditContractStatus(e.target.value)}
+                    placeholder="e.g. 3yr/$15M"
+                    data-testid="input-edit-contract-status"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Salary (2026)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={editSalary}
+                    onChange={(e) => setEditSalary(e.target.value)}
+                    placeholder="e.g. 5.5"
+                    data-testid="input-edit-salary"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Acquired</Label>
+                  <Input
+                    value={editAcquired}
+                    onChange={(e) => setEditAcquired(e.target.value)}
+                    placeholder="e.g. FA 2026, D 2026, Trade"
+                    data-testid="input-edit-acquired"
+                  />
+                </div>
+                {editRosterType === "mlb" && (
+                  <div className="space-y-1.5">
+                    <Label>Roster Slot</Label>
+                    <Select value={editRosterSlot || "none"} onValueChange={(v) => setEditRosterSlot(v === "none" ? "" : v)}>
+                      <SelectTrigger data-testid="select-edit-roster-slot">
+                        <SelectValue placeholder="Normal" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Normal (40-man)</SelectItem>
+                        <SelectItem value="60">60-day IL</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {editRosterType === "milb" && (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label>Minor League Status</Label>
+                      <Input
+                        value={editMinorLeagueStatus}
+                        onChange={(e) => setEditMinorLeagueStatus(e.target.value)}
+                        placeholder="e.g. Active, Injured"
+                        data-testid="input-edit-milb-status"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Minor League Years</Label>
+                      <Input
+                        type="number"
+                        value={editMinorLeagueYears}
+                        onChange={(e) => setEditMinorLeagueYears(e.target.value)}
+                        placeholder="e.g. 3"
+                        data-testid="input-edit-milb-years"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setMoveDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
             <Button
               onClick={() => {
-                if (moveAssignment) {
+                if (editAssignment) {
                   const updates: any = {};
-                  if (moveRosterType !== moveAssignment.rosterType) updates.rosterType = moveRosterType;
-                  if (moveUserId !== moveAssignment.userId) updates.userId = moveUserId;
-                  moveMutation.mutate({ id: moveAssignment.id, ...updates });
+                  if (editRosterType !== editAssignment.rosterType) updates.rosterType = editRosterType;
+                  if (editUserId !== editAssignment.userId) updates.userId = editUserId;
+                  if (editContractStatus !== (editAssignment.contractStatus || "")) updates.contractStatus = editContractStatus;
+                  if (editSalary !== (editAssignment.salary2026 != null ? String(editAssignment.salary2026) : "")) updates.salary2026 = editSalary;
+                  if (editAcquired !== (editAssignment.acquired || "")) updates.acquired = editAcquired;
+                  const newSlot = editRosterSlot || null;
+                  if (newSlot !== editAssignment.rosterSlot) updates.rosterSlot = newSlot;
+                  if (editMinorLeagueStatus !== (editAssignment.minorLeagueStatus || "")) updates.minorLeagueStatus = editMinorLeagueStatus;
+                  if (editMinorLeagueYears !== (editAssignment.minorLeagueYears != null ? String(editAssignment.minorLeagueYears) : "")) updates.minorLeagueYears = editMinorLeagueYears;
+                  editMutation.mutate({ id: editAssignment.id, ...updates });
                 }
               }}
-              disabled={moveMutation.isPending}
-              data-testid="button-confirm-move"
+              disabled={editMutation.isPending}
+              data-testid="button-confirm-edit"
             >
-              {moveMutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-              Move Player
+              {editMutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+              Save Changes
             </Button>
           </DialogFooter>
         </DialogContent>

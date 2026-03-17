@@ -2183,13 +2183,50 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
-      const { rosterType, userId: newUserId, rosterSlot } = req.body;
-      const sanitizedSlot = rosterSlot === "60" ? "60" : rosterSlot === null ? null : undefined;
-      const updatePayload: { rosterType?: string; userId?: string; rosterSlot?: string | null } = {};
+      const { rosterType, userId: newUserId, rosterSlot, contractStatus, salary2026, minorLeagueStatus, minorLeagueYears, acquired } = req.body;
+
+      if (rosterType && !["mlb", "milb", "draft"].includes(rosterType)) {
+        return res.status(400).json({ message: "Invalid roster type" });
+      }
+
+      const updatePayload: { rosterType?: string; userId?: string; rosterSlot?: string | null; contractStatus?: string | null; salary2026?: number | null; minorLeagueStatus?: string | null; minorLeagueYears?: number | null; acquired?: string | null } = {};
       if (rosterType) updatePayload.rosterType = rosterType;
       if (newUserId) updatePayload.userId = newUserId;
+
+      const sanitizedSlot = rosterSlot === "60" ? "60" : rosterSlot === null ? null : undefined;
       if (sanitizedSlot !== undefined) updatePayload.rosterSlot = sanitizedSlot;
       if (rosterType && rosterType !== "mlb") updatePayload.rosterSlot = null;
+      if (rosterType && rosterType !== "milb") {
+        updatePayload.minorLeagueStatus = null;
+        updatePayload.minorLeagueYears = null;
+      }
+
+      if (contractStatus !== undefined) updatePayload.contractStatus = contractStatus || null;
+      if (salary2026 !== undefined) {
+        if (salary2026 !== null && salary2026 !== "") {
+          const parsed = Number(salary2026);
+          if (!Number.isFinite(parsed)) return res.status(400).json({ message: "Invalid salary value" });
+          updatePayload.salary2026 = parsed;
+        } else {
+          updatePayload.salary2026 = null;
+        }
+      }
+      if (minorLeagueStatus !== undefined) updatePayload.minorLeagueStatus = minorLeagueStatus || null;
+      if (minorLeagueYears !== undefined) {
+        if (minorLeagueYears !== null && minorLeagueYears !== "") {
+          const parsed = parseInt(String(minorLeagueYears), 10);
+          if (!Number.isFinite(parsed)) return res.status(400).json({ message: "Invalid minor league years value" });
+          updatePayload.minorLeagueYears = parsed;
+        } else {
+          updatePayload.minorLeagueYears = null;
+        }
+      }
+      if (acquired !== undefined) updatePayload.acquired = acquired || null;
+
+      const hasChanges = Object.keys(updatePayload).length > 0;
+      if (!hasChanges) {
+        return res.status(400).json({ message: "No changes provided" });
+      }
 
       const existing = await db.select().from(leagueRosterAssignments).where(eq(leagueRosterAssignments.id, assignmentId)).limit(1);
       if (!existing.length || existing[0].leagueId !== leagueId) {
