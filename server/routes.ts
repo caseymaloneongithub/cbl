@@ -1781,13 +1781,15 @@ export async function registerRoutes(
         items.map((i: any) => ({ tradeId: 0, fromUserId: i.fromUserId, mlbPlayerId: i.mlbPlayerId, rosterType: i.rosterType })),
       );
 
-      (async () => {
-        try {
-          const partner = await storage.getUser(partnerUserId);
-          const proposer = await storage.getUser(userId);
-          const league = await storage.getLeague(leagueId);
-          if (!partner?.email || !proposer || !league) return;
-
+      // Send trade proposal email before responding (awaited to prevent loss on server restart)
+      try {
+        const partner = await storage.getUser(partnerUserId);
+        const proposer = await storage.getUser(userId);
+        const league = await storage.getLeague(leagueId);
+        console.log(`[trade] Trade #${trade.id} created. Sending proposal email to partner ${partnerUserId}...`);
+        if (!partner?.email || !proposer || !league) {
+          console.warn(`[trade] Skipping email: partner=${!!partner?.email}, proposer=${!!proposer}, league=${!!league}`);
+        } else {
           const appUrl = process.env.REPLIT_DEV_DOMAIN
             ? `https://${process.env.REPLIT_DEV_DOMAIN}`
             : process.env.REPLIT_DEPLOYMENT_DOMAIN
@@ -1796,12 +1798,12 @@ export async function registerRoutes(
 
           const playersOffered: TradeEmailPlayer[] = trade.items
             .filter(i => i.fromUserId === userId)
-            .map(i => ({ name: i.player.fullName, position: i.player.primaryPosition || '', mlbTeam: i.player.currentTeamName || '', rosterType: i.rosterType }));
+            .map(i => ({ name: i.player?.fullName || 'Unknown', position: i.player?.primaryPosition || '', mlbTeam: i.player?.currentTeamName || '', rosterType: i.rosterType }));
           const playersRequested: TradeEmailPlayer[] = trade.items
             .filter(i => i.fromUserId === partnerUserId)
-            .map(i => ({ name: i.player.fullName, position: i.player.primaryPosition || '', mlbTeam: i.player.currentTeamName || '', rosterType: i.rosterType }));
+            .map(i => ({ name: i.player?.fullName || 'Unknown', position: i.player?.primaryPosition || '', mlbTeam: i.player?.currentTeamName || '', rosterType: i.rosterType }));
 
-          await sendTradeProposalEmail(
+          const result = await sendTradeProposalEmail(
             partner.email,
             league.name,
             proposer.teamName || `${proposer.firstName} ${proposer.lastName}`,
@@ -1812,10 +1814,11 @@ export async function registerRoutes(
             appUrl,
             trade.id,
           );
-        } catch (e) {
-          console.error("Failed to send trade proposal email:", e);
+          console.log(`[trade] Trade #${trade.id} email result:`, result);
         }
-      })();
+      } catch (e) {
+        console.error("[trade] Failed to send trade proposal email:", e);
+      }
 
       res.json(trade);
     } catch (error: any) {
@@ -1855,7 +1858,7 @@ export async function registerRoutes(
         for (const item of trade.items) {
           const assignment = rosterAssignments.find(a => a.mlbPlayerId === item.mlbPlayerId && a.userId === item.fromUserId);
           if (!assignment) {
-            return res.status(400).json({ message: `Player ${item.player.name} is no longer on the expected roster. Trade cannot be completed.` });
+            return res.status(400).json({ message: `Player ${item.player?.fullName || 'Unknown'} is no longer on the expected roster. Trade cannot be completed.` });
           }
           if (item.fromUserId === trade.proposingUserId) {
             proposerItemIds.push(assignment.id);
@@ -1873,35 +1876,41 @@ export async function registerRoutes(
           teamBAssignmentIds: partnerItemIds,
         });
 
-        (async () => {
-          try {
-            const league = await storage.getLeague(leagueId);
-            if (!league) return;
+        // Send trade completed emails (awaited to prevent loss on server restart)
+        try {
+          const league = await storage.getLeague(leagueId);
+          if (!league) {
+            console.warn(`[trade] Skipping completed emails: league not found`);
+          } else {
             const members = await storage.getLeagueMembers(leagueId);
             const proposer = await storage.getUser(trade.proposingUserId);
             const partner = await storage.getUser(trade.partnerUserId);
-            if (!proposer || !partner) return;
+            if (!proposer || !partner) {
+              console.warn(`[trade] Skipping completed emails: proposer=${!!proposer}, partner=${!!partner}`);
+            } else {
+              const playersFromProposer: TradeEmailPlayer[] = trade.items
+                .filter(i => i.fromUserId === trade.proposingUserId)
+                .map(i => ({ name: i.player?.fullName || 'Unknown', position: i.player?.primaryPosition || '', mlbTeam: i.player?.currentTeamName || '', rosterType: i.rosterType }));
+              const playersFromPartner: TradeEmailPlayer[] = trade.items
+                .filter(i => i.fromUserId === trade.partnerUserId)
+                .map(i => ({ name: i.player?.fullName || 'Unknown', position: i.player?.primaryPosition || '', mlbTeam: i.player?.currentTeamName || '', rosterType: i.rosterType }));
 
-            const playersFromProposer: TradeEmailPlayer[] = trade.items
-              .filter(i => i.fromUserId === trade.proposingUserId)
-              .map(i => ({ name: i.player.fullName, position: i.player.primaryPosition || '', mlbTeam: i.player.currentTeamName || '', rosterType: i.rosterType }));
-            const playersFromPartner: TradeEmailPlayer[] = trade.items
-              .filter(i => i.fromUserId === trade.partnerUserId)
-              .map(i => ({ name: i.player.fullName, position: i.player.primaryPosition || '', mlbTeam: i.player.currentTeamName || '', rosterType: i.rosterType }));
+              const proposerName = proposer.teamName || `${proposer.firstName} ${proposer.lastName}`;
+              const partnerName = partner.teamName || `${partner.firstName} ${partner.lastName}`;
 
-            const proposerName = proposer.teamName || `${proposer.firstName} ${proposer.lastName}`;
-            const partnerName = partner.teamName || `${partner.firstName} ${partner.lastName}`;
-
-            for (const m of members) {
-              if (m.user.email) {
-                await sendTradeCompletedEmail(m.user.email, league.name, proposerName, partnerName, playersFromProposer, playersFromPartner);
-                await new Promise(r => setTimeout(r, 600));
+              console.log(`[trade] Trade #${tradeId} accepted. Sending completed emails to ${members.length} members...`);
+              for (const m of members) {
+                if (m.user.email) {
+                  await sendTradeCompletedEmail(m.user.email, league.name, proposerName, partnerName, playersFromProposer, playersFromPartner);
+                  await new Promise(r => setTimeout(r, 600));
+                }
               }
+              console.log(`[trade] Trade #${tradeId} completed emails sent`);
             }
-          } catch (e) {
-            console.error("Failed to send trade completed emails:", e);
           }
-        })();
+        } catch (e) {
+          console.error("[trade] Failed to send trade completed emails:", e);
+        }
 
         const updatedTrade = await storage.getTrade(tradeId);
         res.json(updatedTrade);
