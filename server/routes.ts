@@ -1686,11 +1686,14 @@ export async function registerRoutes(
         return res.status(409).json({ message: `Player is already on ${alreadyAssigned.userId === claimingUserId ? "your" : "another team's"} roster` });
       }
 
+      const [player] = await db.select().from(mlbPlayers).where(eq(mlbPlayers.id, Number(mlbPlayerId)));
+      const rosterType = player && player.sportLevel !== 'MLB' ? 'milb' : 'mlb';
+
       const assignment = await storage.assignPlayerToRoster({
         leagueId,
         userId: claimingUserId,
         mlbPlayerId: Number(mlbPlayerId),
-        rosterType: "mlb",
+        rosterType,
         season,
         acquired: `FA ${season}`,
       });
