@@ -206,22 +206,18 @@ export function Header() {
                   Draft
                 </Button>
               </Link>
-              {user?.isSuperAdmin && (
-                <NavDropdown
-                  label="My Roster"
-                  items={myRosterItems}
-                  location={location}
-                  testId="nav-my-roster"
-                />
-              )}
-              {user?.isSuperAdmin && (
-                <NavDropdown
-                  label="Players"
-                  items={playersItems}
-                  location={location}
-                  testId="nav-players"
-                />
-              )}
+              <NavDropdown
+                label="My Roster"
+                items={myRosterItems}
+                location={location}
+                testId="nav-my-roster"
+              />
+              <NavDropdown
+                label="Players"
+                items={playersItems}
+                location={location}
+                testId="nav-players"
+              />
               <NavDropdown
                 label="Free Agency"
                 items={freeAgencyItems}
