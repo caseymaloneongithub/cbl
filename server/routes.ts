@@ -1876,44 +1876,46 @@ export async function registerRoutes(
           teamBAssignmentIds: partnerItemIds,
         });
 
-        // Send trade completed emails (awaited to prevent loss on server restart)
-        try {
-          const league = await storage.getLeague(leagueId);
-          if (!league) {
-            console.warn(`[trade] Skipping completed emails: league not found`);
-          } else {
+        const updatedTrade = await storage.getTrade(tradeId);
+        res.json(updatedTrade);
+
+        // Send trade completed emails in background (league-wide, too many to await)
+        (async () => {
+          try {
+            const league = await storage.getLeague(leagueId);
+            if (!league) {
+              console.warn(`[trade] Skipping completed emails: league not found`);
+              return;
+            }
             const members = await storage.getLeagueMembers(leagueId);
             const proposer = await storage.getUser(trade.proposingUserId);
             const partner = await storage.getUser(trade.partnerUserId);
             if (!proposer || !partner) {
               console.warn(`[trade] Skipping completed emails: proposer=${!!proposer}, partner=${!!partner}`);
-            } else {
-              const playersFromProposer: TradeEmailPlayer[] = trade.items
-                .filter(i => i.fromUserId === trade.proposingUserId)
-                .map(i => ({ name: i.player?.fullName || 'Unknown', position: i.player?.primaryPosition || '', mlbTeam: i.player?.currentTeamName || '', rosterType: i.rosterType }));
-              const playersFromPartner: TradeEmailPlayer[] = trade.items
-                .filter(i => i.fromUserId === trade.partnerUserId)
-                .map(i => ({ name: i.player?.fullName || 'Unknown', position: i.player?.primaryPosition || '', mlbTeam: i.player?.currentTeamName || '', rosterType: i.rosterType }));
-
-              const proposerName = proposer.teamName || `${proposer.firstName} ${proposer.lastName}`;
-              const partnerName = partner.teamName || `${partner.firstName} ${partner.lastName}`;
-
-              console.log(`[trade] Trade #${tradeId} accepted. Sending completed emails to ${members.length} members...`);
-              for (const m of members) {
-                if (m.user.email) {
-                  await sendTradeCompletedEmail(m.user.email, league.name, proposerName, partnerName, playersFromProposer, playersFromPartner);
-                  await new Promise(r => setTimeout(r, 600));
-                }
-              }
-              console.log(`[trade] Trade #${tradeId} completed emails sent`);
+              return;
             }
-          }
-        } catch (e) {
-          console.error("[trade] Failed to send trade completed emails:", e);
-        }
+            const playersFromProposer: TradeEmailPlayer[] = trade.items
+              .filter(i => i.fromUserId === trade.proposingUserId)
+              .map(i => ({ name: i.player?.fullName || 'Unknown', position: i.player?.primaryPosition || '', mlbTeam: i.player?.currentTeamName || '', rosterType: i.rosterType }));
+            const playersFromPartner: TradeEmailPlayer[] = trade.items
+              .filter(i => i.fromUserId === trade.partnerUserId)
+              .map(i => ({ name: i.player?.fullName || 'Unknown', position: i.player?.primaryPosition || '', mlbTeam: i.player?.currentTeamName || '', rosterType: i.rosterType }));
 
-        const updatedTrade = await storage.getTrade(tradeId);
-        res.json(updatedTrade);
+            const proposerName = proposer.teamName || `${proposer.firstName} ${proposer.lastName}`;
+            const partnerName = partner.teamName || `${partner.firstName} ${partner.lastName}`;
+
+            console.log(`[trade] Trade #${tradeId} accepted. Sending completed emails to ${members.length} members...`);
+            for (const m of members) {
+              if (m.user.email) {
+                await sendTradeCompletedEmail(m.user.email, league.name, proposerName, partnerName, playersFromProposer, playersFromPartner);
+                await new Promise(r => setTimeout(r, 600));
+              }
+            }
+            console.log(`[trade] Trade #${tradeId} completed emails sent`);
+          } catch (e) {
+            console.error("[trade] Failed to send trade completed emails:", e);
+          }
+        })();
       } else {
         await storage.respondToTrade(tradeId, 'rejected');
         const updatedTrade = await storage.getTrade(tradeId);
