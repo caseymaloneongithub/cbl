@@ -267,7 +267,7 @@ export function Header() {
                       <Menu className="h-5 w-5" />
                     </Button>
                   </SheetTrigger>
-                  <SheetContent side="right" className="w-64">
+                  <SheetContent side="right" className="w-64 overflow-y-auto">
                     <nav className="flex flex-col gap-1 mt-8">
                       {leagues.length > 1 && (
                         <>
