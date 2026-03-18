@@ -1715,13 +1715,16 @@ export async function registerRoutes(
 
       (async () => {
         try {
-          const appUrl = process.env.REPLIT_DEV_DOMAIN
-            ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-            : `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
+          const appUrl = process.env.REPLIT_DEPLOYMENT_DOMAIN
+            ? `https://${process.env.REPLIT_DEPLOYMENT_DOMAIN}`
+            : process.env.REPLIT_DEV_DOMAIN
+              ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+              : `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
           const league = await storage.getLeague(leagueId);
           const leagueName = league?.name || 'League';
-          const claimingUser = await storage.getUser(claimingUserId);
-          const claimingTeamName = claimingUser?.teamName || `${claimingUser?.firstName} ${claimingUser?.lastName}`;
+          const claimingMember = await storage.getLeagueMember(leagueId, claimingUserId);
+          const claimingUser = claimingMember?.user || await storage.getUser(claimingUserId);
+          const claimingTeamName = claimingMember?.teamName || claimingUser?.teamName || `${claimingUser?.firstName} ${claimingUser?.lastName}`;
           const playerName = player?.fullName || 'Unknown Player';
           const playerPosition = player?.primaryPosition || null;
           const playerMlbTeam = player?.currentTeamName || null;
@@ -1839,10 +1842,10 @@ export async function registerRoutes(
         if (!partner?.email || !proposer || !league) {
           console.warn(`[trade] Skipping email: partner=${!!partner?.email}, proposer=${!!proposer}, league=${!!league}`);
         } else {
-          const appUrl = process.env.REPLIT_DEV_DOMAIN
-            ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-            : process.env.REPLIT_DEPLOYMENT_DOMAIN
-              ? `https://${process.env.REPLIT_DEPLOYMENT_DOMAIN}`
+          const appUrl = process.env.REPLIT_DEPLOYMENT_DOMAIN
+            ? `https://${process.env.REPLIT_DEPLOYMENT_DOMAIN}`
+            : process.env.REPLIT_DEV_DOMAIN
+              ? `https://${process.env.REPLIT_DEV_DOMAIN}`
               : 'https://cbl-auctions.replit.app';
 
           const playersOffered: TradeEmailPlayer[] = trade.items
