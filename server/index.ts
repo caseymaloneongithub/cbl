@@ -564,6 +564,13 @@ async function runHourlySummaryEmail() {
       // Auctions with "none" notifications or no league get sent to super admin only
       const sendToSuperAdminOnly = group.emailNotifications === "none" || !group.leagueId;
       
+      // Load league members for league-scoped team names
+      const leagueMembers = group.leagueId ? await storage.getLeagueMembers(group.leagueId) : [];
+      const memberTeamMap = new Map<string, string>();
+      for (const m of leagueMembers) {
+        memberTeamMap.set(m.userId, m.teamName || `${m.user.firstName} ${m.user.lastName}`);
+      }
+
       // Format results for email
       const results = [
         ...group.withBids.map((r: typeof recentResults.withBids[0]) => ({
@@ -571,7 +578,7 @@ async function runHourlySummaryEmail() {
           team: r.agent.team || "N/A",
           auctionName: r.auctionName,
           winnerName: `${r.winner.firstName} ${r.winner.lastName}`,
-          winnerTeam: r.winner.teamName || "Unknown",
+          winnerTeam: memberTeamMap.get(r.winner.id) || r.winner.teamName || "Unknown",
           amount: r.winningBid.amount,
           years: r.winningBid.years,
           noBids: false,

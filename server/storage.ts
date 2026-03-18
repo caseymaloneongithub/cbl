@@ -4403,14 +4403,21 @@ export class DatabaseStorage implements IStorage {
     const usersArr = await db.select().from(users).where(inArray(users.id, userIds));
     const userMap = new Map(usersArr.map(u => [u.id, u]));
 
+    const membersArr = await db.select().from(leagueMembers).where(
+      and(eq(leagueMembers.leagueId, trade.leagueId), inArray(leagueMembers.userId, userIds))
+    );
+    const memberMap = new Map(membersArr.map(m => [m.userId, m]));
+
     const proposingUser = userMap.get(trade.proposingUserId)!;
     const partnerUser = userMap.get(trade.partnerUserId)!;
+    const proposingMember = memberMap.get(trade.proposingUserId);
+    const partnerMember = memberMap.get(trade.partnerUserId);
 
     return {
       ...trade,
       items: items.map(i => ({ ...i, player: playerMap.get(i.mlbPlayerId)! })),
-      proposingUser: { id: proposingUser.id, firstName: proposingUser.firstName, lastName: proposingUser.lastName, teamName: proposingUser.teamName },
-      partnerUser: { id: partnerUser.id, firstName: partnerUser.firstName, lastName: partnerUser.lastName, teamName: partnerUser.teamName },
+      proposingUser: { id: proposingUser.id, firstName: proposingUser.firstName, lastName: proposingUser.lastName, teamName: proposingMember?.teamName || proposingUser.teamName },
+      partnerUser: { id: partnerUser.id, firstName: partnerUser.firstName, lastName: partnerUser.lastName, teamName: partnerMember?.teamName || partnerUser.teamName },
     };
   }
 

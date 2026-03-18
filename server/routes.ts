@@ -1836,17 +1836,21 @@ export async function registerRoutes(
       // Send trade proposal email before responding (awaited to prevent loss on server restart)
       try {
         const partner = await storage.getUser(partnerUserId);
-        const proposer = await storage.getUser(userId);
         const league = await storage.getLeague(leagueId);
+        const proposerMember = await storage.getLeagueMember(leagueId, userId);
+        const partnerMember = await storage.getLeagueMember(leagueId, partnerUserId);
         console.log(`[trade] Trade #${trade.id} created. Sending proposal email to partner ${partnerUserId}...`);
-        if (!partner?.email || !proposer || !league) {
-          console.warn(`[trade] Skipping email: partner=${!!partner?.email}, proposer=${!!proposer}, league=${!!league}`);
+        if (!partner?.email || !proposerMember || !league) {
+          console.warn(`[trade] Skipping email: partner=${!!partner?.email}, proposer=${!!proposerMember}, league=${!!league}`);
         } else {
           const appUrl = process.env.REPLIT_DEPLOYMENT_DOMAIN
             ? `https://${process.env.REPLIT_DEPLOYMENT_DOMAIN}`
             : process.env.REPLIT_DEV_DOMAIN
               ? `https://${process.env.REPLIT_DEV_DOMAIN}`
               : 'https://cbl-auctions.replit.app';
+
+          const proposerName = proposerMember.teamName || `${proposerMember.user.firstName} ${proposerMember.user.lastName}`;
+          const partnerName = partnerMember?.teamName || `${partner.firstName} ${partner.lastName}`;
 
           const playersOffered: TradeEmailPlayer[] = trade.items
             .filter(i => i.fromUserId === userId)
@@ -1858,8 +1862,8 @@ export async function registerRoutes(
           const result = await sendTradeProposalEmail(
             partner.email,
             league.name,
-            proposer.teamName || `${proposer.firstName} ${proposer.lastName}`,
-            partner.teamName || `${partner.firstName} ${partner.lastName}`,
+            proposerName,
+            partnerName,
             playersOffered,
             playersRequested,
             trade.notes,
@@ -1940,12 +1944,7 @@ export async function registerRoutes(
               return;
             }
             const members = await storage.getLeagueMembers(leagueId);
-            const proposer = await storage.getUser(trade.proposingUserId);
-            const partner = await storage.getUser(trade.partnerUserId);
-            if (!proposer || !partner) {
-              console.warn(`[trade] Skipping completed emails: proposer=${!!proposer}, partner=${!!partner}`);
-              return;
-            }
+            const memberTeamMap = new Map(members.map(m => [m.userId, m.teamName || `${m.user.firstName} ${m.user.lastName}`]));
             const playersFromProposer: TradeEmailPlayer[] = trade.items
               .filter(i => i.fromUserId === trade.proposingUserId)
               .map(i => ({ name: i.player?.fullName || 'Unknown', position: i.player?.primaryPosition || '', mlbTeam: i.player?.currentTeamName || '', rosterType: i.rosterType }));
@@ -1953,8 +1952,8 @@ export async function registerRoutes(
               .filter(i => i.fromUserId === trade.partnerUserId)
               .map(i => ({ name: i.player?.fullName || 'Unknown', position: i.player?.primaryPosition || '', mlbTeam: i.player?.currentTeamName || '', rosterType: i.rosterType }));
 
-            const proposerName = proposer.teamName || `${proposer.firstName} ${proposer.lastName}`;
-            const partnerName = partner.teamName || `${partner.firstName} ${partner.lastName}`;
+            const proposerName = memberTeamMap.get(trade.proposingUserId) || 'Unknown Team';
+            const partnerName = memberTeamMap.get(trade.partnerUserId) || 'Unknown Team';
 
             console.log(`[trade] Trade #${tradeId} accepted. Sending completed emails to ${members.length} members...`);
             for (const m of members) {
@@ -2016,6 +2015,13 @@ export async function registerRoutes(
       const transactions: any[] = [];
       const txCutoff = new Date('2026-03-16T00:00:00Z').getTime();
 
+      const allMembers = await storage.getLeagueMembers(leagueId);
+      const memberTeamMap = new Map<string, string>();
+      for (const m of allMembers) {
+        memberTeamMap.set(m.userId, m.teamName || `${m.user.firstName} ${m.user.lastName}`);
+      }
+      const getTeamName = (userId: string) => memberTeamMap.get(userId) || 'Unknown Team';
+
       if (!type || type === 'trade') {
         const tradesList = await storage.getTradesForLeague(leagueId, {
           status: 'accepted',
@@ -2025,8 +2031,8 @@ export async function registerRoutes(
           const txDate = t.respondedAt || t.proposedAt;
           if (txDate && new Date(txDate).getTime() < txCutoff) continue;
 
-          const proposerName = t.proposingUser.teamName || `${t.proposingUser.firstName} ${t.proposingUser.lastName}`;
-          const partnerName = t.partnerUser.teamName || `${t.partnerUser.firstName} ${t.partnerUser.lastName}`;
+          const proposerName = getTeamName(t.proposingUserId);
+          const partnerName = getTeamName(t.partnerUserId);
 
           for (const item of t.items) {
             const toUserId = item.fromUserId === t.proposingUserId ? t.partnerUserId : t.proposingUserId;
@@ -2057,7 +2063,6 @@ export async function registerRoutes(
 
       if (!type || type === 'claim') {
         const claimSeasons = filterYear ? [filterYear] : Array.from({ length: 5 }, (_, i) => currentYear - i);
-        const claimUserCache = new Map<string, { teamName: string }>();
         for (const season of claimSeasons) {
           const assignments = await storage.getLeagueRosterAssignments(leagueId, season);
           for (const a of assignments) {
@@ -2067,11 +2072,7 @@ export async function registerRoutes(
             if (team && a.userId !== team) continue;
             if (search && !(a.player?.fullName || '').toLowerCase().includes((search as string).toLowerCase())) continue;
 
-            if (!claimUserCache.has(a.userId)) {
-              const u = await storage.getUser(a.userId);
-              claimUserCache.set(a.userId, { teamName: u?.teamName || `${u?.firstName} ${u?.lastName}` });
-            }
-            const teamName = claimUserCache.get(a.userId)!.teamName;
+            const teamName = getTeamName(a.userId);
 
             transactions.push({
               id: `claim-${a.id}`,
@@ -2101,7 +2102,7 @@ export async function registerRoutes(
           for (const agent of agents) {
             if (!agent.currentBid || !agent.highBidder) continue;
             if (agent.auctionEndTime && new Date(agent.auctionEndTime).getTime() < txCutoff) continue;
-            const teamName = agent.highBidder.teamName || `${agent.highBidder.firstName} ${agent.highBidder.lastName}`;
+            const teamName = getTeamName(agent.highBidder.id);
 
             if (team && agent.highBidder.id !== team) continue;
             if (search && !agent.playerName.toLowerCase().includes((search as string).toLowerCase())) continue;
@@ -2133,7 +2134,7 @@ export async function registerRoutes(
           for (const pick of picks) {
             if (!pick.mlbPlayerId || !pick.player) continue;
             if (pick.madeAt && new Date(pick.madeAt).getTime() < txCutoff) continue;
-            const teamName = pick.user.teamName || `${pick.user.firstName} ${pick.user.lastName}`;
+            const teamName = getTeamName(pick.userId);
 
             if (team && pick.userId !== team) continue;
             if (search && !(pick.player?.fullName || '').toLowerCase().includes((search as string).toLowerCase())) continue;
