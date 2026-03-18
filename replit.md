@@ -40,7 +40,7 @@ Preferred communication style: Simple, everyday language.
 - **Commissioner Dashboard**: Tools for free agent and user management via CSV, roster management, reconciliation tools, and full auction lifecycle control (create, activate, reset, delete).
 - **Roster Management**: Tracks existing player contracts, calculates available budgets based on league caps, and supports flexible CSV uploads. Includes roster onboarding workflow with progress tracking per league.
 - **Budget System**: Per-auction team budgets stored in `auctionTeams`, influencing bid validation and real-time budget displays.
-- **Free Agent Claims**: Owners can instantly claim unassigned MLB-level free agents directly from the Players page (first come, first served). Claims are tracked with `acquired = "FA {season}"`.
+- **Free Agent Claims**: Owners can instantly claim unassigned MLB-level free agents directly from the Players page (first come, first served). Claims are tracked with `acquired = "FA {season}"`. Email notifications are sent to commissioners and super admins on each claim (fire-and-forget after response).
 - **Player Management**: Relist feature for unsold players, player type classification (Hitter/Pitcher), and per-auction team limits (roster, IP, PA).
 - **Super Admin**: Impersonation capabilities and role management for commissioners.
 - **Multi-Auction Support**: Manages multiple auctions, with only one active for bidding at a time; supports filtering for historical auctions.

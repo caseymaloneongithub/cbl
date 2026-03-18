@@ -31,7 +31,7 @@ import { fromZonedTime } from "date-fns-tz";
 import { parse, isValid, format } from "date-fns";
 import crypto from "crypto";
 import { syncPlayerStatsFromMLB, testMLBConnection, fetchAllAffiliatedPlayers } from "./mlb-api";
-import { sendDraftPickNotificationEmail, sendDraftCatchUpEmail, sendTradeProposalEmail, sendTradeCompletedEmail, type DraftPickNotification, type DraftCatchUpPick, type UpcomingPick, type RoundRecapPick, type TradeEmailPlayer } from "./email";
+import { sendDraftPickNotificationEmail, sendDraftCatchUpEmail, sendTradeProposalEmail, sendTradeCompletedEmail, sendFreeAgentClaimEmail, type DraftPickNotification, type DraftCatchUpPick, type UpcomingPick, type RoundRecapPick, type TradeEmailPlayer } from "./email";
 import fs from "fs/promises";
 import path from "path";
 
@@ -1712,6 +1712,39 @@ export async function registerRoutes(
       });
 
       res.json(assignment);
+
+      (async () => {
+        try {
+          const appUrl = process.env.REPLIT_DEV_DOMAIN
+            ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+            : `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
+          const league = await storage.getLeague(leagueId);
+          const leagueName = league?.name || 'League';
+          const claimingUser = await storage.getUser(claimingUserId);
+          const claimingTeamName = claimingUser?.teamName || `${claimingUser?.firstName} ${claimingUser?.lastName}`;
+          const playerName = player?.fullName || 'Unknown Player';
+          const playerPosition = player?.primaryPosition || null;
+          const playerMlbTeam = player?.currentTeamName || null;
+
+          const leagueMembers = await storage.getLeagueMembers(leagueId);
+          const recipients = new Set<string>();
+          for (const m of leagueMembers) {
+            if (m.role === 'commissioner' && m.user.email) {
+              recipients.add(m.user.email);
+            }
+            if (m.user.isSuperAdmin && m.user.email) {
+              recipients.add(m.user.email);
+            }
+          }
+
+          for (const email of recipients) {
+            await sendFreeAgentClaimEmail(email, leagueName, claimingTeamName, playerName, playerPosition, playerMlbTeam, rosterType, appUrl);
+          }
+          console.log(`[FA Claim Email] Sent to ${recipients.size} recipient(s) for ${playerName} → ${claimingTeamName}`);
+        } catch (emailErr) {
+          console.error("[FA Claim Email] Failed:", emailErr);
+        }
+      })();
     } catch (error: any) {
       if (error.code === '23505') {
         return res.status(409).json({ message: "Player is already claimed" });
