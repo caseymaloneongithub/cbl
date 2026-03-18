@@ -328,7 +328,7 @@ export interface IStorage {
   // MLB Players reference database
   upsertMlbPlayers(players: InsertMlbPlayer[]): Promise<number>;
   upsertMlbPlayerStats(stats: InsertMlbPlayerStat[]): Promise<number>;
-  upsertMlbPlayerStatsFromSync(players: InsertMlbPlayer[]): Promise<number>;
+  upsertMlbPlayerStatsFromSync(players: (InsertMlbPlayer & { hittingWrcPlus?: number | null })[]): Promise<number>;
   getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number; currentTeamName?: string; parentOrgName?: string; season?: number; sortBy?: string; sortDir?: string; statsSeason?: number }): Promise<(MlbPlayer & { stats: MlbPlayerStat | null })[]>;
   getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; positionTypeNot?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; isTwoWayQualified?: boolean; currentTeamName?: string; parentOrgName?: string; season?: number }): Promise<number>;
   getMlbPlayerTeams(season?: number, sportLevel?: string): Promise<string[]>;
@@ -3199,6 +3199,7 @@ export class DatabaseStorage implements IStorage {
             hittingObp: sql`EXCLUDED.hitting_obp`,
             hittingSlg: sql`EXCLUDED.hitting_slg`,
             hittingOps: sql`EXCLUDED.hitting_ops`,
+            hittingWrcPlus: sql`EXCLUDED.hitting_wrc_plus`,
             pitchingGames: sql`EXCLUDED.pitching_games`,
             pitchingGamesStarted: sql`EXCLUDED.pitching_games_started`,
             pitchingStrikeouts: sql`EXCLUDED.pitching_strikeouts`,
@@ -3218,7 +3219,7 @@ export class DatabaseStorage implements IStorage {
     return totalUpserted;
   }
 
-  async upsertMlbPlayerStatsFromSync(players: InsertMlbPlayer[]): Promise<number> {
+  async upsertMlbPlayerStatsFromSync(players: (InsertMlbPlayer & { hittingWrcPlus?: number | null })[]): Promise<number> {
     if (players.length === 0) return 0;
 
     const mlbIds = players.map(p => p.mlbId);
@@ -3259,6 +3260,7 @@ export class DatabaseStorage implements IStorage {
         hittingObp: p.hittingObp ?? null,
         hittingSlg: p.hittingSlg ?? null,
         hittingOps: p.hittingOps ?? null,
+        hittingWrcPlus: p.hittingWrcPlus ?? null,
         pitchingGames: p.pitchingGames ?? 0,
         pitchingGamesStarted: p.pitchingGamesStarted ?? 0,
         pitchingStrikeouts: p.pitchingStrikeouts ?? 0,

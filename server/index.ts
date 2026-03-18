@@ -185,6 +185,15 @@ async function runPendingMigrations() {
       log("Migration 0021 applied", "migration");
     }
 
+    const { rows: wrcPlusCheck } = await pool.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name = 'mlb_player_stats' AND column_name = 'hitting_wrc_plus'`
+    );
+    if (wrcPlusCheck.length === 0) {
+      log("Applying migration 0022: add hitting_wrc_plus column", "migration");
+      await pool.query(`ALTER TABLE mlb_player_stats ADD COLUMN IF NOT EXISTS hitting_wrc_plus real`);
+      log("Migration 0022 applied", "migration");
+    }
+
     log("All migrations up to date", "migration");
   } catch (error) {
     log(`Migration error: ${error}`, "migration");

@@ -218,6 +218,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
         case "obp": cmp = n(a.stats?.hittingObp) - n(b.stats?.hittingObp); break;
         case "slg": cmp = n(a.stats?.hittingSlg) - n(b.stats?.hittingSlg); break;
         case "ops": cmp = n(a.stats?.hittingOps) - n(b.stats?.hittingOps); break;
+        case "wrc+": cmp = n(a.stats?.hittingWrcPlus) - n(b.stats?.hittingWrcPlus); break;
       }
       return hSort.dir === "asc" ? cmp : -cmp;
     });
@@ -324,6 +325,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                         <TableHead className="cursor-pointer text-right" onClick={() => toggleHSort("obp")}>OBP{hs("obp")}</TableHead>
                         <TableHead className="cursor-pointer text-right" onClick={() => toggleHSort("slg")}>SLG{hs("slg")}</TableHead>
                         <TableHead className="cursor-pointer text-right" onClick={() => toggleHSort("ops")}>OPS{hs("ops")}</TableHead>
+                        <TableHead className="cursor-pointer text-right" onClick={() => toggleHSort("wrc+")}>wRC+{hs("wrc+")}</TableHead>
                         {level === "milb" && <TableHead className="w-[50px]" />}
                       </TableRow>
                     </TableHeader>
@@ -348,6 +350,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                           <TableCell className={statCellClass(a.stats)}>{a.stats?.hadHittingStats ? fmtRate(a.stats.hittingObp) : ""}</TableCell>
                           <TableCell className={statCellClass(a.stats)}>{a.stats?.hadHittingStats ? fmtRate(a.stats.hittingSlg) : ""}</TableCell>
                           <TableCell className={statCellClass(a.stats)}>{a.stats?.hadHittingStats ? fmtRate(a.stats.hittingOps) : ""}</TableCell>
+                          <TableCell className={statCellClass(a.stats)}>{a.stats?.hadHittingStats && a.stats.hittingWrcPlus != null ? Math.round(a.stats.hittingWrcPlus) : ""}</TableCell>
                           {level === "milb" && (
                             <TableCell>
                               <Button

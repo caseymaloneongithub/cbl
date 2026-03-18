@@ -1029,7 +1029,7 @@ export async function registerRoutes(
       hittingSingles: p.hittingSingles, hittingDoubles: p.hittingDoubles,
       hittingTriples: p.hittingTriples, hittingHomeRuns: p.hittingHomeRuns,
       hittingAvg: p.hittingAvg, hittingObp: p.hittingObp,
-      hittingSlg: p.hittingSlg, hittingOps: p.hittingOps,
+      hittingSlg: p.hittingSlg, hittingOps: p.hittingOps, hittingWrcPlus: p.hittingWrcPlus,
       pitchingGames: p.pitchingGames, pitchingGamesStarted: p.pitchingGamesStarted,
       pitchingStrikeouts: p.pitchingStrikeouts, pitchingWalks: p.pitchingWalks,
       pitchingHits: p.pitchingHits, pitchingHomeRuns: p.pitchingHomeRuns,

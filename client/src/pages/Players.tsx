@@ -264,6 +264,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
         case "obp": cmp = n(a.stats?.hittingObp) - n(b.stats?.hittingObp); break;
         case "slg": cmp = n(a.stats?.hittingSlg) - n(b.stats?.hittingSlg); break;
         case "ops": cmp = n(a.stats?.hittingOps) - n(b.stats?.hittingOps); break;
+        case "wrc+": cmp = n(a.stats?.hittingWrcPlus) - n(b.stats?.hittingWrcPlus); break;
         case "leagueTeam": cmp = teamA.localeCompare(teamB); break;
       }
       return hitterSort.dir === "asc" ? cmp : -cmp;
@@ -403,6 +404,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
                         <TableHead className="cursor-pointer text-right" onClick={() => toggleHitterSort("obp")}>OBP{hs("obp")}</TableHead>
                         <TableHead className="cursor-pointer text-right" onClick={() => toggleHitterSort("slg")}>SLG{hs("slg")}</TableHead>
                         <TableHead className="cursor-pointer text-right" onClick={() => toggleHitterSort("ops")}>OPS{hs("ops")}</TableHead>
+                        <TableHead className="cursor-pointer text-right" onClick={() => toggleHitterSort("wrc+")}>wRC+{hs("wrc+")}</TableHead>
                         {selectedLeagueId && <TableHead className="cursor-pointer" onClick={() => toggleHitterSort("leagueTeam")}>League Team{hs("leagueTeam")}</TableHead>}
                       </TableRow>
                     </TableHeader>
@@ -426,6 +428,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
                             <TableCell className="text-right font-mono">{p.stats?.hadHittingStats ? fmtRate(p.stats.hittingObp) : ""}</TableCell>
                             <TableCell className="text-right font-mono">{p.stats?.hadHittingStats ? fmtRate(p.stats.hittingSlg) : ""}</TableCell>
                             <TableCell className="text-right font-mono">{p.stats?.hadHittingStats ? fmtRate(p.stats.hittingOps) : ""}</TableCell>
+                            <TableCell className="text-right font-mono">{p.stats?.hadHittingStats && p.stats.hittingWrcPlus != null ? Math.round(p.stats.hittingWrcPlus) : ""}</TableCell>
                             {selectedLeagueId && (
                               <TableCell>
                                 {leagueTeam ? (

@@ -386,6 +386,7 @@ export interface AffiliatedPlayerRecord {
   hittingObp: number | null;
   hittingSlg: number | null;
   hittingOps: number | null;
+  hittingWrcPlus: number | null;
   pitchingGames: number;
   pitchingGamesStarted: number;
   pitchingStrikeouts: number;
@@ -726,6 +727,7 @@ export async function fetchAllAffiliatedPlayers(
           existing.hittingObp = null;
           existing.hittingSlg = null;
           existing.hittingOps = null;
+          existing.hittingWrcPlus = null;
           existing.pitchingGames = 0;
           existing.pitchingGamesStarted = 0;
           existing.pitchingStrikeouts = 0;
@@ -813,6 +815,7 @@ export async function fetchAllAffiliatedPlayers(
         hittingObp,
         hittingSlg,
         hittingOps,
+        hittingWrcPlus: null,
         pitchingGames: playerPitchingGames,
         pitchingGamesStarted: playerPitchingGamesStarted,
         pitchingStrikeouts: playerPitchingStrikeouts,
@@ -837,6 +840,32 @@ export async function fetchAllAffiliatedPlayers(
 
   const statsPlayerCount = playerMap.size;
   console.log(`[MLB Sync] Total players from stats: ${statsPlayerCount}`);
+
+  // 1b) Fetch sabermetrics (wRC+) for MLB-level hitters only
+  try {
+    const saberUrl = `${MLB_API_BASE}/stats?stats=sabermetrics&group=hitting&season=${season}&playerPool=ALL&sportIds=1&limit=2000&offset=0&hydrate=person`;
+    const saberResponse = await fetch(saberUrl);
+    if (saberResponse.ok) {
+      const saberData = await saberResponse.json();
+      const saberSplits = saberData?.stats?.[0]?.splits || [];
+      let wrcCount = 0;
+      for (const split of saberSplits) {
+        const playerId = split.player?.id;
+        const wrcPlus = split.stat?.wRcPlus;
+        if (!playerId || wrcPlus == null) continue;
+        const existing = playerMap.get(playerId);
+        if (existing) {
+          existing.hittingWrcPlus = Math.round(wrcPlus * 10) / 10;
+          wrcCount++;
+        }
+      }
+      console.log(`[MLB Sync] wRC+ data: ${saberSplits.length} splits, applied to ${wrcCount} players`);
+    } else {
+      console.log(`[MLB Sync] Sabermetrics fetch failed: ${saberResponse.status}`);
+    }
+  } catch (saberErr) {
+    console.error(`[MLB Sync] Sabermetrics fetch error:`, saberErr);
+  }
 
   // 2) Supplemental source: team rosters — updates team affiliation info for players
   //    already found via stats. Does NOT add new players (only stats determine inclusion).
