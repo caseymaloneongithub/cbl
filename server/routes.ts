@@ -2698,6 +2698,80 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/admin/mlb-players/innocuous", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      if (!user?.isSuperAdmin) {
+        const userLeagues = await storage.getUserLeagues(userId);
+        const isCommissioner = userLeagues.some((l: any) => l.role === "commissioner");
+        if (!isCommissioner) return res.status(403).json({ message: "Commissioner access required" });
+      }
+
+      const { season, csvData } = req.body;
+      if (!season || !Number.isInteger(season)) {
+        return res.status(400).json({ message: "Valid season required" });
+      }
+      if (!csvData || typeof csvData !== "string") {
+        return res.status(400).json({ message: "CSV data required" });
+      }
+
+      const lines = csvData.trim().split(/\r?\n/).filter(l => l.trim());
+      const hasHeader = lines[0]?.toLowerCase().includes("mlb_id") || lines[0]?.toLowerCase().includes("mlbid");
+      const dataLines = hasHeader ? lines.slice(1) : lines;
+
+      const mlbIds: number[] = [];
+      for (const line of dataLines) {
+        const val = line.split(",")[0].trim();
+        const id = parseInt(val);
+        if (!isNaN(id) && id > 0) mlbIds.push(id);
+      }
+
+      if (mlbIds.length === 0) {
+        return res.status(400).json({ message: "No valid MLB IDs found in CSV" });
+      }
+
+      await db.update(mlbPlayerStats)
+        .set({ innocuous: false })
+        .where(and(eq(mlbPlayerStats.season, season), eq(mlbPlayerStats.innocuous, true)));
+
+      const players = await db.select({ id: mlbPlayers.id, mlbId: mlbPlayers.mlbId })
+        .from(mlbPlayers)
+        .where(inArray(mlbPlayers.mlbId, mlbIds));
+      const internalIdMap = new Map(players.map(p => [p.mlbId, p.id]));
+
+      let matched = 0;
+      let notFound = 0;
+      const notFoundIds: number[] = [];
+
+      for (const mlbId of mlbIds) {
+        const internalId = internalIdMap.get(mlbId);
+        if (!internalId) {
+          notFound++;
+          notFoundIds.push(mlbId);
+          continue;
+        }
+        const [updated] = await db.update(mlbPlayerStats)
+          .set({ innocuous: true })
+          .where(and(eq(mlbPlayerStats.mlbPlayerId, internalId), eq(mlbPlayerStats.season, season)))
+          .returning({ id: mlbPlayerStats.id });
+        if (updated) matched++;
+        else notFoundIds.push(mlbId);
+      }
+
+      res.json({
+        message: `Marked ${matched} players as innocuous for ${season}`,
+        total: mlbIds.length,
+        matched,
+        notFound: mlbIds.length - matched,
+        notFoundIds: notFoundIds.slice(0, 20),
+      });
+    } catch (error: any) {
+      console.error("Error uploading innocuous CSV:", error);
+      res.status(500).json({ message: error.message || "Failed to process innocuous CSV" });
+    }
+  });
+
   // Bulk assign via CSV payload (commissioner only)
   app.post("/api/leagues/:id/roster-assignments/upload-csv", isAuthenticated, async (req: any, res) => {
     req.setTimeout(600000);

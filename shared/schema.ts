@@ -821,6 +821,7 @@ export const mlbPlayerStats = pgTable("mlb_player_stats", {
   hittingSlg: real("hitting_slg"),
   hittingOps: real("hitting_ops"),
   hittingWrcPlus: real("hitting_wrc_plus"),
+  innocuous: boolean("innocuous").default(false),
   pitchingGames: integer("pitching_games").default(0),
   pitchingGamesStarted: integer("pitching_games_started").default(0),
   pitchingStrikeouts: integer("pitching_strikeouts").default(0),

@@ -146,6 +146,8 @@ function SyncProgressPanel({ data }: { data: SyncData | null }) {
 function MlbPlayerSync() {
   const { toast } = useToast();
   const [syncSeason, setSyncSeason] = useState(new Date().getFullYear() - 1);
+  const [innocuousCsv, setInnocuousCsv] = useState("");
+  const [innocuousSeason, setInnocuousSeason] = useState(new Date().getFullYear() - 1);
 
   const toCount = (value: unknown): number => {
     if (typeof value === "number") return Number.isFinite(value) ? value : 0;
