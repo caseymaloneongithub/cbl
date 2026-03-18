@@ -35,6 +35,13 @@ Preferred communication style: Simple, everyday language.
 - **User Management**: Commissioners can upload users via CSV, with auto-generated passwords and forced password resets.
 - **Team Ownership Invites**: Commissioners can invite users via email to take ownership of a league team, with token-based acceptance flow.
 
+### CRITICAL: Team Name Resolution
+**NEVER use `users.teamName` to display or reference a team name in any league context.** Team names are league-scoped and stored in `league_members.teamName`. The `users.teamName` column is a legacy seed value only — it may be stale or wrong. When you need a team name:
+1. Look up the `league_members` record for the user+league combination.
+2. Use `leagueMember.teamName` (or fall back to `${user.firstName} ${user.lastName}` if the member has no team name).
+3. **Do NOT fall back to `users.teamName`.** It is not kept in sync with league member data.
+This applies everywhere: emails, transactions, trade notifications, auction summaries, draft picks, claims, API responses, and any new feature that displays a team name. Always use `storage.getLeagueMember()` or `storage.getLeagueMembers()` to resolve team names.
+
 ### Key Features
 - **Auction System**: Comprehensive bidding with configurable increments, auto-bids, real-time countdowns, and per-auction settings for year multipliers, budget enforcement, and optional features like bundled bids or auction extensions.
 - **Commissioner Dashboard**: Tools for free agent and user management via CSV, roster management, reconciliation tools, and full auction lifecycle control (create, activate, reset, delete).
