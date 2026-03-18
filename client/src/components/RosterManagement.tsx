@@ -2408,6 +2408,7 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                       <SelectValue placeholder="Select team" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="__unassign__">Free Agent (Unassign)</SelectItem>
                       {activeMembers.map(m => (
                         <SelectItem key={m.userId} value={m.userId}>
                           {m.teamName || m.teamAbbreviation || m.userId}
@@ -2503,6 +2504,12 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
             <Button
               onClick={() => {
                 if (editAssignment) {
+                  if (editUserId === "__unassign__") {
+                    removeMutation.mutate(editAssignment.id);
+                    setEditDialogOpen(false);
+                    setEditAssignment(null);
+                    return;
+                  }
                   const updates: any = {};
                   if (editRosterType !== editAssignment.rosterType) updates.rosterType = editRosterType;
                   if (editUserId !== editAssignment.userId) updates.userId = editUserId;
@@ -2516,11 +2523,12 @@ export default function RosterManagement({ leagueId, league, members, isCommissi
                   editMutation.mutate({ id: editAssignment.id, ...updates });
                 }
               }}
-              disabled={editMutation.isPending}
+              disabled={editMutation.isPending || removeMutation.isPending}
+              variant={editUserId === "__unassign__" ? "destructive" : "default"}
               data-testid="button-confirm-edit"
             >
-              {editMutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-              Save Changes
+              {(editMutation.isPending || removeMutation.isPending) && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+              {editUserId === "__unassign__" ? "Unassign Player" : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
