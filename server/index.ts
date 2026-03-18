@@ -203,6 +203,15 @@ async function runPendingMigrations() {
       log("Migration 0023 applied", "migration");
     }
 
+    const { rows: showInnocuousCheck } = await pool.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name = 'leagues' AND column_name = 'show_innocuous'`
+    );
+    if (showInnocuousCheck.length === 0) {
+      log("Applying migration 0024: add show_innocuous to leagues", "migration");
+      await pool.query(`ALTER TABLE leagues ADD COLUMN IF NOT EXISTS show_innocuous boolean DEFAULT false`);
+      log("Migration 0024 applied", "migration");
+    }
+
     log("All migrations up to date", "migration");
   } catch (error) {
     log(`Migration error: ${error}`, "migration");

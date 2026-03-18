@@ -50,7 +50,7 @@ export default function CommissionerSettings() {
   const { toast } = useToast();
 
   const [editingLeagueCaps, setEditingLeagueCaps] = useState(false);
-  const [capsForm, setCapsForm] = useState({ budgetCap: "", ipCap: "", paCap: "", mlRosterLimit: "", milbRosterLimit: "" });
+  const [capsForm, setCapsForm] = useState({ budgetCap: "", ipCap: "", paCap: "", mlRosterLimit: "", milbRosterLimit: "", showInnocuous: false });
   const [rosterDragActive, setRosterDragActive] = useState(false);
   const [rosterUploadLoading, setRosterUploadLoading] = useState(false);
   const [parsedRosterPlayers, setParsedRosterPlayers] = useState<ParsedRosterPlayer[]>([]);
@@ -81,7 +81,7 @@ export default function CommissionerSettings() {
   });
 
   const updateLeagueCaps = useMutation({
-    mutationFn: async (caps: { budgetCap?: number | null; ipCap?: number | null; paCap?: number | null; mlRosterLimit?: number; milbRosterLimit?: number }) => {
+    mutationFn: async (caps: { budgetCap?: number | null; ipCap?: number | null; paCap?: number | null; mlRosterLimit?: number; milbRosterLimit?: number; showInnocuous?: boolean }) => {
       const res = await apiRequest("PATCH", `/api/leagues/${selectedLeagueId}/caps`, caps);
       return res.json();
     },
@@ -213,6 +213,7 @@ export default function CommissionerSettings() {
                   paCap: rosterUsage?.caps.paCap?.toString() || "",
                   mlRosterLimit: ((currentLeague as any)?.mlRosterLimit ?? 40).toString(),
                   milbRosterLimit: ((currentLeague as any)?.milbRosterLimit ?? 150).toString(),
+                  showInnocuous: !!(currentLeague as any)?.showInnocuous,
                 });
               }}
               data-testid="button-edit-league-caps"
@@ -244,6 +245,10 @@ export default function CommissionerSettings() {
               <div className="text-center">
                 <div className="text-sm text-muted-foreground">MiLB Roster Limit</div>
                 <div className="text-lg font-semibold">{(currentLeague as any)?.milbRosterLimit ?? 150}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-sm text-muted-foreground">Innocuous Highlighting</div>
+                <div className="text-lg font-semibold">{(currentLeague as any)?.showInnocuous ? "On" : "Off"}</div>
               </div>
             </div>
           )}
@@ -408,6 +413,19 @@ export default function CommissionerSettings() {
                 <Input id="milbRosterLimit" type="number" value={capsForm.milbRosterLimit} onChange={(e) => setCapsForm({ ...capsForm, milbRosterLimit: e.target.value })} placeholder="150" data-testid="input-milb-roster-limit" />
               </div>
             </div>
+            <Separator />
+            <label className="flex items-center gap-3 cursor-pointer" data-testid="toggle-show-innocuous">
+              <input
+                type="checkbox"
+                checked={capsForm.showInnocuous}
+                onChange={(e) => setCapsForm({ ...capsForm, showInnocuous: e.target.checked })}
+                className="h-4 w-4 rounded border-border"
+              />
+              <div>
+                <div className="text-sm font-medium">Show Innocuous Highlighting</div>
+                <div className="text-xs text-muted-foreground">Highlight innocuous players with a green background in player tables</div>
+              </div>
+            </label>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingLeagueCaps(false)}>Cancel</Button>
@@ -418,6 +436,7 @@ export default function CommissionerSettings() {
                 paCap: capsForm.paCap ? parseInt(capsForm.paCap) : null,
                 mlRosterLimit: capsForm.mlRosterLimit ? parseInt(capsForm.mlRosterLimit) : 40,
                 milbRosterLimit: capsForm.milbRosterLimit ? parseInt(capsForm.milbRosterLimit) : 150,
+                showInnocuous: capsForm.showInnocuous,
               })}
               disabled={updateLeagueCaps.isPending}
               data-testid="button-save-caps"

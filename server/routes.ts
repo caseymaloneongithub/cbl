@@ -9420,7 +9420,7 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Commissioner or Super Admin access required" });
       }
 
-      const { budgetCap, ipCap, paCap, mlRosterLimit, milbRosterLimit } = req.body;
+      const { budgetCap, ipCap, paCap, mlRosterLimit, milbRosterLimit, showInnocuous } = req.body;
       const updateData: any = {};
       
       if (budgetCap !== undefined) updateData.budgetCap = budgetCap;
@@ -9436,6 +9436,7 @@ export async function registerRoutes(
         if (isNaN(val) || val < 1) return res.status(400).json({ message: "MiLB roster limit must be a positive integer" });
         updateData.milbRosterLimit = val;
       }
+      if (showInnocuous !== undefined) updateData.showInnocuous = !!showInnocuous;
 
       const league = await storage.updateLeague(leagueId, updateData);
       if (!league) {
