@@ -412,7 +412,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
                       {hitterRows.map((p) => {
                         const leagueTeam = rosterMap[p.id] ? memberMap[rosterMap[p.id]] : null;
                         return (
-                          <TableRow key={`h-${p.id}`} className="odd:bg-muted/20">
+                          <TableRow key={`h-${p.id}`} className={`odd:bg-muted/20 ${p.stats?.innocuous ? "bg-green-50 dark:bg-green-950/30 odd:bg-green-50 dark:odd:bg-green-950/30" : ""}`}>
                             <TableCell><NameWithHover p={p} /></TableCell>
                             <TableCell className="font-mono text-[11px]">{p.primaryPosition || "-"}</TableCell>
                             <TableCell>{teamAbbrForPlayer(p)}</TableCell>
@@ -493,7 +493,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
                       {pitcherRows.map((p) => {
                         const leagueTeam = rosterMap[p.id] ? memberMap[rosterMap[p.id]] : null;
                         return (
-                          <TableRow key={`p-${p.id}`} className="odd:bg-muted/20">
+                          <TableRow key={`p-${p.id}`} className={`odd:bg-muted/20 ${p.stats?.innocuous ? "bg-green-50 dark:bg-green-950/30 odd:bg-green-50 dark:odd:bg-green-950/30" : ""}`}>
                             <TableCell><NameWithHover p={p} /></TableCell>
                             <TableCell className="font-mono text-[11px]">{p.primaryPosition || "-"}</TableCell>
                             <TableCell>{teamAbbrForPlayer(p)}</TableCell>

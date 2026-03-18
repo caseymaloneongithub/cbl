@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -146,9 +147,6 @@ function SyncProgressPanel({ data }: { data: SyncData | null }) {
 function MlbPlayerSync() {
   const { toast } = useToast();
   const [syncSeason, setSyncSeason] = useState(new Date().getFullYear() - 1);
-  const [innocuousCsv, setInnocuousCsv] = useState("");
-  const [innocuousSeason, setInnocuousSeason] = useState(new Date().getFullYear() - 1);
-
   const toCount = (value: unknown): number => {
     if (typeof value === "number") return Number.isFinite(value) ? value : 0;
     if (typeof value === "string") {
@@ -412,6 +410,76 @@ function MlbPlayerSync() {
             : "No players synced yet. Click the sync button to populate the database."}</p>
         </div>
       )}
+
+      <InnocuousUpload seasonOptions={seasonOptions} />
+    </div>
+  );
+}
+
+function InnocuousUpload({ seasonOptions }: { seasonOptions: number[] }) {
+  const { toast } = useToast();
+  const [season, setSeason] = useState(new Date().getFullYear() - 1);
+  const [csvData, setCsvData] = useState("");
+
+  const uploadMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/mlb-players/innocuous", { season, csvData });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: "Innocuous Players Updated",
+        description: `${data.matched} of ${data.total} players marked for ${season}${data.notFound > 0 ? `. ${data.notFound} not found.` : ""}`,
+      });
+      setCsvData("");
+      queryClient.invalidateQueries({ queryKey: ["/api/mlb-players"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <div className="space-y-2 border-t pt-4 mt-4">
+      <div className="text-xs font-medium text-muted-foreground">Innocuous Player Flags</div>
+      <p className="text-[11px] text-muted-foreground">
+        Upload a CSV of MLB IDs to mark as innocuous for a season. One MLB ID per line (or comma-separated first column).
+        Uploading replaces all existing innocuous flags for the selected season.
+      </p>
+      <div className="flex items-end gap-3">
+        <div className="space-y-1">
+          <Label className="text-xs">Season</Label>
+          <Select value={season.toString()} onValueChange={(v) => setSeason(parseInt(v))}>
+            <SelectTrigger className="w-28" data-testid="select-innocuous-season">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {seasonOptions.map((yr) => (
+                <SelectItem key={yr} value={yr.toString()}>{yr}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <Button
+          onClick={() => uploadMutation.mutate()}
+          disabled={!csvData.trim() || uploadMutation.isPending}
+          data-testid="button-upload-innocuous"
+        >
+          {uploadMutation.isPending ? (
+            <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Uploading...</>
+          ) : (
+            "Upload Innocuous List"
+          )}
+        </Button>
+      </div>
+      <Textarea
+        placeholder={"mlb_id\n592450\n545361\n..."}
+        value={csvData}
+        onChange={(e) => setCsvData(e.target.value)}
+        rows={5}
+        className="font-mono text-xs"
+        data-testid="textarea-innocuous-csv"
+      />
     </div>
   );
 }

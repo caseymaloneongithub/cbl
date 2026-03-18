@@ -2702,11 +2702,7 @@ export async function registerRoutes(
     try {
       const userId = req.session.originalUserId || req.session.userId!;
       const user = await storage.getUser(userId);
-      if (!user?.isSuperAdmin) {
-        const userLeagues = await storage.getUserLeagues(userId);
-        const isCommissioner = userLeagues.some((l: any) => l.role === "commissioner");
-        if (!isCommissioner) return res.status(403).json({ message: "Commissioner access required" });
-      }
+      if (!user?.isSuperAdmin) return res.status(403).json({ message: "Super admin access required" });
 
       const { season, csvData } = req.body;
       if (!season || !Number.isInteger(season)) {
@@ -2731,33 +2727,33 @@ export async function registerRoutes(
         return res.status(400).json({ message: "No valid MLB IDs found in CSV" });
       }
 
-      await db.update(mlbPlayerStats)
-        .set({ innocuous: false })
-        .where(and(eq(mlbPlayerStats.season, season), eq(mlbPlayerStats.innocuous, true)));
-
       const players = await db.select({ id: mlbPlayers.id, mlbId: mlbPlayers.mlbId })
         .from(mlbPlayers)
         .where(inArray(mlbPlayers.mlbId, mlbIds));
       const internalIdMap = new Map(players.map(p => [p.mlbId, p.id]));
 
       let matched = 0;
-      let notFound = 0;
       const notFoundIds: number[] = [];
 
-      for (const mlbId of mlbIds) {
-        const internalId = internalIdMap.get(mlbId);
-        if (!internalId) {
-          notFound++;
-          notFoundIds.push(mlbId);
-          continue;
+      await db.transaction(async (tx) => {
+        await tx.update(mlbPlayerStats)
+          .set({ innocuous: false })
+          .where(and(eq(mlbPlayerStats.season, season), eq(mlbPlayerStats.innocuous, true)));
+
+        for (const mlbId of mlbIds) {
+          const internalId = internalIdMap.get(mlbId);
+          if (!internalId) {
+            notFoundIds.push(mlbId);
+            continue;
+          }
+          const [updated] = await tx.update(mlbPlayerStats)
+            .set({ innocuous: true })
+            .where(and(eq(mlbPlayerStats.mlbPlayerId, internalId), eq(mlbPlayerStats.season, season)))
+            .returning({ id: mlbPlayerStats.id });
+          if (updated) matched++;
+          else notFoundIds.push(mlbId);
         }
-        const [updated] = await db.update(mlbPlayerStats)
-          .set({ innocuous: true })
-          .where(and(eq(mlbPlayerStats.mlbPlayerId, internalId), eq(mlbPlayerStats.season, season)))
-          .returning({ id: mlbPlayerStats.id });
-        if (updated) matched++;
-        else notFoundIds.push(mlbId);
-      }
+      });
 
       res.json({
         message: `Marked ${matched} players as innocuous for ${season}`,
