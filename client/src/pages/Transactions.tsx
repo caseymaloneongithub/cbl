@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table,
@@ -14,8 +15,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ScrollText, Search, ArrowLeftRight, Gavel, FileText, UserPlus } from "lucide-react";
-import { useState, useMemo } from "react";
+import { ScrollText, Search, ArrowLeftRight, Gavel, FileText, UserPlus, ChevronLeft, ChevronRight } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
 
 interface Transaction {
   id: string;
@@ -33,6 +34,11 @@ interface Transaction {
   details: string;
 }
 
+interface TransactionsResponse {
+  transactions: Transaction[];
+  total: number;
+}
+
 interface LeagueMember {
   userId: string;
   teamName: string | null;
@@ -44,6 +50,8 @@ interface LeagueMember {
   };
 }
 
+const PAGE_SIZE = 50;
+
 export default function Transactions() {
   const { user } = useAuth();
   const { currentLeague, selectedLeagueId } = useLeague();
@@ -51,8 +59,13 @@ export default function Transactions() {
   const [teamFilter, setTeamFilter] = useState<string>("all");
   const [yearFilter, setYearFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(0);
 
   const leagueId = selectedLeagueId;
+
+  useEffect(() => {
+    setPage(0);
+  }, [typeFilter, teamFilter, yearFilter, searchQuery]);
 
   const membersQuery = useQuery<LeagueMember[]>({
     queryKey: ["/api/leagues", leagueId, "members"],
@@ -66,10 +79,12 @@ export default function Transactions() {
     if (teamFilter !== "all") params.set("team", teamFilter);
     if (yearFilter !== "all") params.set("year", yearFilter);
     if (searchQuery.trim()) params.set("search", searchQuery.trim());
+    params.set("limit", String(PAGE_SIZE));
+    params.set("offset", String(page * PAGE_SIZE));
     return params.toString();
-  }, [typeFilter, teamFilter, yearFilter, searchQuery]);
+  }, [typeFilter, teamFilter, yearFilter, searchQuery, page]);
 
-  const transactionsQuery = useQuery<Transaction[]>({
+  const transactionsQuery = useQuery<TransactionsResponse>({
     queryKey: ["/api/leagues", leagueId, "transactions", queryParams],
     queryFn: () => fetch(`/api/leagues/${leagueId}/transactions?${queryParams}`).then(r => r.json()),
     enabled: !!leagueId,
@@ -85,6 +100,10 @@ export default function Transactions() {
 
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
+
+  const transactions = transactionsQuery.data?.transactions || [];
+  const total = transactionsQuery.data?.total || 0;
+  const totalPages = Math.ceil(total / PAGE_SIZE);
 
   const typeBadge = (type: string) => {
     switch (type) {
@@ -158,7 +177,7 @@ export default function Transactions() {
           <Skeleton className="h-10 w-full" />
           <Skeleton className="h-10 w-full" />
         </div>
-      ) : !transactionsQuery.data || transactionsQuery.data.length === 0 ? (
+      ) : transactions.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
             No transactions found matching your filters.
@@ -179,7 +198,7 @@ export default function Transactions() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {transactionsQuery.data.map(tx => (
+                {transactions.map(tx => (
                   <TableRow key={tx.id} data-testid={`transaction-row-${tx.id}`}>
                     <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                       {tx.date ? new Date(tx.date).toLocaleDateString() : "-"}
@@ -204,8 +223,39 @@ export default function Transactions() {
         </Card>
       )}
 
-      <div className="text-sm text-muted-foreground text-center">
-        {transactionsQuery.data?.length || 0} transaction{(transactionsQuery.data?.length || 0) !== 1 ? "s" : ""}
+      <div className="flex items-center justify-between text-sm text-muted-foreground">
+        <span data-testid="text-transaction-count">
+          {total === 0
+            ? "0 transactions"
+            : `Showing ${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)} of ${total} transaction${total !== 1 ? "s" : ""}`}
+        </span>
+        {totalPages > 1 && (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => p - 1)}
+              disabled={page === 0}
+              data-testid="button-prev-page"
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Prev
+            </Button>
+            <span className="text-sm font-medium" data-testid="text-page-number">
+              Page {page + 1} of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => p + 1)}
+              disabled={page >= totalPages - 1}
+              data-testid="button-next-page"
+            >
+              Next
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

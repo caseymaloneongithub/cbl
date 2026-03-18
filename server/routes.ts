@@ -1972,10 +1972,13 @@ export async function registerRoutes(
       const member = await storage.getLeagueMember(leagueId, userId);
       if (!member) return res.status(403).json({ message: "Not a member of this league" });
 
-      const { type, team, year, search } = req.query;
+      const { type, team, year, search, limit: limitStr, offset: offsetStr } = req.query;
       const currentYear = new Date().getFullYear();
       const filterYear = year ? parseInt(year as string) : undefined;
+      const pageLimit = Math.max(1, Math.min(limitStr ? parseInt(limitStr as string) || 50 : 50, 200));
+      const pageOffset = Math.max(0, offsetStr ? parseInt(offsetStr as string) || 0 : 0);
       const transactions: any[] = [];
+      const txCutoff = new Date('2026-03-16T00:00:00Z').getTime();
 
       if (!type || type === 'trade') {
         const tradesList = await storage.getTradesForLeague(leagueId, {
@@ -1983,6 +1986,9 @@ export async function registerRoutes(
           season: filterYear,
         });
         for (const t of tradesList) {
+          const txDate = t.respondedAt || t.proposedAt;
+          if (txDate && new Date(txDate).getTime() < txCutoff) continue;
+
           const proposerName = t.proposingUser.teamName || `${t.proposingUser.firstName} ${t.proposingUser.lastName}`;
           const partnerName = t.partnerUser.teamName || `${t.partnerUser.firstName} ${t.partnerUser.lastName}`;
 
@@ -1992,20 +1998,20 @@ export async function registerRoutes(
             const toTeam = item.fromUserId === t.proposingUserId ? partnerName : proposerName;
 
             if (team && item.fromUserId !== team && toUserId !== team) continue;
-            if (search && !item.player.name.toLowerCase().includes((search as string).toLowerCase())) continue;
+            if (search && !(item.player?.fullName || '').toLowerCase().includes((search as string).toLowerCase())) continue;
 
             transactions.push({
               id: `trade-${t.id}-${item.id}`,
               type: 'trade',
-              playerName: item.player.name,
-              playerPosition: item.player.position,
-              playerMlbTeam: item.player.mlbTeam,
+              playerName: item.player?.fullName || 'Unknown',
+              playerPosition: item.player?.primaryPosition || null,
+              playerMlbTeam: item.player?.currentTeamName || null,
               fromTeam,
               toTeam,
               fromUserId: item.fromUserId,
               toUserId,
               rosterType: item.rosterType,
-              date: t.respondedAt || t.proposedAt,
+              date: txDate,
               season: t.season,
               details: `Traded from ${fromTeam} to ${toTeam}`,
             });
@@ -2020,9 +2026,10 @@ export async function registerRoutes(
           const assignments = await storage.getLeagueRosterAssignments(leagueId, season);
           for (const a of assignments) {
             if (!a.acquired || !a.acquired.startsWith('FA ')) continue;
+            if (a.createdAt && new Date(a.createdAt).getTime() < txCutoff) continue;
 
             if (team && a.userId !== team) continue;
-            if (search && !a.player.name.toLowerCase().includes((search as string).toLowerCase())) continue;
+            if (search && !(a.player?.fullName || '').toLowerCase().includes((search as string).toLowerCase())) continue;
 
             if (!claimUserCache.has(a.userId)) {
               const u = await storage.getUser(a.userId);
@@ -2033,9 +2040,9 @@ export async function registerRoutes(
             transactions.push({
               id: `claim-${a.id}`,
               type: 'claim',
-              playerName: a.player.name,
-              playerPosition: a.player.position,
-              playerMlbTeam: a.player.mlbTeam,
+              playerName: a.player?.fullName || 'Unknown',
+              playerPosition: a.player?.primaryPosition || null,
+              playerMlbTeam: a.player?.currentTeamName || null,
               fromTeam: 'Free Agent',
               toTeam: teamName,
               fromUserId: null,
@@ -2057,6 +2064,7 @@ export async function registerRoutes(
           const agents = await storage.getFreeAgentsByAuction(auction.id);
           for (const agent of agents) {
             if (!agent.currentBid || !agent.highBidder) continue;
+            if (agent.auctionEndTime && new Date(agent.auctionEndTime).getTime() < txCutoff) continue;
             const teamName = agent.highBidder.teamName || `${agent.highBidder.firstName} ${agent.highBidder.lastName}`;
 
             if (team && agent.highBidder.id !== team) continue;
@@ -2088,17 +2096,18 @@ export async function registerRoutes(
           const picks = await storage.getDraftPicks(draft.id);
           for (const pick of picks) {
             if (!pick.mlbPlayerId || !pick.player) continue;
+            if (pick.madeAt && new Date(pick.madeAt).getTime() < txCutoff) continue;
             const teamName = pick.user.teamName || `${pick.user.firstName} ${pick.user.lastName}`;
 
             if (team && pick.userId !== team) continue;
-            if (search && !pick.player.name.toLowerCase().includes((search as string).toLowerCase())) continue;
+            if (search && !(pick.player?.fullName || '').toLowerCase().includes((search as string).toLowerCase())) continue;
 
             transactions.push({
               id: `draft-${pick.id}`,
               type: 'draft',
-              playerName: pick.player.name,
-              playerPosition: pick.player.position,
-              playerMlbTeam: pick.player.mlbTeam,
+              playerName: pick.player?.fullName || 'Unknown',
+              playerPosition: pick.player?.primaryPosition || null,
+              playerMlbTeam: pick.player?.currentTeamName || null,
               fromTeam: 'Draft',
               toTeam: teamName,
               fromUserId: null,
@@ -2118,7 +2127,9 @@ export async function registerRoutes(
         return dateB - dateA;
       });
 
-      res.json(transactions);
+      const total = transactions.length;
+      const paginated = transactions.slice(pageOffset, pageOffset + pageLimit);
+      res.json({ transactions: paginated, total });
     } catch (error: any) {
       console.error("Error fetching transactions:", error);
       res.status(500).json({ message: "Failed to fetch transactions" });
