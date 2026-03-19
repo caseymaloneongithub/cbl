@@ -15,12 +15,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ScrollText, Search, ArrowLeftRight, Gavel, FileText, UserPlus, ChevronLeft, ChevronRight } from "lucide-react";
+import { ScrollText, Search, ArrowLeftRight, Gavel, FileText, UserPlus, ChevronLeft, ChevronRight, Scissors } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 
 interface Transaction {
   id: string;
-  type: "trade" | "claim" | "signing" | "draft";
+  type: "trade" | "claim" | "signing" | "draft" | "cut";
   playerName: string;
   playerPosition: string | null;
   playerMlbTeam: string | null;
@@ -58,6 +58,7 @@ export default function Transactions() {
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [teamFilter, setTeamFilter] = useState<string>("all");
   const [yearFilter, setYearFilter] = useState<string>("all");
+  const [levelFilter, setLevelFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(0);
 
@@ -65,7 +66,7 @@ export default function Transactions() {
 
   useEffect(() => {
     setPage(0);
-  }, [typeFilter, teamFilter, yearFilter, searchQuery]);
+  }, [typeFilter, teamFilter, yearFilter, levelFilter, searchQuery]);
 
   const membersQuery = useQuery<LeagueMember[]>({
     queryKey: ["/api/leagues", leagueId, "members"],
@@ -78,11 +79,12 @@ export default function Transactions() {
     if (typeFilter !== "all") params.set("type", typeFilter);
     if (teamFilter !== "all") params.set("team", teamFilter);
     if (yearFilter !== "all") params.set("year", yearFilter);
+    if (levelFilter !== "all") params.set("level", levelFilter);
     if (searchQuery.trim()) params.set("search", searchQuery.trim());
     params.set("limit", String(PAGE_SIZE));
     params.set("offset", String(page * PAGE_SIZE));
     return params.toString();
-  }, [typeFilter, teamFilter, yearFilter, searchQuery, page]);
+  }, [typeFilter, teamFilter, yearFilter, levelFilter, searchQuery, page]);
 
   const transactionsQuery = useQuery<TransactionsResponse>({
     queryKey: ["/api/leagues", leagueId, "transactions", queryParams],
@@ -111,6 +113,7 @@ export default function Transactions() {
       case "signing": return <Badge className="bg-blue-600 hover:bg-blue-700 text-xs gap-1"><Gavel className="h-3 w-3" />Signing</Badge>;
       case "draft": return <Badge className="bg-green-600 hover:bg-green-700 text-xs gap-1"><FileText className="h-3 w-3" />Draft</Badge>;
       case "claim": return <Badge className="bg-orange-600 hover:bg-orange-700 text-xs gap-1"><UserPlus className="h-3 w-3" />Claim</Badge>;
+      case "cut": return <Badge className="bg-red-600 hover:bg-red-700 text-xs gap-1"><Scissors className="h-3 w-3" />Cut</Badge>;
       default: return <Badge variant="outline" className="text-xs">{type}</Badge>;
     }
   };
@@ -143,6 +146,17 @@ export default function Transactions() {
             <SelectItem value="signing">Signings</SelectItem>
             <SelectItem value="draft">Draft</SelectItem>
             <SelectItem value="claim">Claims</SelectItem>
+            <SelectItem value="cut">Cuts</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={levelFilter} onValueChange={setLevelFilter}>
+          <SelectTrigger className="w-28" data-testid="select-level-filter">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Levels</SelectItem>
+            <SelectItem value="mlb">MLB</SelectItem>
+            <SelectItem value="milb">MiLB</SelectItem>
           </SelectContent>
         </Select>
         <Select value={teamFilter} onValueChange={setTeamFilter}>
@@ -192,6 +206,7 @@ export default function Transactions() {
                   <TableHead>Date</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Player</TableHead>
+                  <TableHead>Level</TableHead>
                   <TableHead>From</TableHead>
                   <TableHead>To</TableHead>
                   <TableHead>Details</TableHead>
@@ -211,6 +226,11 @@ export default function Transactions() {
                           {tx.playerPosition}{tx.playerMlbTeam ? `, ${tx.playerMlbTeam}` : ""}
                         </div>
                       )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={tx.rosterType === "mlb" ? "default" : "secondary"} className="text-xs">
+                        {(tx.rosterType || "mlb").toUpperCase()}
+                      </Badge>
                     </TableCell>
                     <TableCell className="text-sm">{tx.fromTeam}</TableCell>
                     <TableCell className="text-sm font-medium">{tx.toTeam}</TableCell>

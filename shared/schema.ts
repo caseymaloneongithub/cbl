@@ -878,6 +878,26 @@ export const insertTradeItemSchema = (createInsertSchema(tradeItems) as any).omi
   id: true,
 });
 
+export const rosterMoves = pgTable("roster_moves", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  leagueId: integer("league_id").references(() => leagues.id).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  mlbPlayerId: integer("mlb_player_id").references(() => mlbPlayers.id).notNull(),
+  moveType: varchar("move_type", { length: 20 }).notNull(),
+  rosterType: varchar("roster_type", { length: 10 }).notNull(),
+  season: integer("season").notNull(),
+  performedBy: varchar("performed_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_roster_moves_league").on(table.leagueId),
+  index("idx_roster_moves_user").on(table.userId),
+]);
+
+export const insertRosterMoveSchema = (createInsertSchema(rosterMoves) as any).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type League = typeof leagues.$inferSelect;
 export type InsertLeague = z.infer<typeof insertLeagueSchema>;
@@ -1013,3 +1033,6 @@ export type TradeWithDetails = Trade & {
   proposingUser: Pick<User, 'id' | 'firstName' | 'lastName' | 'teamName'>;
   partnerUser: Pick<User, 'id' | 'firstName' | 'lastName' | 'teamName'>;
 };
+
+export type RosterMove = typeof rosterMoves.$inferSelect;
+export type InsertRosterMove = z.infer<typeof insertRosterMoveSchema>;

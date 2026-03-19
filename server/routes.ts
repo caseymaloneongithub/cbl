@@ -2007,9 +2007,10 @@ export async function registerRoutes(
       const member = await storage.getLeagueMember(leagueId, userId);
       if (!member) return res.status(403).json({ message: "Not a member of this league" });
 
-      const { type, team, year, search, limit: limitStr, offset: offsetStr } = req.query;
+      const { type, team, year, search, level, limit: limitStr, offset: offsetStr } = req.query;
       const currentYear = new Date().getFullYear();
       const filterYear = year ? parseInt(year as string) : undefined;
+      const filterLevel = level as string | undefined;
       const pageLimit = Math.max(1, Math.min(limitStr ? parseInt(limitStr as string) || 50 : 50, 200));
       const pageOffset = Math.max(0, offsetStr ? parseInt(offsetStr as string) || 0 : 0);
       const transactions: any[] = [];
@@ -2041,6 +2042,7 @@ export async function registerRoutes(
 
             if (team && item.fromUserId !== team && toUserId !== team) continue;
             if (search && !(item.player?.fullName || '').toLowerCase().includes((search as string).toLowerCase())) continue;
+            if (filterLevel && item.rosterType !== filterLevel) continue;
 
             transactions.push({
               id: `trade-${t.id}-${item.id}`,
@@ -2071,6 +2073,7 @@ export async function registerRoutes(
 
             if (team && a.userId !== team) continue;
             if (search && !(a.player?.fullName || '').toLowerCase().includes((search as string).toLowerCase())) continue;
+            if (filterLevel && (a.rosterType || 'mlb') !== filterLevel) continue;
 
             const teamName = getTeamName(a.userId);
 
@@ -2106,6 +2109,7 @@ export async function registerRoutes(
 
             if (team && agent.highBidder.id !== team) continue;
             if (search && !agent.playerName.toLowerCase().includes((search as string).toLowerCase())) continue;
+            if (filterLevel && filterLevel !== 'mlb') continue;
 
             transactions.push({
               id: `signing-${agent.id}`,
@@ -2138,6 +2142,7 @@ export async function registerRoutes(
 
             if (team && pick.userId !== team) continue;
             if (search && !(pick.player?.fullName || '').toLowerCase().includes((search as string).toLowerCase())) continue;
+            if (filterLevel && (pick.rosterType || 'mlb') !== filterLevel) continue;
 
             transactions.push({
               id: `draft-${pick.id}`,
@@ -2155,6 +2160,37 @@ export async function registerRoutes(
               details: `Round ${pick.round}, Pick ${(pick.overallPickNumber || 0) + 1}`,
             });
           }
+        }
+      }
+
+      if (!type || type === 'cut') {
+        const moves = await storage.getRosterMovesForLeague(leagueId, {
+          season: filterYear,
+          moveType: 'cut',
+        });
+        for (const m of moves) {
+          if (m.createdAt && new Date(m.createdAt).getTime() < txCutoff) continue;
+          if (team && m.userId !== team) continue;
+          if (search && !(m.player?.fullName || '').toLowerCase().includes((search as string).toLowerCase())) continue;
+          if (filterLevel && m.rosterType !== filterLevel) continue;
+
+          const teamName = getTeamName(m.userId);
+
+          transactions.push({
+            id: `cut-${m.id}`,
+            type: 'cut',
+            playerName: m.player?.fullName || 'Unknown',
+            playerPosition: m.player?.primaryPosition || null,
+            playerMlbTeam: m.player?.currentTeamName || null,
+            fromTeam: teamName,
+            toTeam: 'Released',
+            fromUserId: m.userId,
+            toUserId: null,
+            rosterType: m.rosterType,
+            date: m.createdAt,
+            season: m.season,
+            details: `Cut by ${teamName}`,
+          });
         }
       }
 
@@ -2470,7 +2506,28 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Commissioner access required" });
       }
 
+      const allSeasonAssignments = await storage.getLeagueRosterAssignments(leagueId);
+      const assignment = allSeasonAssignments.find(a => a.id === assignmentId);
+      if (!assignment) {
+        return res.status(404).json({ message: "Assignment not found in this league" });
+      }
+
       await storage.removeRosterAssignment(assignmentId);
+
+      try {
+        await storage.createRosterMove({
+          leagueId,
+          userId: assignment.userId,
+          mlbPlayerId: assignment.mlbPlayerId,
+          moveType: 'cut',
+          rosterType: assignment.rosterType || 'mlb',
+          season: assignment.season || new Date().getFullYear(),
+          performedBy: userId,
+        });
+      } catch (e) {
+        console.error("[roster-move] Failed to log commissioner cut:", e);
+      }
+
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error removing roster assignment:", error);
@@ -2494,6 +2551,21 @@ export async function registerRoutes(
       }
 
       await storage.removeRosterAssignment(assignmentId);
+
+      try {
+        await storage.createRosterMove({
+          leagueId,
+          userId,
+          mlbPlayerId: assignment.mlbPlayerId,
+          moveType: 'cut',
+          rosterType: 'milb',
+          season: assignment.season || new Date().getFullYear(),
+          performedBy: userId,
+        });
+      } catch (e) {
+        console.error("[roster-move] Failed to log owner cut:", e);
+      }
+
       console.log(`[Roster Cut] User ${userId} cut ${assignment.player.fullName} (assignmentId=${assignmentId}) from league ${leagueId}`);
       res.json({ success: true, playerName: assignment.player.fullName });
     } catch (error: any) {

@@ -212,6 +212,29 @@ async function runPendingMigrations() {
       log("Migration 0024 applied", "migration");
     }
 
+    const { rows: rosterMovesCheck } = await pool.query(
+      `SELECT 1 FROM information_schema.tables WHERE table_name = 'roster_moves'`
+    );
+    if (rosterMovesCheck.length === 0) {
+      log("Applying migration 0025: create roster_moves table", "migration");
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS roster_moves (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          league_id INTEGER NOT NULL REFERENCES leagues(id),
+          user_id VARCHAR NOT NULL REFERENCES users(id),
+          mlb_player_id INTEGER NOT NULL REFERENCES mlb_players(id),
+          move_type VARCHAR(20) NOT NULL,
+          roster_type VARCHAR(10) NOT NULL,
+          season INTEGER NOT NULL,
+          performed_by VARCHAR REFERENCES users(id),
+          created_at TIMESTAMP DEFAULT NOW() NOT NULL
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_roster_moves_league ON roster_moves(league_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_roster_moves_user ON roster_moves(user_id)`);
+      log("Migration 0025 applied", "migration");
+    }
+
     log("All migrations up to date", "migration");
   } catch (error) {
     log(`Migration error: ${error}`, "migration");

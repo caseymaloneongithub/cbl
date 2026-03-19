@@ -80,6 +80,9 @@ import {
   type TradeItem,
   type InsertTradeItem,
   type TradeWithDetails,
+  rosterMoves,
+  type RosterMove,
+  type InsertRosterMove,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, lt, sql, isNull, inArray, or } from "drizzle-orm";
@@ -358,6 +361,10 @@ export interface IStorage {
   getUnassignedPlayers(leagueId: number, season?: number, filters?: { search?: string; sportLevel?: string; limit?: number; offset?: number }): Promise<MlbPlayer[]>;
   getUnassignedPlayerCount(leagueId: number, season?: number, filters?: { search?: string; sportLevel?: string }): Promise<number>;
   bulkAssignPlayers(assignments: InsertLeagueRosterAssignment[]): Promise<number>;
+  
+  // Roster move operations
+  createRosterMove(move: InsertRosterMove): Promise<RosterMove>;
+  getRosterMovesForLeague(leagueId: number, filters?: { season?: number; userId?: string; moveType?: string }): Promise<(RosterMove & { player: MlbPlayer })[]>;
   
   // Trade operations
   createTrade(trade: InsertTrade, items: InsertTradeItem[]): Promise<TradeWithDetails>;
@@ -4471,6 +4478,30 @@ export class DatabaseStorage implements IStorage {
       .returning();
     if (!updated) throw new Error('Trade is no longer pending');
     return updated;
+  }
+
+  async createRosterMove(move: InsertRosterMove): Promise<RosterMove> {
+    const [created] = await db.insert(rosterMoves).values(move).returning();
+    return created;
+  }
+
+  async getRosterMovesForLeague(leagueId: number, filters?: { season?: number; userId?: string; moveType?: string }): Promise<(RosterMove & { player: MlbPlayer })[]> {
+    const conditions = [eq(rosterMoves.leagueId, leagueId)];
+    if (filters?.season) conditions.push(eq(rosterMoves.season, filters.season));
+    if (filters?.userId) conditions.push(eq(rosterMoves.userId, filters.userId));
+    if (filters?.moveType) conditions.push(eq(rosterMoves.moveType, filters.moveType));
+
+    const rows = await db
+      .select({
+        move: rosterMoves,
+        player: mlbPlayers,
+      })
+      .from(rosterMoves)
+      .innerJoin(mlbPlayers, eq(rosterMoves.mlbPlayerId, mlbPlayers.id))
+      .where(and(...conditions))
+      .orderBy(desc(rosterMoves.createdAt));
+
+    return rows.map(r => ({ ...r.move, player: r.player }));
   }
 }
 
