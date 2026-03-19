@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Search, ChevronLeft, ChevronRight, UserPlus } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, UserPlus, Download } from "lucide-react";
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import type { MlbPlayer, MlbPlayerStat, LeagueMember } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -38,6 +38,12 @@ interface RosterAssignment {
   mlbPlayerId: number;
   rosterType: string;
   season: number;
+  contractStatus?: string | null;
+  salary2026?: number | null;
+  minorLeagueStatus?: string | null;
+  minorLeagueYears?: number | null;
+  acquired?: string | null;
+  rosterSlot?: string | null;
   player: MlbPlayer;
 }
 
@@ -192,6 +198,12 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
     return map;
   }, [rosterData?.assignments]);
 
+  const assignmentByPlayer = useMemo(() => {
+    const map: Record<number, RosterAssignment> = {};
+    for (const a of rosterData?.assignments || []) map[a.mlbPlayerId] = a;
+    return map;
+  }, [rosterData?.assignments]);
+
   const memberMap = useMemo(() => {
     const map: Record<string, string> = {};
     for (const m of membersData || []) map[m.userId] = m.teamName || m.teamAbbreviation || m.userId;
@@ -231,6 +243,73 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
     if (leagueTeamFilter === "unassigned") return all.filter((p) => !rosterMap[p.id]);
     return all.filter((p) => rosterMap[p.id] === leagueTeamFilter);
   }, [playersData?.players, leagueTeamFilter, rosterMap]);
+
+  const downloadCsv = useCallback(() => {
+    if (!filteredPlayers.length) return;
+
+    const csvEscape = (val: string | number | null | undefined) => {
+      if (val == null || val === "") return "";
+      const s = String(val);
+      if (s.includes(",") || s.includes('"') || s.includes("\n")) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    };
+
+    const isMLB = level === "mlb";
+    const headers = [
+      "MLB ID",
+      "Last Name",
+      "First Name",
+      "Position",
+      "MLB Team",
+      "CBL Team",
+      ...(isMLB
+        ? ["Contract Status", "Salary 2026", "Roster Slot", "Acquired"]
+        : ["MH/MC", "Years", "Acquired"]),
+    ];
+
+    const rows = filteredPlayers.map((p) => {
+      const assignment = assignmentByPlayer[p.id];
+      const cblTeam = rosterMap[p.id] ? (memberMap[rosterMap[p.id]] || "") : "";
+      const mlbTeam = isMLB
+        ? (getMlbAffiliationAbbreviation(p.currentTeamName || null) || p.currentTeamName || "")
+        : (getMlbAffiliationAbbreviation(p.parentOrgName || null) || p.parentOrgName || "");
+
+      const base = [
+        csvEscape(p.mlbId),
+        csvEscape(p.lastName),
+        csvEscape(p.firstName),
+        csvEscape(p.primaryPosition),
+        csvEscape(mlbTeam),
+        csvEscape(cblTeam),
+      ];
+
+      if (isMLB) {
+        base.push(
+          csvEscape(assignment?.contractStatus),
+          csvEscape(assignment?.salary2026),
+          csvEscape(assignment?.rosterSlot),
+          csvEscape(assignment?.acquired),
+        );
+      } else {
+        base.push(
+          csvEscape(assignment?.minorLeagueStatus),
+          csvEscape(assignment?.minorLeagueYears),
+          csvEscape(assignment?.acquired),
+        );
+      }
+
+      return base.join(",");
+    });
+
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${level}_players_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [filteredPlayers, level, assignmentByPlayer, rosterMap, memberMap]);
 
   const baseHitters = useMemo(
     () => filteredPlayers.filter((p) => p.stats?.isTwoWayQualified || p.positionType !== "Pitcher"),
@@ -370,6 +449,16 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
                 </SelectContent>
               </Select>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={downloadCsv}
+              disabled={!filteredPlayers.length}
+              data-testid="button-download-csv"
+            >
+              <Download className="h-4 w-4 mr-1.5" />
+              Download CSV
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
