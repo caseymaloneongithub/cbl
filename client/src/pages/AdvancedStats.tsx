@@ -52,6 +52,8 @@ interface AdvancedStat {
     team: string;
     mlbId: number;
   };
+  cblTeam?: string | null;
+  cblRosterType?: string | null;
 }
 
 function fmt(val: number | null | undefined, decimals = 3): string {
@@ -85,25 +87,33 @@ export default function AdvancedStats() {
 
   const activeSeason = selectedSeason || (seasons && seasons.length > 0 ? String(seasons[0]) : "");
 
+  const leagueId = currentLeague?.id;
+
   const { data: stats, isLoading: loadingStats } = useQuery<AdvancedStat[]>({
-    queryKey: ["/api/premium/advanced-stats", { season: activeSeason }],
+    queryKey: ["/api/premium/advanced-stats", { season: activeSeason, leagueId }],
     queryFn: async () => {
-      const res = await fetch(`/api/premium/advanced-stats?season=${activeSeason}`, { credentials: "include" });
+      let url = `/api/premium/advanced-stats?season=${activeSeason}`;
+      if (leagueId) url += `&leagueId=${leagueId}`;
+      const res = await fetch(url, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
     enabled: !!hasPremium && !!activeSeason,
   });
 
+  const matchesSearch = (s: AdvancedStat) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return s.player?.name?.toLowerCase().includes(q) ||
+      s.player?.team?.toLowerCase().includes(q) ||
+      s.cblTeam?.toLowerCase().includes(q);
+  };
+
   const hitters = useMemo(() => {
     if (!stats) return [];
     return stats
       .filter(s => s.hittingWar != null || s.hittingWrcPlus != null || s.hittingXba != null)
-      .filter(s => {
-        if (!search) return true;
-        const q = search.toLowerCase();
-        return s.player?.name?.toLowerCase().includes(q) || s.player?.team?.toLowerCase().includes(q);
-      })
+      .filter(matchesSearch)
       .sort((a, b) => (b.hittingWar ?? -999) - (a.hittingWar ?? -999));
   }, [stats, search]);
 
@@ -111,11 +121,7 @@ export default function AdvancedStats() {
     if (!stats) return [];
     return stats
       .filter(s => s.pitchingWar != null || s.pitchingXera != null || s.pitchingXk9 != null)
-      .filter(s => {
-        if (!search) return true;
-        const q = search.toLowerCase();
-        return s.player?.name?.toLowerCase().includes(q) || s.player?.team?.toLowerCase().includes(q);
-      })
+      .filter(matchesSearch)
       .sort((a, b) => (b.pitchingWar ?? -999) - (a.pitchingWar ?? -999));
   }, [stats, search]);
 
@@ -142,7 +148,9 @@ export default function AdvancedStats() {
           <TrendingUp className="h-6 w-6 text-primary" />
           <div>
             <h1 className="text-2xl font-bold" data-testid="text-advanced-stats-title">Advanced Stats</h1>
-            <p className="text-sm text-muted-foreground">Expected statistics and WAR</p>
+            <p className="text-sm text-muted-foreground">
+              Expected statistics and WAR{currentLeague ? ` — ${currentLeague.name}` : ""}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -197,6 +205,7 @@ export default function AdvancedStats() {
                       <TableHead className="sticky left-0 bg-background z-10 min-w-[180px]">Player</TableHead>
                       <TableHead className="text-center min-w-[50px]">Pos</TableHead>
                       <TableHead className="text-center min-w-[60px]">Team</TableHead>
+                      {leagueId && <TableHead className="min-w-[120px]">CBL Team</TableHead>}
                       <TableHead className="text-right min-w-[50px]">WAR</TableHead>
                       <TableHead className="text-right min-w-[55px]">wRC+</TableHead>
                       <TableHead className="text-right min-w-[55px]">xBA</TableHead>
@@ -216,6 +225,7 @@ export default function AdvancedStats() {
                         <TableCell className="sticky left-0 bg-background z-10 font-medium">{s.player?.name ?? `Player #${s.mlbPlayerId}`}</TableCell>
                         <TableCell className="text-center text-muted-foreground text-xs">{s.player?.position ?? "—"}</TableCell>
                         <TableCell className="text-center text-muted-foreground text-xs">{s.player?.team ?? "—"}</TableCell>
+                        {leagueId && <TableCell className="text-xs">{s.cblTeam ? <Badge variant="outline">{s.cblTeam}</Badge> : <span className="text-muted-foreground">FA</span>}</TableCell>}
                         <TableCell className="text-right font-mono">{fmtWar(s.hittingWar)}</TableCell>
                         <TableCell className="text-right font-mono">{fmtInt(s.hittingWrcPlus)}</TableCell>
                         <TableCell className="text-right font-mono">{fmt(s.hittingXba)}</TableCell>
@@ -252,6 +262,7 @@ export default function AdvancedStats() {
                       <TableHead className="sticky left-0 bg-background z-10 min-w-[180px]">Player</TableHead>
                       <TableHead className="text-center min-w-[50px]">Pos</TableHead>
                       <TableHead className="text-center min-w-[60px]">Team</TableHead>
+                      {leagueId && <TableHead className="min-w-[120px]">CBL Team</TableHead>}
                       <TableHead className="text-right min-w-[50px]">WAR</TableHead>
                       <TableHead className="text-right min-w-[55px]">xERA</TableHead>
                       <TableHead className="text-right min-w-[70px]">xERA vR</TableHead>
@@ -273,6 +284,7 @@ export default function AdvancedStats() {
                         <TableCell className="sticky left-0 bg-background z-10 font-medium">{s.player?.name ?? `Player #${s.mlbPlayerId}`}</TableCell>
                         <TableCell className="text-center text-muted-foreground text-xs">{s.player?.position ?? "—"}</TableCell>
                         <TableCell className="text-center text-muted-foreground text-xs">{s.player?.team ?? "—"}</TableCell>
+                        {leagueId && <TableCell className="text-xs">{s.cblTeam ? <Badge variant="outline">{s.cblTeam}</Badge> : <span className="text-muted-foreground">FA</span>}</TableCell>}
                         <TableCell className="text-right font-mono">{fmtWar(s.pitchingWar)}</TableCell>
                         <TableCell className="text-right font-mono">{fmt(s.pitchingXera, 2)}</TableCell>
                         <TableCell className="text-right font-mono text-muted-foreground">{fmt(s.pitchingXeraVsRhb, 2)}</TableCell>

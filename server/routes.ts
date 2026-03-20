@@ -11800,6 +11800,31 @@ export async function registerRoutes(
       const season = parseInt(req.query.season as string);
       if (!season) return res.status(400).json({ message: "Season required" });
       const stats = await storage.getAdvancedPlayerStats(season);
+
+      const leagueId = req.query.leagueId ? parseInt(req.query.leagueId as string) : null;
+      if (leagueId) {
+        const currentYear = new Date().getFullYear();
+        const assignments = await storage.getLeagueRosterAssignments(leagueId, currentYear);
+        const members = await storage.getLeagueMembers(leagueId);
+        const memberMap = new Map(members.map(m => [m.userId, m]));
+        const playerTeamMap = new Map<number, { teamName: string; rosterType: string }>();
+        for (const a of assignments) {
+          const member = memberMap.get(a.userId);
+          if (member) {
+            playerTeamMap.set(a.mlbPlayerId, {
+              teamName: member.teamName || `${(a as any).user?.firstName || ''} ${(a as any).user?.lastName || ''}`.trim() || 'Unknown',
+              rosterType: a.rosterType || 'mlb',
+            });
+          }
+        }
+        const enriched = stats.map(s => ({
+          ...s,
+          cblTeam: playerTeamMap.get(s.mlbPlayerId)?.teamName || null,
+          cblRosterType: playerTeamMap.get(s.mlbPlayerId)?.rosterType || null,
+        }));
+        return res.json(enriched);
+      }
+
       res.json(stats);
     } catch (error: any) {
       console.error("Error fetching advanced stats:", error);
