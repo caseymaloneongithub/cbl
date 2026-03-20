@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/table";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { League, LeagueMember, User } from "@shared/schema";
-import { Plus, Users, Globe, Loader2, Crown, Trash2, UserPlus, Pencil, Key, Database, RefreshCw } from "lucide-react";
+import { Plus, Users, Globe, Loader2, Crown, Trash2, UserPlus, Pencil, Key, Database, RefreshCw, TrendingUp, Upload, Star } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -743,6 +743,229 @@ function RosterDataTransfer({ leagues }: { leagues: League[] }) {
   );
 }
 
+function PremiumStatsManagement() {
+  const { toast } = useToast();
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [uploadSeason, setUploadSeason] = useState(String(new Date().getFullYear() - 1));
+  const [uploadType, setUploadType] = useState<"hitter" | "pitcher">("hitter");
+
+  const { data: seasons, isLoading: loadingSeasons } = useQuery<number[]>({
+    queryKey: ["/api/premium/advanced-stats/seasons"],
+  });
+
+  const { data: allUsers } = useQuery<User[]>({
+    queryKey: ["/api/admin/all-users"],
+    queryFn: async () => {
+      const res = await fetch("/api/owners", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch users");
+      return res.json();
+    },
+  });
+
+  const uploadStats = useMutation({
+    mutationFn: async () => {
+      if (!csvFile) throw new Error("No file selected");
+      const csvData = await csvFile.text();
+      const res = await apiRequest("POST", "/api/admin/advanced-stats/upload", {
+        season: parseInt(uploadSeason),
+        csvData,
+        type: uploadType,
+      });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      const errMsg = data.errors?.length > 0 ? ` (${data.errors.length} warnings)` : "";
+      toast({ title: "Upload Complete", description: `${data.uploaded} ${uploadType} stats uploaded for ${uploadSeason}${errMsg}.` });
+      setCsvFile(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/premium/advanced-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/premium/advanced-stats/seasons"] });
+      const fileInput = document.getElementById("stats-csv-input") as HTMLInputElement;
+      if (fileInput) fileInput.value = "";
+    },
+    onError: (error: Error) => {
+      toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteSeason = useMutation({
+    mutationFn: async (season: number) => {
+      const res = await apiRequest("DELETE", `/api/admin/advanced-stats/${season}`);
+      return res.json();
+    },
+    onSuccess: (data: any, season: number) => {
+      toast({ title: "Season Deleted", description: `Removed ${data.deleted} stats for season ${season}.` });
+      queryClient.invalidateQueries({ queryKey: ["/api/premium/advanced-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/premium/advanced-stats/seasons"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const togglePremium = useMutation({
+    mutationFn: async ({ userId, hasPremiumAccess }: { userId: string; hasPremiumAccess: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/admin/users/${userId}/premium-access`, { hasPremiumAccess });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Updated", description: "Premium access updated." });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/all-users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <Card data-testid="card-premium-stats">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <TrendingUp className="h-5 w-5" />
+          Premium Stats Management
+        </CardTitle>
+        <CardDescription>
+          Upload advanced player statistics (CSV) and manage premium access for users.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-4">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <Upload className="h-4 w-4" />
+            Upload Advanced Stats
+          </h3>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="upload-season">Season</Label>
+              <Input
+                id="upload-season"
+                type="number"
+                value={uploadSeason}
+                onChange={(e) => setUploadSeason(e.target.value)}
+                className="w-[100px]"
+                data-testid="input-upload-season"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="upload-type">Type</Label>
+              <Select value={uploadType} onValueChange={(v) => setUploadType(v as "hitter" | "pitcher")}>
+                <SelectTrigger className="w-[120px]" data-testid="select-upload-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="hitter">Hitter</SelectItem>
+                  <SelectItem value="pitcher">Pitcher</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1 flex-1 min-w-[200px]">
+              <Label htmlFor="stats-csv-input">CSV File</Label>
+              <Input
+                id="stats-csv-input"
+                type="file"
+                accept=".csv"
+                onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
+                data-testid="input-stats-csv"
+              />
+            </div>
+            <Button
+              onClick={() => uploadStats.mutate()}
+              disabled={!csvFile || !uploadSeason || uploadStats.isPending}
+              data-testid="button-upload-stats"
+            >
+              {uploadStats.isPending ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Uploading...</>
+              ) : (
+                <><Upload className="mr-2 h-4 w-4" />Upload</>
+              )}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            CSV must include an <code>mlb_id</code> column. Hitter columns: war, wrc+, xba, xba_vs_rhp, xba_vs_lhp, xobp, xobp_vs_rhp, xobp_vs_lhp, xslg, xslg_vs_rhp, xslg_vs_lhp. Pitcher columns: war, xera, xera_vs_rhb, xera_vs_lhb, xk/9, xk/9_vs_rhb, xk/9_vs_lhb, xbb/9, xbb/9_vs_rhb, xbb/9_vs_lhb, xwhip, xwhip_vs_rhb, xwhip_vs_lhb.
+          </p>
+
+          {seasons && seasons.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="text-xs font-medium text-muted-foreground">Uploaded Seasons</h4>
+              <div className="flex flex-wrap gap-2">
+                {seasons.map((s) => (
+                  <Badge key={s} variant="secondary" className="gap-1">
+                    {s}
+                    <button
+                      onClick={() => {
+                        if (confirm(`Delete all advanced stats for season ${s}?`)) {
+                          deleteSeason.mutate(s);
+                        }
+                      }}
+                      className="ml-1 hover:text-destructive"
+                      data-testid={`button-delete-season-${s}`}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="border-t pt-4 space-y-3">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <Star className="h-4 w-4" />
+            Premium Access
+          </h3>
+          {allUsers && allUsers.length > 0 ? (
+            <div className="max-h-[300px] overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>User</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead className="text-center">Premium</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {allUsers
+                    .filter((u) => !u.isSuperAdmin)
+                    .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`))
+                    .map((u) => (
+                    <TableRow key={u.id} data-testid={`row-premium-user-${u.id}`}>
+                      <TableCell className="font-medium">
+                        {u.firstName} {u.lastName}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">{u.email}</TableCell>
+                      <TableCell className="text-center">
+                        <Button
+                          variant={u.hasPremiumAccess ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => togglePremium.mutate({ userId: u.id, hasPremiumAccess: !u.hasPremiumAccess })}
+                          disabled={togglePremium.isPending}
+                          data-testid={`button-toggle-premium-${u.id}`}
+                        >
+                          {u.hasPremiumAccess ? (
+                            <><Star className="mr-1 h-3 w-3" />Granted</>
+                          ) : (
+                            "Grant"
+                          )}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No users found.</p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Super admins always have premium access. Toggle premium for individual users above.
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function SuperAdmin() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const { toast } = useToast();
@@ -1186,6 +1409,8 @@ export default function SuperAdmin() {
           <MlbPlayerSync />
         </CardContent>
       </Card>
+
+      <PremiumStatsManagement />
 
       {allLeagues && allLeagues.length > 0 && (
         <Card data-testid="card-roster-data-transfer">
