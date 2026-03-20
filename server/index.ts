@@ -235,6 +235,56 @@ async function runPendingMigrations() {
       log("Migration 0025 applied", "migration");
     }
 
+    const { rows: premiumAccessCheck } = await pool.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'has_premium_access'`
+    );
+    if (premiumAccessCheck.length === 0) {
+      log("Applying migration 0026: add has_premium_access to users", "migration");
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS has_premium_access boolean NOT NULL DEFAULT false`);
+      log("Migration 0026 applied", "migration");
+    }
+
+    const { rows: advStatsCheck } = await pool.query(
+      `SELECT 1 FROM information_schema.tables WHERE table_name = 'advanced_player_stats'`
+    );
+    if (advStatsCheck.length === 0) {
+      log("Applying migration 0027: create advanced_player_stats table", "migration");
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS advanced_player_stats (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          mlb_player_id INTEGER NOT NULL REFERENCES mlb_players(id),
+          season INTEGER NOT NULL,
+          hitting_war REAL,
+          hitting_wrc_plus REAL,
+          hitting_xba REAL,
+          hitting_xba_vs_rhp REAL,
+          hitting_xba_vs_lhp REAL,
+          hitting_xobp REAL,
+          hitting_xobp_vs_rhp REAL,
+          hitting_xobp_vs_lhp REAL,
+          hitting_xslg REAL,
+          hitting_xslg_vs_rhp REAL,
+          hitting_xslg_vs_lhp REAL,
+          pitching_war REAL,
+          pitching_xera REAL,
+          pitching_xera_vs_rhb REAL,
+          pitching_xera_vs_lhb REAL,
+          pitching_xk9 REAL,
+          pitching_xk9_vs_rhb REAL,
+          pitching_xk9_vs_lhb REAL,
+          pitching_xbb9 REAL,
+          pitching_xbb9_vs_rhb REAL,
+          pitching_xbb9_vs_lhb REAL,
+          pitching_xwhip REAL,
+          pitching_xwhip_vs_rhb REAL,
+          pitching_xwhip_vs_lhb REAL
+        )
+      `);
+      await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_advanced_player_stats_unique ON advanced_player_stats(mlb_player_id, season)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_advanced_player_stats_season ON advanced_player_stats(season)`);
+      log("Migration 0027 applied", "migration");
+    }
+
     log("All migrations up to date", "migration");
   } catch (error) {
     log(`Migration error: ${error}`, "migration");

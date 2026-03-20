@@ -128,6 +128,7 @@ export const users = pgTable("users", {
   teamAbbreviation: varchar("team_abbreviation", { length: 3 }),
   mustResetPassword: boolean("must_reset_password").default(false).notNull(),
   isArchived: boolean("is_archived").default(false).notNull(),
+  hasPremiumAccess: boolean("has_premium_access").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -1036,3 +1037,46 @@ export type TradeWithDetails = Trade & {
 
 export type RosterMove = typeof rosterMoves.$inferSelect;
 export type InsertRosterMove = z.infer<typeof insertRosterMoveSchema>;
+
+// Advanced player stats - premium feature, uploaded by super admin
+export const advancedPlayerStats = pgTable("advanced_player_stats", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  mlbPlayerId: integer("mlb_player_id").references(() => mlbPlayers.id).notNull(),
+  season: integer("season").notNull(),
+  // Hitter stats
+  hittingWar: real("hitting_war"),
+  hittingWrcPlus: real("hitting_wrc_plus"),
+  hittingXba: real("hitting_xba"),
+  hittingXbaVsRhp: real("hitting_xba_vs_rhp"),
+  hittingXbaVsLhp: real("hitting_xba_vs_lhp"),
+  hittingXobp: real("hitting_xobp"),
+  hittingXobpVsRhp: real("hitting_xobp_vs_rhp"),
+  hittingXobpVsLhp: real("hitting_xobp_vs_lhp"),
+  hittingXslg: real("hitting_xslg"),
+  hittingXslgVsRhp: real("hitting_xslg_vs_rhp"),
+  hittingXslgVsLhp: real("hitting_xslg_vs_lhp"),
+  // Pitcher stats
+  pitchingWar: real("pitching_war"),
+  pitchingXera: real("pitching_xera"),
+  pitchingXeraVsRhb: real("pitching_xera_vs_rhb"),
+  pitchingXeraVsLhb: real("pitching_xera_vs_lhb"),
+  pitchingXk9: real("pitching_xk9"),
+  pitchingXk9VsRhb: real("pitching_xk9_vs_rhb"),
+  pitchingXk9VsLhb: real("pitching_xk9_vs_lhb"),
+  pitchingXbb9: real("pitching_xbb9"),
+  pitchingXbb9VsRhb: real("pitching_xbb9_vs_rhb"),
+  pitchingXbb9VsLhb: real("pitching_xbb9_vs_lhb"),
+  pitchingXwhip: real("pitching_xwhip"),
+  pitchingXwhipVsRhb: real("pitching_xwhip_vs_rhb"),
+  pitchingXwhipVsLhb: real("pitching_xwhip_vs_lhb"),
+}, (table) => [
+  uniqueIndex("idx_advanced_player_stats_unique").on(table.mlbPlayerId, table.season),
+  index("idx_advanced_player_stats_season").on(table.season),
+]);
+
+export const insertAdvancedPlayerStatsSchema = (createInsertSchema(advancedPlayerStats) as any).omit({
+  id: true,
+});
+
+export type AdvancedPlayerStat = typeof advancedPlayerStats.$inferSelect;
+export type InsertAdvancedPlayerStat = z.infer<typeof insertAdvancedPlayerStatsSchema>;

@@ -83,6 +83,9 @@ import {
   rosterMoves,
   type RosterMove,
   type InsertRosterMove,
+  advancedPlayerStats,
+  type AdvancedPlayerStat,
+  type InsertAdvancedPlayerStat,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, lt, sql, isNull, inArray, or } from "drizzle-orm";
@@ -366,6 +369,15 @@ export interface IStorage {
   createRosterMove(move: InsertRosterMove): Promise<RosterMove>;
   getRosterMovesForLeague(leagueId: number, filters?: { season?: number; userId?: string; moveType?: string }): Promise<(RosterMove & { player: MlbPlayer })[]>;
   
+  // Advanced stats operations
+  getAdvancedPlayerStats(season: number): Promise<(AdvancedPlayerStat & { player: MlbPlayer })[]>;
+  upsertAdvancedPlayerStats(stats: InsertAdvancedPlayerStat[]): Promise<number>;
+  getAdvancedStatsSeasons(): Promise<number[]>;
+  deleteAdvancedStatsBySeason(season: number): Promise<number>;
+
+  // Premium access operations
+  togglePremiumAccess(userId: string, hasAccess: boolean): Promise<void>;
+
   // Trade operations
   createTrade(trade: InsertTrade, items: InsertTradeItem[]): Promise<TradeWithDetails>;
   getTrade(id: number): Promise<TradeWithDetails | undefined>;
@@ -4502,6 +4514,75 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(rosterMoves.createdAt));
 
     return rows.map(r => ({ ...r.move, player: r.player }));
+  }
+  async getAdvancedPlayerStats(season: number): Promise<(AdvancedPlayerStat & { player: MlbPlayer })[]> {
+    const rows = await db
+      .select({
+        stat: advancedPlayerStats,
+        player: mlbPlayers,
+      })
+      .from(advancedPlayerStats)
+      .innerJoin(mlbPlayers, eq(advancedPlayerStats.mlbPlayerId, mlbPlayers.id))
+      .where(eq(advancedPlayerStats.season, season));
+
+    return rows.map(r => ({ ...r.stat, player: r.player }));
+  }
+
+  async upsertAdvancedPlayerStats(stats: InsertAdvancedPlayerStat[]): Promise<number> {
+    if (stats.length === 0) return 0;
+    let count = 0;
+    for (const stat of stats) {
+      await db.insert(advancedPlayerStats).values(stat).onConflictDoUpdate({
+        target: [advancedPlayerStats.mlbPlayerId, advancedPlayerStats.season],
+        set: {
+          hittingWar: stat.hittingWar,
+          hittingWrcPlus: stat.hittingWrcPlus,
+          hittingXba: stat.hittingXba,
+          hittingXbaVsRhp: stat.hittingXbaVsRhp,
+          hittingXbaVsLhp: stat.hittingXbaVsLhp,
+          hittingXobp: stat.hittingXobp,
+          hittingXobpVsRhp: stat.hittingXobpVsRhp,
+          hittingXobpVsLhp: stat.hittingXobpVsLhp,
+          hittingXslg: stat.hittingXslg,
+          hittingXslgVsRhp: stat.hittingXslgVsRhp,
+          hittingXslgVsLhp: stat.hittingXslgVsLhp,
+          pitchingWar: stat.pitchingWar,
+          pitchingXera: stat.pitchingXera,
+          pitchingXeraVsRhb: stat.pitchingXeraVsRhb,
+          pitchingXeraVsLhb: stat.pitchingXeraVsLhb,
+          pitchingXk9: stat.pitchingXk9,
+          pitchingXk9VsRhb: stat.pitchingXk9VsRhb,
+          pitchingXk9VsLhb: stat.pitchingXk9VsLhb,
+          pitchingXbb9: stat.pitchingXbb9,
+          pitchingXbb9VsRhb: stat.pitchingXbb9VsRhb,
+          pitchingXbb9VsLhb: stat.pitchingXbb9VsLhb,
+          pitchingXwhip: stat.pitchingXwhip,
+          pitchingXwhipVsRhb: stat.pitchingXwhipVsRhb,
+          pitchingXwhipVsLhb: stat.pitchingXwhipVsLhb,
+        },
+      });
+      count++;
+    }
+    return count;
+  }
+
+  async getAdvancedStatsSeasons(): Promise<number[]> {
+    const rows = await db
+      .selectDistinct({ season: advancedPlayerStats.season })
+      .from(advancedPlayerStats)
+      .orderBy(desc(advancedPlayerStats.season));
+    return rows.map(r => r.season);
+  }
+
+  async deleteAdvancedStatsBySeason(season: number): Promise<number> {
+    const result = await db
+      .delete(advancedPlayerStats)
+      .where(eq(advancedPlayerStats.season, season));
+    return result.rowCount ?? 0;
+  }
+
+  async togglePremiumAccess(userId: string, hasAccess: boolean): Promise<void> {
+    await db.update(users).set({ hasPremiumAccess: hasAccess }).where(eq(users.id, userId));
   }
 }
 

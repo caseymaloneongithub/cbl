@@ -11788,6 +11788,165 @@ export async function registerRoutes(
     }
   });
 
+  // === Premium / Advanced Stats Routes ===
+
+  app.get("/api/premium/advanced-stats", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      if (!user?.isSuperAdmin && !user?.hasPremiumAccess) {
+        return res.status(403).json({ message: "Premium access required" });
+      }
+      const season = parseInt(req.query.season as string);
+      if (!season) return res.status(400).json({ message: "Season required" });
+      const stats = await storage.getAdvancedPlayerStats(season);
+      res.json(stats);
+    } catch (error: any) {
+      console.error("Error fetching advanced stats:", error);
+      res.status(500).json({ message: "Failed to fetch advanced stats" });
+    }
+  });
+
+  app.get("/api/premium/advanced-stats/seasons", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      if (!user?.isSuperAdmin && !user?.hasPremiumAccess) {
+        return res.status(403).json({ message: "Premium access required" });
+      }
+      const seasons = await storage.getAdvancedStatsSeasons();
+      res.json(seasons);
+    } catch (error: any) {
+      console.error("Error fetching advanced stats seasons:", error);
+      res.status(500).json({ message: "Failed to fetch advanced stats seasons" });
+    }
+  });
+
+  app.post("/api/admin/advanced-stats/upload", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      if (!user?.isSuperAdmin) return res.status(403).json({ message: "Super admin only" });
+
+      const { season, csvData, type } = req.body;
+      if (!season || !csvData || !type) {
+        return res.status(400).json({ message: "Season, csvData, and type (hitter/pitcher) required" });
+      }
+
+      const lines = (csvData as string).split("\n").map(l => l.trim()).filter(Boolean);
+      if (lines.length < 2) return res.status(400).json({ message: "CSV must have header + data rows" });
+
+      const headerLine = lines[0].toLowerCase().replace(/[^a-z0-9,_/]/g, "");
+      const headers = headerLine.split(",");
+
+      const mlbIdIdx = headers.findIndex(h => h === "mlb_id" || h === "mlbid" || h === "mlb_player_id");
+      if (mlbIdIdx === -1) return res.status(400).json({ message: "CSV must have mlb_id column" });
+
+      const allPlayers = await db.select({ id: mlbPlayers.id, mlbId: mlbPlayers.mlbId }).from(mlbPlayers);
+      const mlbIdToInternal = new Map<number, number>();
+      for (const p of allPlayers) mlbIdToInternal.set(p.mlbId, p.id);
+
+      const colMap: Record<string, string> = {};
+      if (type === "hitter") {
+        const mapping: Record<string, string[]> = {
+          hittingWar: ["war"],
+          hittingWrcPlus: ["wrc+", "wrcplus", "wrc_plus"],
+          hittingXba: ["xba", "xba_overall"],
+          hittingXbaVsRhp: ["xba_vs_rhp", "xba_rhp", "xbavrhp"],
+          hittingXbaVsLhp: ["xba_vs_lhp", "xba_lhp", "xbavlhp"],
+          hittingXobp: ["xobp", "xobp_overall"],
+          hittingXobpVsRhp: ["xobp_vs_rhp", "xobp_rhp", "xobpvrhp"],
+          hittingXobpVsLhp: ["xobp_vs_lhp", "xobp_lhp", "xobpvlhp"],
+          hittingXslg: ["xslg", "xslg_overall"],
+          hittingXslgVsRhp: ["xslg_vs_rhp", "xslg_rhp", "xslgvrhp"],
+          hittingXslgVsLhp: ["xslg_vs_lhp", "xslg_lhp", "xslgvlhp"],
+        };
+        for (const [field, aliases] of Object.entries(mapping)) {
+          const idx = headers.findIndex(h => aliases.includes(h));
+          if (idx !== -1) colMap[field] = String(idx);
+        }
+      } else {
+        const mapping: Record<string, string[]> = {
+          pitchingWar: ["war"],
+          pitchingXera: ["xera", "xera_overall"],
+          pitchingXeraVsRhb: ["xera_vs_rhb", "xera_rhb", "xeravrhb"],
+          pitchingXeraVsLhb: ["xera_vs_lhb", "xera_lhb", "xeravlhb"],
+          pitchingXk9: ["xk/9", "xk9", "xk_9", "xk/9_overall"],
+          pitchingXk9VsRhb: ["xk/9_vs_rhb", "xk9_vs_rhb", "xk9_rhb", "xk/9_rhb"],
+          pitchingXk9VsLhb: ["xk/9_vs_lhb", "xk9_vs_lhb", "xk9_lhb", "xk/9_lhb"],
+          pitchingXbb9: ["xbb/9", "xbb9", "xbb_9", "xbb/9_overall"],
+          pitchingXbb9VsRhb: ["xbb/9_vs_rhb", "xbb9_vs_rhb", "xbb9_rhb", "xbb/9_rhb"],
+          pitchingXbb9VsLhb: ["xbb/9_vs_lhb", "xbb9_vs_lhb", "xbb9_lhb", "xbb/9_lhb"],
+          pitchingXwhip: ["xwhip", "xwhip_overall"],
+          pitchingXwhipVsRhb: ["xwhip_vs_rhb", "xwhip_rhb", "xwhipvrhb"],
+          pitchingXwhipVsLhb: ["xwhip_vs_lhb", "xwhip_lhb", "xwhipvlhb"],
+        };
+        for (const [field, aliases] of Object.entries(mapping)) {
+          const idx = headers.findIndex(h => aliases.includes(h));
+          if (idx !== -1) colMap[field] = String(idx);
+        }
+      }
+
+      const stats: any[] = [];
+      const errors: string[] = [];
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(",").map(c => c.trim());
+        const mlbId = parseInt(cols[mlbIdIdx]);
+        if (!mlbId) { errors.push(`Row ${i + 1}: invalid MLB ID`); continue; }
+        const internalId = mlbIdToInternal.get(mlbId);
+        if (!internalId) { errors.push(`Row ${i + 1}: MLB ID ${mlbId} not found`); continue; }
+
+        const stat: any = { mlbPlayerId: internalId, season: parseInt(season) };
+        for (const [field, idxStr] of Object.entries(colMap)) {
+          const val = parseFloat(cols[parseInt(idxStr)]);
+          if (!isNaN(val)) stat[field] = val;
+        }
+        stats.push(stat);
+      }
+
+      const count = await storage.upsertAdvancedPlayerStats(stats);
+      res.json({ success: true, uploaded: count, errors: errors.slice(0, 20) });
+    } catch (error: any) {
+      console.error("Error uploading advanced stats:", error);
+      res.status(500).json({ message: "Failed to upload advanced stats" });
+    }
+  });
+
+  app.delete("/api/admin/advanced-stats/:season", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      if (!user?.isSuperAdmin) return res.status(403).json({ message: "Super admin only" });
+
+      const season = parseInt(req.params.season);
+      const count = await storage.deleteAdvancedStatsBySeason(season);
+      res.json({ success: true, deleted: count });
+    } catch (error: any) {
+      console.error("Error deleting advanced stats:", error);
+      res.status(500).json({ message: "Failed to delete advanced stats" });
+    }
+  });
+
+  app.patch("/api/admin/users/:userId/premium-access", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUserId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(currentUserId);
+      if (!user?.isSuperAdmin) return res.status(403).json({ message: "Super admin only" });
+
+      const targetUserId = req.params.userId;
+      const { hasPremiumAccess } = req.body;
+      if (typeof hasPremiumAccess !== "boolean") {
+        return res.status(400).json({ message: "hasPremiumAccess must be a boolean" });
+      }
+
+      await storage.togglePremiumAccess(targetUserId, hasPremiumAccess);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error toggling premium access:", error);
+      res.status(500).json({ message: "Failed to toggle premium access" });
+    }
+  });
+
   return httpServer;
 }
 
