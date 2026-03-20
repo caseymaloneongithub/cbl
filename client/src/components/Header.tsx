@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import { LogOut, Menu, UserCog, X, Globe, Check, Building2, ChevronDown } from "lucide-react";
+import { LogOut, Menu, UserCog, X, Globe, Check, Building2, ChevronDown, TrendingUp } from "lucide-react";
 import { BaseballIcon } from "@/components/BaseballIcon";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
@@ -233,6 +233,18 @@ export function Header() {
                 location={location}
                 testId="nav-free-agency"
               />
+              {(user?.hasPremiumAccess || user?.isSuperAdmin) && (
+                <Link href="/premium/stats">
+                  <Button
+                    variant={location.startsWith("/premium") ? "secondary" : "ghost"}
+                    size="sm"
+                    data-testid="nav-premium"
+                  >
+                    <TrendingUp className="h-4 w-4 mr-2" />
+                    Premium
+                  </Button>
+                </Link>
+              )}
               {(hasAnyCommissionerRole || user?.isSuperAdmin) && (
                 <NavDropdown
                   label="Commissioner"
@@ -380,6 +392,22 @@ export function Header() {
                         );
                       })}
                       <div className="border-b my-2" />
+                      {(user?.hasPremiumAccess || user?.isSuperAdmin) && (
+                        <>
+                          <Link href="/premium/stats" onClick={() => setMobileMenuOpen(false)}>
+                            <Button
+                              variant={location.startsWith("/premium") ? "secondary" : "ghost"}
+                              className="w-full justify-start"
+                              size="sm"
+                              data-testid="mobile-nav-premium"
+                            >
+                              <TrendingUp className="h-4 w-4 mr-2" />
+                              Premium Stats
+                            </Button>
+                          </Link>
+                          <div className="border-b my-2" />
+                        </>
+                      )}
                       {(hasAnyCommissionerRole || user?.isSuperAdmin) && (
                         <>
                           <div className="px-2 py-1">

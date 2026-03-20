@@ -33,6 +33,7 @@ import Drafts from "@/pages/Drafts";
 import SubmitTrade from "@/pages/SubmitTrade";
 import TradesPage from "@/pages/Trades";
 import TransactionsPage from "@/pages/Transactions";
+import AdvancedStats from "@/pages/AdvancedStats";
 import type { DraftWithDetails } from "@shared/schema";
 
 function AuthenticatedHome() {
@@ -176,6 +177,9 @@ function Router() {
       </Route>
       <Route path="/transactions">
         {() => <ProtectedRoute component={TransactionsPage} />}
+      </Route>
+      <Route path="/premium/stats">
+        {() => <ProtectedRoute component={AdvancedStats} />}
       </Route>
       <Route path="/commissioner">
         {() => <CommissionerRoute component={() => <Redirect to="/commissioner/free-agency" />} />}
