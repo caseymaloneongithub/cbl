@@ -28,6 +28,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, ClipboardList, Scissors } from "lucide-react";
 import { useState, useMemo } from "react";
 import type { MlbPlayer, MlbPlayerStat } from "@shared/schema";
@@ -124,15 +125,45 @@ function NameWithHover({ a }: { a: RosterAssignment }) {
   );
 }
 
+interface LeagueMember {
+  userId: string;
+  teamName: string | null;
+  teamAbbreviation: string | null;
+  isArchived: boolean;
+  user: {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+  };
+}
+
 export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
   const { user } = useAuth();
   const { toast } = useToast();
-  const { selectedLeagueId, currentLeague } = useLeague();
+  const { selectedLeagueId, currentLeague, leagueMembers } = useLeague();
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<"hitters" | "pitchers">("hitters");
   const [hSort, setHSort] = useState<{ key: HitterSortKey; dir: SortDir }>({ key: "name", dir: "asc" });
   const [pSort, setPSort] = useState<{ key: PitcherSortKey; dir: SortDir }>({ key: "name", dir: "asc" });
   const [cutPlayer, setCutPlayer] = useState<RosterAssignment | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<string>("");
+
+  const viewingUserId = selectedUserId || user?.id || "";
+  const isOwnRoster = viewingUserId === user?.id;
+
+  const sortedMembers = useMemo(() => {
+    if (!leagueMembers) return [];
+    return [...leagueMembers]
+      .filter((m: LeagueMember) => !m.isArchived)
+      .sort((a: LeagueMember, b: LeagueMember) => {
+        const nameA = (a.teamName || `${a.user.firstName} ${a.user.lastName}`).toLowerCase();
+        const nameB = (b.teamName || `${b.user.firstName} ${b.user.lastName}`).toLowerCase();
+        return nameA.localeCompare(nameB);
+      });
+  }, [leagueMembers]);
+
+  const viewingMember = sortedMembers.find((m: LeagueMember) => m.userId === viewingUserId);
+  const viewingTeamName = viewingMember?.teamName || (viewingMember ? `${viewingMember.user.firstName} ${viewingMember.user.lastName}` : "");
 
   const cutMutation = useMutation({
     mutationFn: async (assignmentId: number) => {
@@ -149,14 +180,14 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
     },
   });
   const { data, isLoading } = useQuery<{ assignments: RosterAssignment[]; counts: any[] }>({
-    queryKey: ["/api/leagues", selectedLeagueId, "roster-assignments", user?.id, level],
+    queryKey: ["/api/leagues", selectedLeagueId, "roster-assignments", viewingUserId, level],
     queryFn: async () => {
-      const params = new URLSearchParams({ userId: user!.id, rosterType: level });
+      const params = new URLSearchParams({ userId: viewingUserId, rosterType: level });
       const res = await fetch(`/api/leagues/${selectedLeagueId}/roster-assignments?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch roster");
       return res.json();
     },
-    enabled: !!selectedLeagueId && !!user?.id,
+    enabled: !!selectedLeagueId && !!viewingUserId,
   });
 
   const filtered = useMemo(() => {
@@ -257,6 +288,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
   const il60Count = level === "mlb" ? filtered.filter(a => a.rosterSlot === "60").length : 0;
   const activeCount = filtered.length - il60Count;
   const showMilbLevel = level === "milb";
+  const canCut = isOwnRoster;
 
   if (!selectedLeagueId) {
     return (
@@ -275,11 +307,26 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-roster-title">{title}</h1>
           <p className="text-sm text-muted-foreground">
-            {currentLeague?.teamName || "Your team"} - {activeCount} players / {limit}
+            {viewingTeamName || "Your team"} — {activeCount} players / {limit}
             {il60Count > 0 && ` (${il60Count} on 60-day IL)`}
           </p>
         </div>
-        <Badge variant={activeCount > limit ? "destructive" : "secondary"} data-testid="badge-roster-count">{activeCount} / {limit}{il60Count > 0 ? ` + ${il60Count} IL` : ""}</Badge>
+        <div className="flex items-center gap-3">
+          <Select value={viewingUserId} onValueChange={setSelectedUserId}>
+            <SelectTrigger className="w-[220px]" data-testid="select-roster-team">
+              <SelectValue placeholder="Select team..." />
+            </SelectTrigger>
+            <SelectContent>
+              {sortedMembers.map((m: LeagueMember) => (
+                <SelectItem key={m.userId} value={m.userId} data-testid={`option-team-${m.userId}`}>
+                  {m.teamName || `${m.user.firstName} ${m.user.lastName}`}
+                  {m.teamAbbreviation ? ` (${m.teamAbbreviation})` : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Badge variant={activeCount > limit ? "destructive" : "secondary"} data-testid="badge-roster-count">{activeCount} / {limit}{il60Count > 0 ? ` + ${il60Count} IL` : ""}</Badge>
+        </div>
       </div>
 
       <Card>

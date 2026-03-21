@@ -154,6 +154,12 @@ function Router() {
       <Route path="/results">
         {() => <ProtectedRoute component={Results} />}
       </Route>
+      <Route path="/rosters/mlb">
+        {() => <ProtectedRoute component={() => <MyRoster level="mlb" />} />}
+      </Route>
+      <Route path="/rosters/milb">
+        {() => <ProtectedRoute component={() => <MyRoster level="milb" />} />}
+      </Route>
       <Route path="/my-roster/mlb">
         {() => <ProtectedRoute component={() => <MyRoster level="mlb" />} />}
       </Route>

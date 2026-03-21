@@ -136,8 +136,8 @@ export function Header() {
   ];
 
   const myRosterItems = [
-    { href: "/my-roster/mlb", label: "MLB" },
-    { href: "/my-roster/milb", label: "MiLB" },
+    { href: "/rosters/mlb", label: "MLB" },
+    { href: "/rosters/milb", label: "MiLB" },
   ];
 
   const tradeItems = [
@@ -201,10 +201,10 @@ export function Header() {
           {isAuthenticated && (
             <nav className="hidden md:flex items-center gap-1">
               <NavDropdown
-                label="My Roster"
+                label="Rosters"
                 items={myRosterItems}
                 location={location}
-                testId="nav-my-roster"
+                testId="nav-rosters"
               />
               <NavDropdown
                 label="Players"
@@ -308,7 +308,7 @@ export function Header() {
                         </>
                       )}
                       <div className="px-2 py-1">
-                        <span className="text-xs text-muted-foreground font-medium">My Roster</span>
+                        <span className="text-xs text-muted-foreground font-medium">Rosters</span>
                       </div>
                       {myRosterItems.map((link) => {
                         const isActive = location === link.href;
