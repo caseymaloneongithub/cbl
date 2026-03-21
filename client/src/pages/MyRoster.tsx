@@ -373,7 +373,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                         <TableHead className="cursor-pointer text-right" onClick={() => toggleHSort("slg")}>SLG{hs("slg")}</TableHead>
                         <TableHead className="cursor-pointer text-right" onClick={() => toggleHSort("ops")}>OPS{hs("ops")}</TableHead>
                         <TableHead className="cursor-pointer text-right" onClick={() => toggleHSort("wrc+")}>wRC+{hs("wrc+")}</TableHead>
-                        {level === "milb" && <TableHead className="w-[50px]" />}
+                        {level === "milb" && canCut && <TableHead className="w-[50px]" />}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -398,7 +398,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                           <TableCell className={statCellClass(a.stats)}>{a.stats?.hadHittingStats ? fmtRate(a.stats.hittingSlg) : ""}</TableCell>
                           <TableCell className={statCellClass(a.stats)}>{a.stats?.hadHittingStats ? fmtRate(a.stats.hittingOps) : ""}</TableCell>
                           <TableCell className={statCellClass(a.stats)}>{a.stats?.hadHittingStats && a.stats.hittingWrcPlus != null ? Math.round(a.stats.hittingWrcPlus) : ""}</TableCell>
-                          {level === "milb" && (
+                          {level === "milb" && canCut && (
                             <TableCell>
                               <Button
                                 variant="ghost"
@@ -438,7 +438,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                         <TableHead className="cursor-pointer text-right" onClick={() => togglePSort("h")}>H{ps("h")}</TableHead>
                         <TableHead className="cursor-pointer text-right" onClick={() => togglePSort("hr")}>HR{ps("hr")}</TableHead>
                         <TableHead className="cursor-pointer text-right" onClick={() => togglePSort("era")}>ERA{ps("era")}</TableHead>
-                        {level === "milb" && <TableHead className="w-[50px]" />}
+                        {level === "milb" && canCut && <TableHead className="w-[50px]" />}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -459,7 +459,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                           <TableCell className={statCellClass(a.stats)}>{a.stats?.hadPitchingStats ? (a.stats.pitchingHits ?? 0) : ""}</TableCell>
                           <TableCell className={statCellClass(a.stats)}>{a.stats?.hadPitchingStats ? (a.stats.pitchingHomeRuns ?? 0) : ""}</TableCell>
                           <TableCell className={statCellClass(a.stats)}>{a.stats?.hadPitchingStats ? fmtEra(a.stats.pitchingEra) : ""}</TableCell>
-                          {level === "milb" && (
+                          {level === "milb" && canCut && (
                             <TableCell>
                               <Button
                                 variant="ghost"

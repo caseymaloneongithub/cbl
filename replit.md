@@ -12,7 +12,7 @@ Preferred communication style: Simple, everyday language.
 - **Framework**: React with TypeScript, utilizing Vite.
 - **UI/UX**: shadcn/ui (Radix UI-based) with a Material Design aesthetic, emphasizing data clarity, density, and a professional sports appearance (Roboto font). Supports light/dark modes using Tailwind CSS with custom CSS variables.
 - **State Management**: TanStack Query for server state management with aggressive caching.
-- **Routing**: Wouter, supporting core pages (Landing, Home, My Bids, Results) and comprehensive Commissioner and SuperAdmin sub-pages.
+- **Routing**: Wouter, supporting core pages (Landing, Home, My Bids, Results, Rosters) and comprehensive Commissioner and SuperAdmin sub-pages. Roster pages live at `/rosters/mlb` and `/rosters/milb` with legacy `/my-roster/*` routes as backward-compatible aliases.
 - **Design Decisions**: Component co-location, path aliases, React Hook Form with Zod for validation, and real-time countdowns.
 
 ### Backend
