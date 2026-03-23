@@ -409,6 +409,8 @@ export default function AdvancedStats() {
                       <TableHead className="text-center min-w-[50px] cursor-pointer" onClick={() => togglePSort("pos")}>Pos{ps("pos")}</TableHead>
                       <TableHead className="text-center min-w-[60px] cursor-pointer" onClick={() => togglePSort("team")}>Team{ps("team")}</TableHead>
                       {leagueId && <TableHead className="min-w-[120px] cursor-pointer" onClick={() => togglePSort("cbl")}>CBL Team{ps("cbl")}</TableHead>}
+                      <TableHead className="text-right min-w-[40px] cursor-pointer" onClick={() => togglePSort("gs")}>GS{ps("gs")}</TableHead>
+                      <TableHead className="text-right min-w-[45px] cursor-pointer" onClick={() => togglePSort("ip")}>IP{ps("ip")}</TableHead>
                       <TableHead className="text-right min-w-[50px] cursor-pointer" onClick={() => togglePSort("war")}>WAR{ps("war")}</TableHead>
                       <TableHead className="text-right min-w-[55px] cursor-pointer" onClick={() => togglePSort("xera")}>xERA{ps("xera")}</TableHead>
                       <TableHead className="text-right min-w-[70px] cursor-pointer" onClick={() => togglePSort("xeraVR")}>xERA vR{ps("xeraVR")}</TableHead>
@@ -431,6 +433,8 @@ export default function AdvancedStats() {
                         <TableCell className="text-center text-muted-foreground text-xs">{s.player?.primaryPosition ?? "—"}</TableCell>
                         <TableCell className="text-center text-muted-foreground text-xs">{mlbAbbr(s.player?.currentTeamName)}</TableCell>
                         {leagueId && <TableCell className="text-xs">{s.cblTeamAbbreviation ? <Badge variant="outline">{s.cblTeamAbbreviation}</Badge> : s.cblTeam ? <Badge variant="outline">{s.cblTeam}</Badge> : <span className="text-muted-foreground">FA</span>}</TableCell>}
+                        <TableCell className="text-right font-mono text-muted-foreground">{s.gs ?? "—"}</TableCell>
+                        <TableCell className="text-right font-mono text-muted-foreground">{s.ip != null ? s.ip.toFixed(1) : "—"}</TableCell>
                         <TableCell className="text-right font-mono">{fmtWar(s.pitchingWar)}</TableCell>
                         <TableCell className="text-right font-mono">{fmt(s.pitchingXera, 2)}</TableCell>
                         <TableCell className="text-right font-mono text-muted-foreground">{fmt(s.pitchingXeraVsRhb, 2)}</TableCell>
