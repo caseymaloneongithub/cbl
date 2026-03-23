@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import { LogOut, Menu, UserCog, X, Globe, Check, Building2, ChevronDown, TrendingUp } from "lucide-react";
+import { LogOut, Menu, UserCog, X, Globe, Check, Building2, ChevronDown, Star } from "lucide-react";
 import { BaseballIcon } from "@/components/BaseballIcon";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
@@ -238,9 +238,10 @@ export function Header() {
                   <Button
                     variant={location.startsWith("/premium") ? "secondary" : "ghost"}
                     size="sm"
+                    className={location.startsWith("/premium") ? "bg-green-700 text-white hover:bg-green-800" : "bg-green-700/90 text-white hover:bg-green-800"}
                     data-testid="nav-premium"
                   >
-                    <TrendingUp className="h-4 w-4 mr-2" />
+                    <Star className="h-4 w-4 mr-1 fill-yellow-300 text-yellow-300" />
                     Premium
                   </Button>
                 </Link>
@@ -397,11 +398,11 @@ export function Header() {
                           <Link href="/premium/stats" onClick={() => setMobileMenuOpen(false)}>
                             <Button
                               variant={location.startsWith("/premium") ? "secondary" : "ghost"}
-                              className="w-full justify-start"
+                              className={`w-full justify-start ${location.startsWith("/premium") ? "bg-green-700 text-white hover:bg-green-800" : "bg-green-700/90 text-white hover:bg-green-800"}`}
                               size="sm"
                               data-testid="mobile-nav-premium"
                             >
-                              <TrendingUp className="h-4 w-4 mr-2" />
+                              <Star className="h-4 w-4 mr-1 fill-yellow-300 text-yellow-300" />
                               Premium Stats
                             </Button>
                           </Link>
