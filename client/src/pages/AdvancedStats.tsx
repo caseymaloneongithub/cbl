@@ -45,11 +45,13 @@ interface AdvancedStat {
   pitchingXwhip: number | null;
   pitchingXwhipVsRhb: number | null;
   pitchingXwhipVsLhb: number | null;
+  hittingWrcPlusVsRhp: number | null;
+  hittingWrcPlusVsLhp: number | null;
   player?: {
     id: number;
-    name: string;
-    position: string;
-    team: string;
+    fullName: string;
+    primaryPosition: string;
+    currentTeamName: string;
     mlbId: number;
   };
   cblTeam?: string | null;
@@ -104,8 +106,8 @@ export default function AdvancedStats() {
   const matchesSearch = (s: AdvancedStat) => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return s.player?.name?.toLowerCase().includes(q) ||
-      s.player?.team?.toLowerCase().includes(q) ||
+    return s.player?.fullName?.toLowerCase().includes(q) ||
+      s.player?.currentTeamName?.toLowerCase().includes(q) ||
       s.cblTeam?.toLowerCase().includes(q);
   };
 
@@ -224,9 +226,9 @@ export default function AdvancedStats() {
                   <TableBody>
                     {hitters.map((s) => (
                       <TableRow key={s.id} data-testid={`row-hitter-${s.id}`}>
-                        <TableCell className="sticky left-0 bg-background z-10 font-medium">{s.player?.name ?? `Player #${s.mlbPlayerId}`}</TableCell>
-                        <TableCell className="text-center text-muted-foreground text-xs">{s.player?.position ?? "—"}</TableCell>
-                        <TableCell className="text-center text-muted-foreground text-xs">{s.player?.team ?? "—"}</TableCell>
+                        <TableCell className="sticky left-0 bg-background z-10 font-medium">{s.player?.fullName ?? `Player #${s.mlbPlayerId}`}</TableCell>
+                        <TableCell className="text-center text-muted-foreground text-xs">{s.player?.primaryPosition ?? "—"}</TableCell>
+                        <TableCell className="text-center text-muted-foreground text-xs">{s.player?.currentTeamName ?? "—"}</TableCell>
                         {leagueId && <TableCell className="text-xs">{s.cblTeam ? <Badge variant="outline">{s.cblTeam}</Badge> : <span className="text-muted-foreground">FA</span>}</TableCell>}
                         <TableCell className="text-right font-mono">{fmtWar(s.hittingWar)}</TableCell>
                         <TableCell className="text-right font-mono">{fmtInt(s.hittingWrcPlus)}</TableCell>
@@ -285,9 +287,9 @@ export default function AdvancedStats() {
                   <TableBody>
                     {pitchers.map((s) => (
                       <TableRow key={s.id} data-testid={`row-pitcher-${s.id}`}>
-                        <TableCell className="sticky left-0 bg-background z-10 font-medium">{s.player?.name ?? `Player #${s.mlbPlayerId}`}</TableCell>
-                        <TableCell className="text-center text-muted-foreground text-xs">{s.player?.position ?? "—"}</TableCell>
-                        <TableCell className="text-center text-muted-foreground text-xs">{s.player?.team ?? "—"}</TableCell>
+                        <TableCell className="sticky left-0 bg-background z-10 font-medium">{s.player?.fullName ?? `Player #${s.mlbPlayerId}`}</TableCell>
+                        <TableCell className="text-center text-muted-foreground text-xs">{s.player?.primaryPosition ?? "—"}</TableCell>
+                        <TableCell className="text-center text-muted-foreground text-xs">{s.player?.currentTeamName ?? "—"}</TableCell>
                         {leagueId && <TableCell className="text-xs">{s.cblTeam ? <Badge variant="outline">{s.cblTeam}</Badge> : <span className="text-muted-foreground">FA</span>}</TableCell>}
                         <TableCell className="text-right font-mono">{fmtWar(s.pitchingWar)}</TableCell>
                         <TableCell className="text-right font-mono">{fmt(s.pitchingXera, 2)}</TableCell>
