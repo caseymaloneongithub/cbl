@@ -4537,6 +4537,8 @@ export class DatabaseStorage implements IStorage {
         set: {
           hittingWar: stat.hittingWar,
           hittingWrcPlus: stat.hittingWrcPlus,
+          hittingWrcPlusVsRhp: stat.hittingWrcPlusVsRhp,
+          hittingWrcPlusVsLhp: stat.hittingWrcPlusVsLhp,
           hittingXba: stat.hittingXba,
           hittingXbaVsRhp: stat.hittingXbaVsRhp,
           hittingXbaVsLhp: stat.hittingXbaVsLhp,

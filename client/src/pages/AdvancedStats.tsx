@@ -208,6 +208,8 @@ export default function AdvancedStats() {
                       {leagueId && <TableHead className="min-w-[120px]">CBL Team</TableHead>}
                       <TableHead className="text-right min-w-[50px]">WAR</TableHead>
                       <TableHead className="text-right min-w-[55px]">wRC+</TableHead>
+                      <TableHead className="text-right min-w-[65px]">wRC+ vR</TableHead>
+                      <TableHead className="text-right min-w-[65px]">wRC+ vL</TableHead>
                       <TableHead className="text-right min-w-[55px]">xBA</TableHead>
                       <TableHead className="text-right min-w-[65px]">xBA vR</TableHead>
                       <TableHead className="text-right min-w-[65px]">xBA vL</TableHead>
@@ -228,6 +230,8 @@ export default function AdvancedStats() {
                         {leagueId && <TableCell className="text-xs">{s.cblTeam ? <Badge variant="outline">{s.cblTeam}</Badge> : <span className="text-muted-foreground">FA</span>}</TableCell>}
                         <TableCell className="text-right font-mono">{fmtWar(s.hittingWar)}</TableCell>
                         <TableCell className="text-right font-mono">{fmtInt(s.hittingWrcPlus)}</TableCell>
+                        <TableCell className="text-right font-mono text-muted-foreground">{fmtInt(s.hittingWrcPlusVsRhp)}</TableCell>
+                        <TableCell className="text-right font-mono text-muted-foreground">{fmtInt(s.hittingWrcPlusVsLhp)}</TableCell>
                         <TableCell className="text-right font-mono">{fmt(s.hittingXba)}</TableCell>
                         <TableCell className="text-right font-mono text-muted-foreground">{fmt(s.hittingXbaVsRhp)}</TableCell>
                         <TableCell className="text-right font-mono text-muted-foreground">{fmt(s.hittingXbaVsLhp)}</TableCell>

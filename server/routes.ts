@@ -11876,6 +11876,8 @@ export async function registerRoutes(
         const mapping: Record<string, string[]> = {
           hittingWar: ["war"],
           hittingWrcPlus: ["wrc+", "wrcplus", "wrc_plus"],
+          hittingWrcPlusVsRhp: ["wrc+_vs_rhp", "wrcplus_vs_rhp", "wrc_plus_vs_rhp", "wrc+_rhp", "wrcplus_rhp"],
+          hittingWrcPlusVsLhp: ["wrc+_vs_lhp", "wrcplus_vs_lhp", "wrc_plus_vs_lhp", "wrc+_lhp", "wrcplus_lhp"],
           hittingXba: ["xba", "xba_overall"],
           hittingXbaVsRhp: ["xba_vs_rhp", "xba_rhp", "xbavrhp"],
           hittingXbaVsLhp: ["xba_vs_lhp", "xba_lhp", "xbavlhp"],

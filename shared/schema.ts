@@ -1046,6 +1046,8 @@ export const advancedPlayerStats = pgTable("advanced_player_stats", {
   // Hitter stats
   hittingWar: real("hitting_war"),
   hittingWrcPlus: real("hitting_wrc_plus"),
+  hittingWrcPlusVsRhp: real("hitting_wrc_plus_vs_rhp"),
+  hittingWrcPlusVsLhp: real("hitting_wrc_plus_vs_lhp"),
   hittingXba: real("hitting_xba"),
   hittingXbaVsRhp: real("hitting_xba_vs_rhp"),
   hittingXbaVsLhp: real("hitting_xba_vs_lhp"),
