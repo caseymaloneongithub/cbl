@@ -11807,12 +11807,13 @@ export async function registerRoutes(
         const assignments = await storage.getLeagueRosterAssignments(leagueId, currentYear);
         const members = await storage.getLeagueMembers(leagueId);
         const memberMap = new Map(members.map(m => [m.userId, m]));
-        const playerTeamMap = new Map<number, { teamName: string; rosterType: string }>();
+        const playerTeamMap = new Map<number, { teamName: string; teamAbbreviation: string | null; rosterType: string }>();
         for (const a of assignments) {
           const member = memberMap.get(a.userId);
           if (member) {
             playerTeamMap.set(a.mlbPlayerId, {
               teamName: member.teamName || `${(a as any).user?.firstName || ''} ${(a as any).user?.lastName || ''}`.trim() || 'Unknown',
+              teamAbbreviation: member.teamAbbreviation || null,
               rosterType: a.rosterType || 'mlb',
             });
           }
@@ -11820,6 +11821,7 @@ export async function registerRoutes(
         const enriched = stats.map(s => ({
           ...s,
           cblTeam: playerTeamMap.get(s.mlbPlayerId)?.teamName || null,
+          cblTeamAbbreviation: playerTeamMap.get(s.mlbPlayerId)?.teamAbbreviation || null,
           cblRosterType: playerTeamMap.get(s.mlbPlayerId)?.rosterType || null,
         }));
         return res.json(enriched);
