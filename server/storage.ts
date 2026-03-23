@@ -4515,17 +4515,24 @@ export class DatabaseStorage implements IStorage {
 
     return rows.map(r => ({ ...r.move, player: r.player }));
   }
-  async getAdvancedPlayerStats(season: number): Promise<(AdvancedPlayerStat & { player: MlbPlayer })[]> {
+  async getAdvancedPlayerStats(season: number): Promise<(AdvancedPlayerStat & { player: MlbPlayer; pa?: number | null; gs?: number | null; ip?: number | null })[]> {
     const rows = await db
       .select({
         stat: advancedPlayerStats,
         player: mlbPlayers,
+        pa: mlbPlayerStats.hittingPlateAppearances,
+        gs: mlbPlayerStats.pitchingGamesStarted,
+        ip: mlbPlayerStats.pitchingInningsPitched,
       })
       .from(advancedPlayerStats)
       .innerJoin(mlbPlayers, eq(advancedPlayerStats.mlbPlayerId, mlbPlayers.id))
+      .leftJoin(mlbPlayerStats, and(
+        eq(advancedPlayerStats.mlbPlayerId, mlbPlayerStats.mlbPlayerId),
+        eq(advancedPlayerStats.season, mlbPlayerStats.season),
+      ))
       .where(eq(advancedPlayerStats.season, season));
 
-    return rows.map(r => ({ ...r.stat, player: r.player }));
+    return rows.map(r => ({ ...r.stat, player: r.player, pa: r.pa, gs: r.gs, ip: r.ip }));
   }
 
   async upsertAdvancedPlayerStats(stats: InsertAdvancedPlayerStat[]): Promise<number> {

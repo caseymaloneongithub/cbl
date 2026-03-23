@@ -54,16 +54,19 @@ interface AdvancedStat {
     currentTeamName: string;
     mlbId: number;
   };
+  pa?: number | null;
+  gs?: number | null;
+  ip?: number | null;
   cblTeam?: string | null;
   cblRosterType?: string | null;
 }
 
 type SortDir = "asc" | "desc";
 
-type HitterSortKey = "name" | "pos" | "team" | "cbl" | "war" | "wrc+" | "wrc+vR" | "wrc+vL" |
+type HitterSortKey = "name" | "pos" | "team" | "cbl" | "pa" | "war" | "wrc+" | "wrc+vR" | "wrc+vL" |
   "xba" | "xbaVR" | "xbaVL" | "xobp" | "xobpVR" | "xobpVL" | "xslg" | "xslgVR" | "xslgVL";
 
-type PitcherSortKey = "name" | "pos" | "team" | "cbl" | "war" |
+type PitcherSortKey = "name" | "pos" | "team" | "cbl" | "gs" | "ip" | "war" |
   "xera" | "xeraVR" | "xeraVL" | "xk9" | "xk9VR" | "xk9VL" |
   "xbb9" | "xbb9VR" | "xbb9VL" | "xwhip" | "xwhipVR" | "xwhipVL";
 
@@ -159,6 +162,7 @@ export default function AdvancedStats() {
       case "pos": return strCompare(a.player?.primaryPosition, b.player?.primaryPosition, dir);
       case "team": return strCompare(a.player?.currentTeamName, b.player?.currentTeamName, dir);
       case "cbl": return strCompare(a.cblTeam, b.cblTeam, dir);
+      case "pa": return numCompare(a.pa, b.pa, dir);
       case "war": return numCompare(a.hittingWar, b.hittingWar, dir);
       case "wrc+": return numCompare(a.hittingWrcPlus, b.hittingWrcPlus, dir);
       case "wrc+vR": return numCompare(a.hittingWrcPlusVsRhp, b.hittingWrcPlusVsRhp, dir);
@@ -183,6 +187,8 @@ export default function AdvancedStats() {
       case "pos": return strCompare(a.player?.primaryPosition, b.player?.primaryPosition, dir);
       case "team": return strCompare(a.player?.currentTeamName, b.player?.currentTeamName, dir);
       case "cbl": return strCompare(a.cblTeam, b.cblTeam, dir);
+      case "gs": return numCompare(a.gs, b.gs, dir);
+      case "ip": return numCompare(a.ip, b.ip, dir);
       case "war": return numCompare(a.pitchingWar, b.pitchingWar, dir);
       case "xera": return numCompare(a.pitchingXera, b.pitchingXera, dir);
       case "xeraVR": return numCompare(a.pitchingXeraVsRhb, b.pitchingXeraVsRhb, dir);
@@ -321,6 +327,7 @@ export default function AdvancedStats() {
                       <TableHead className="text-center min-w-[50px] cursor-pointer" onClick={() => toggleHSort("pos")}>Pos{hs("pos")}</TableHead>
                       <TableHead className="text-center min-w-[60px] cursor-pointer" onClick={() => toggleHSort("team")}>Team{hs("team")}</TableHead>
                       {leagueId && <TableHead className="min-w-[120px] cursor-pointer" onClick={() => toggleHSort("cbl")}>CBL Team{hs("cbl")}</TableHead>}
+                      <TableHead className="text-right min-w-[45px] cursor-pointer" onClick={() => toggleHSort("pa")}>PA{hs("pa")}</TableHead>
                       <TableHead className="text-right min-w-[50px] cursor-pointer" onClick={() => toggleHSort("war")}>WAR{hs("war")}</TableHead>
                       <TableHead className="text-right min-w-[55px] cursor-pointer" onClick={() => toggleHSort("wrc+")}>wRC+{hs("wrc+")}</TableHead>
                       <TableHead className="text-right min-w-[65px] cursor-pointer" onClick={() => toggleHSort("wrc+vR")}>wRC+ vR{hs("wrc+vR")}</TableHead>
@@ -343,6 +350,7 @@ export default function AdvancedStats() {
                         <TableCell className="text-center text-muted-foreground text-xs">{s.player?.primaryPosition ?? "—"}</TableCell>
                         <TableCell className="text-center text-muted-foreground text-xs">{s.player?.currentTeamName ?? "—"}</TableCell>
                         {leagueId && <TableCell className="text-xs">{s.cblTeam ? <Badge variant="outline">{s.cblTeam}</Badge> : <span className="text-muted-foreground">FA</span>}</TableCell>}
+                        <TableCell className="text-right font-mono text-muted-foreground">{s.pa ?? "—"}</TableCell>
                         <TableCell className="text-right font-mono">{fmtWar(s.hittingWar)}</TableCell>
                         <TableCell className="text-right font-mono">{fmtInt(s.hittingWrcPlus)}</TableCell>
                         <TableCell className="text-right font-mono text-muted-foreground">{fmtInt(s.hittingWrcPlusVsRhp)}</TableCell>
