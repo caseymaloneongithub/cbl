@@ -24,6 +24,7 @@ interface AdvancedStat {
   hittingWar: number | null;
   pitchingWar: number | null;
   cblTeam?: string | null;
+  cblTeamAbbreviation?: string | null;
   cblRosterType?: string | null;
   player?: {
     id: number;
@@ -34,6 +35,7 @@ interface AdvancedStat {
 
 interface TeamWarRow {
   teamName: string;
+  teamAbbreviation: string | null;
   totalWar: number;
   hitterWar: number;
   pitcherWar: number;
@@ -88,6 +90,7 @@ export default function WarRankings() {
       if (!teamMap.has(team)) {
         teamMap.set(team, {
           teamName: team,
+          teamAbbreviation: s.cblTeamAbbreviation || null,
           totalWar: 0,
           hitterWar: 0,
           pitcherWar: 0,
@@ -199,7 +202,7 @@ export default function WarRankings() {
             return (
               <TableRow key={row.teamName} data-testid={`row-war-team-${idx}`}>
                 <TableCell className="text-center font-bold text-muted-foreground">{idx + 1}</TableCell>
-                <TableCell className="font-medium">{row.teamName}</TableCell>
+                <TableCell className="font-medium">{row.teamAbbreviation || row.teamName}</TableCell>
                 <TableCell className={`text-right font-mono font-bold ${war < 0 ? "text-red-500" : ""}`}>
                   {fmtWar(war)}
                 </TableCell>

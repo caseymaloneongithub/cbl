@@ -367,8 +367,8 @@ export default function AdvancedStats() {
                       <TableRow key={s.id} data-testid={`row-hitter-${s.id}`}>
                         <TableCell className="sticky left-0 bg-background z-10 font-medium">{s.player?.fullName ?? `Player #${s.mlbPlayerId}`}</TableCell>
                         <TableCell className="text-center text-muted-foreground text-xs">{s.player?.primaryPosition ?? "—"}</TableCell>
-                        <TableCell className="text-center text-muted-foreground text-xs">{s.player?.currentTeamName ?? "—"}</TableCell>
-                        {leagueId && <TableCell className="text-xs">{s.cblTeam ? <Badge variant="outline">{s.cblTeam}</Badge> : <span className="text-muted-foreground">FA</span>}</TableCell>}
+                        <TableCell className="text-center text-muted-foreground text-xs">{mlbAbbr(s.player?.currentTeamName)}</TableCell>
+                        {leagueId && <TableCell className="text-xs">{s.cblTeamAbbreviation ? <Badge variant="outline">{s.cblTeamAbbreviation}</Badge> : s.cblTeam ? <Badge variant="outline">{s.cblTeam}</Badge> : <span className="text-muted-foreground">FA</span>}</TableCell>}
                         <TableCell className="text-right font-mono text-muted-foreground">{s.pa ?? "—"}</TableCell>
                         <TableCell className="text-right font-mono">{fmtWar(s.hittingWar)}</TableCell>
                         <TableCell className="text-right font-mono">{fmtInt(s.hittingWrcPlus)}</TableCell>
@@ -429,8 +429,8 @@ export default function AdvancedStats() {
                       <TableRow key={s.id} data-testid={`row-pitcher-${s.id}`}>
                         <TableCell className="sticky left-0 bg-background z-10 font-medium">{s.player?.fullName ?? `Player #${s.mlbPlayerId}`}</TableCell>
                         <TableCell className="text-center text-muted-foreground text-xs">{s.player?.primaryPosition ?? "—"}</TableCell>
-                        <TableCell className="text-center text-muted-foreground text-xs">{s.player?.currentTeamName ?? "—"}</TableCell>
-                        {leagueId && <TableCell className="text-xs">{s.cblTeam ? <Badge variant="outline">{s.cblTeam}</Badge> : <span className="text-muted-foreground">FA</span>}</TableCell>}
+                        <TableCell className="text-center text-muted-foreground text-xs">{mlbAbbr(s.player?.currentTeamName)}</TableCell>
+                        {leagueId && <TableCell className="text-xs">{s.cblTeamAbbreviation ? <Badge variant="outline">{s.cblTeamAbbreviation}</Badge> : s.cblTeam ? <Badge variant="outline">{s.cblTeam}</Badge> : <span className="text-muted-foreground">FA</span>}</TableCell>}
                         <TableCell className="text-right font-mono">{fmtWar(s.pitchingWar)}</TableCell>
                         <TableCell className="text-right font-mono">{fmt(s.pitchingXera, 2)}</TableCell>
                         <TableCell className="text-right font-mono text-muted-foreground">{fmt(s.pitchingXeraVsRhb, 2)}</TableCell>
