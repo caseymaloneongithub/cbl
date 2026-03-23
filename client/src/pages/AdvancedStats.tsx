@@ -58,6 +58,15 @@ interface AdvancedStat {
   cblRosterType?: string | null;
 }
 
+type SortDir = "asc" | "desc";
+
+type HitterSortKey = "name" | "pos" | "team" | "cbl" | "war" | "wrc+" | "wrc+vR" | "wrc+vL" |
+  "xba" | "xbaVR" | "xbaVL" | "xobp" | "xobpVR" | "xobpVL" | "xslg" | "xslgVR" | "xslgVL";
+
+type PitcherSortKey = "name" | "pos" | "team" | "cbl" | "war" |
+  "xera" | "xeraVR" | "xeraVL" | "xk9" | "xk9VR" | "xk9VL" |
+  "xbb9" | "xbb9VR" | "xbb9VL" | "xwhip" | "xwhipVR" | "xwhipVL";
+
 function fmt(val: number | null | undefined, decimals = 3): string {
   if (val == null) return "—";
   return val.toFixed(decimals);
@@ -73,12 +82,29 @@ function fmtInt(val: number | null | undefined): string {
   return Math.round(val).toString();
 }
 
+function numCompare(a: number | null | undefined, b: number | null | undefined, dir: SortDir): number {
+  const av = a ?? -Infinity;
+  const bv = b ?? -Infinity;
+  return dir === "asc" ? av - bv : bv - av;
+}
+
+function strCompare(a: string | null | undefined, b: string | null | undefined, dir: SortDir): number {
+  const av = (a ?? "").toLowerCase();
+  const bv = (b ?? "").toLowerCase();
+  return dir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+}
+
+const ALL_TEAMS = "__all__";
+
 export default function AdvancedStats() {
   const { user } = useAuth();
-  const { currentLeague } = useLeague();
+  const { currentLeague, leagueMembers } = useLeague();
   const [selectedSeason, setSelectedSeason] = useState<string>("");
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<"hitters" | "pitchers">("hitters");
+  const [cblTeamFilter, setCblTeamFilter] = useState<string>(ALL_TEAMS);
+  const [hSort, setHSort] = useState<{ key: HitterSortKey; dir: SortDir }>({ key: "war", dir: "desc" });
+  const [pSort, setPSort] = useState<{ key: PitcherSortKey; dir: SortDir }>({ key: "war", dir: "desc" });
 
   const hasPremium = user?.isSuperAdmin || user?.hasPremiumAccess;
 
@@ -103,6 +129,15 @@ export default function AdvancedStats() {
     enabled: !!hasPremium && !!activeSeason,
   });
 
+  const cblTeamNames = useMemo(() => {
+    if (!stats || !leagueId) return [];
+    const teams = new Set<string>();
+    for (const s of stats) {
+      if (s.cblTeam) teams.add(s.cblTeam);
+    }
+    return Array.from(teams).sort();
+  }, [stats, leagueId]);
+
   const matchesSearch = (s: AdvancedStat) => {
     if (!search) return true;
     const q = search.toLowerCase();
@@ -111,21 +146,85 @@ export default function AdvancedStats() {
       s.cblTeam?.toLowerCase().includes(q);
   };
 
+  const matchesCblTeam = (s: AdvancedStat) => {
+    if (cblTeamFilter === ALL_TEAMS) return true;
+    if (cblTeamFilter === "__fa__") return !s.cblTeam;
+    return s.cblTeam === cblTeamFilter;
+  };
+
+  function sortHitters(a: AdvancedStat, b: AdvancedStat): number {
+    const { key, dir } = hSort;
+    switch (key) {
+      case "name": return strCompare(a.player?.fullName, b.player?.fullName, dir);
+      case "pos": return strCompare(a.player?.primaryPosition, b.player?.primaryPosition, dir);
+      case "team": return strCompare(a.player?.currentTeamName, b.player?.currentTeamName, dir);
+      case "cbl": return strCompare(a.cblTeam, b.cblTeam, dir);
+      case "war": return numCompare(a.hittingWar, b.hittingWar, dir);
+      case "wrc+": return numCompare(a.hittingWrcPlus, b.hittingWrcPlus, dir);
+      case "wrc+vR": return numCompare(a.hittingWrcPlusVsRhp, b.hittingWrcPlusVsRhp, dir);
+      case "wrc+vL": return numCompare(a.hittingWrcPlusVsLhp, b.hittingWrcPlusVsLhp, dir);
+      case "xba": return numCompare(a.hittingXba, b.hittingXba, dir);
+      case "xbaVR": return numCompare(a.hittingXbaVsRhp, b.hittingXbaVsRhp, dir);
+      case "xbaVL": return numCompare(a.hittingXbaVsLhp, b.hittingXbaVsLhp, dir);
+      case "xobp": return numCompare(a.hittingXobp, b.hittingXobp, dir);
+      case "xobpVR": return numCompare(a.hittingXobpVsRhp, b.hittingXobpVsRhp, dir);
+      case "xobpVL": return numCompare(a.hittingXobpVsLhp, b.hittingXobpVsLhp, dir);
+      case "xslg": return numCompare(a.hittingXslg, b.hittingXslg, dir);
+      case "xslgVR": return numCompare(a.hittingXslgVsRhp, b.hittingXslgVsRhp, dir);
+      case "xslgVL": return numCompare(a.hittingXslgVsLhp, b.hittingXslgVsLhp, dir);
+      default: return 0;
+    }
+  }
+
+  function sortPitchers(a: AdvancedStat, b: AdvancedStat): number {
+    const { key, dir } = pSort;
+    switch (key) {
+      case "name": return strCompare(a.player?.fullName, b.player?.fullName, dir);
+      case "pos": return strCompare(a.player?.primaryPosition, b.player?.primaryPosition, dir);
+      case "team": return strCompare(a.player?.currentTeamName, b.player?.currentTeamName, dir);
+      case "cbl": return strCompare(a.cblTeam, b.cblTeam, dir);
+      case "war": return numCompare(a.pitchingWar, b.pitchingWar, dir);
+      case "xera": return numCompare(a.pitchingXera, b.pitchingXera, dir);
+      case "xeraVR": return numCompare(a.pitchingXeraVsRhb, b.pitchingXeraVsRhb, dir);
+      case "xeraVL": return numCompare(a.pitchingXeraVsLhb, b.pitchingXeraVsLhb, dir);
+      case "xk9": return numCompare(a.pitchingXk9, b.pitchingXk9, dir);
+      case "xk9VR": return numCompare(a.pitchingXk9VsRhb, b.pitchingXk9VsRhb, dir);
+      case "xk9VL": return numCompare(a.pitchingXk9VsLhb, b.pitchingXk9VsLhb, dir);
+      case "xbb9": return numCompare(a.pitchingXbb9, b.pitchingXbb9, dir);
+      case "xbb9VR": return numCompare(a.pitchingXbb9VsRhb, b.pitchingXbb9VsRhb, dir);
+      case "xbb9VL": return numCompare(a.pitchingXbb9VsLhb, b.pitchingXbb9VsLhb, dir);
+      case "xwhip": return numCompare(a.pitchingXwhip, b.pitchingXwhip, dir);
+      case "xwhipVR": return numCompare(a.pitchingXwhipVsRhb, b.pitchingXwhipVsRhb, dir);
+      case "xwhipVL": return numCompare(a.pitchingXwhipVsLhb, b.pitchingXwhipVsLhb, dir);
+      default: return 0;
+    }
+  }
+
   const hitters = useMemo(() => {
     if (!stats) return [];
     return stats
       .filter(s => s.hittingWar != null || s.hittingWrcPlus != null || s.hittingXba != null)
       .filter(matchesSearch)
-      .sort((a, b) => (b.hittingWar ?? -999) - (a.hittingWar ?? -999));
-  }, [stats, search]);
+      .filter(matchesCblTeam)
+      .sort(sortHitters);
+  }, [stats, search, cblTeamFilter, hSort]);
 
   const pitchers = useMemo(() => {
     if (!stats) return [];
     return stats
       .filter(s => s.pitchingWar != null || s.pitchingXera != null || s.pitchingXk9 != null)
       .filter(matchesSearch)
-      .sort((a, b) => (b.pitchingWar ?? -999) - (a.pitchingWar ?? -999));
-  }, [stats, search]);
+      .filter(matchesCblTeam)
+      .sort(sortPitchers);
+  }, [stats, search, cblTeamFilter, pSort]);
+
+  const toggleHSort = (key: HitterSortKey) =>
+    setHSort(prev => ({ key, dir: prev.key === key && prev.dir === "desc" ? "asc" : "desc" }));
+  const togglePSort = (key: PitcherSortKey) =>
+    setPSort(prev => ({ key, dir: prev.key === key && prev.dir === "desc" ? "asc" : "desc" }));
+
+  const hs = (k: HitterSortKey) => (hSort.key === k ? (hSort.dir === "asc" ? " ▲" : " ▼") : "");
+  const ps = (k: PitcherSortKey) => (pSort.key === k ? (pSort.dir === "asc" ? " ▲" : " ▼") : "");
 
   if (!hasPremium) {
     return (
@@ -155,7 +254,7 @@ export default function AdvancedStats() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           {seasons && seasons.length > 0 && (
             <Select value={activeSeason} onValueChange={setSelectedSeason}>
               <SelectTrigger className="w-[120px]" data-testid="select-season">
@@ -164,6 +263,20 @@ export default function AdvancedStats() {
               <SelectContent>
                 {seasons.map(s => (
                   <SelectItem key={s} value={String(s)}>{s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {leagueId && cblTeamNames.length > 0 && (
+            <Select value={cblTeamFilter} onValueChange={setCblTeamFilter}>
+              <SelectTrigger className="w-[200px]" data-testid="select-cbl-team-filter">
+                <SelectValue placeholder="All CBL Teams" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_TEAMS}>All CBL Teams</SelectItem>
+                <SelectItem value="__fa__">Free Agents</SelectItem>
+                {cblTeamNames.map(t => (
+                  <SelectItem key={t} value={t}>{t}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -204,23 +317,23 @@ export default function AdvancedStats() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="sticky left-0 bg-background z-10 min-w-[180px]">Player</TableHead>
-                      <TableHead className="text-center min-w-[50px]">Pos</TableHead>
-                      <TableHead className="text-center min-w-[60px]">Team</TableHead>
-                      {leagueId && <TableHead className="min-w-[120px]">CBL Team</TableHead>}
-                      <TableHead className="text-right min-w-[50px]">WAR</TableHead>
-                      <TableHead className="text-right min-w-[55px]">wRC+</TableHead>
-                      <TableHead className="text-right min-w-[65px]">wRC+ vR</TableHead>
-                      <TableHead className="text-right min-w-[65px]">wRC+ vL</TableHead>
-                      <TableHead className="text-right min-w-[55px]">xBA</TableHead>
-                      <TableHead className="text-right min-w-[65px]">xBA vR</TableHead>
-                      <TableHead className="text-right min-w-[65px]">xBA vL</TableHead>
-                      <TableHead className="text-right min-w-[55px]">xOBP</TableHead>
-                      <TableHead className="text-right min-w-[65px]">xOBP vR</TableHead>
-                      <TableHead className="text-right min-w-[65px]">xOBP vL</TableHead>
-                      <TableHead className="text-right min-w-[55px]">xSLG</TableHead>
-                      <TableHead className="text-right min-w-[65px]">xSLG vR</TableHead>
-                      <TableHead className="text-right min-w-[65px]">xSLG vL</TableHead>
+                      <TableHead className="sticky left-0 bg-background z-10 min-w-[180px] cursor-pointer" onClick={() => toggleHSort("name")}>Player{hs("name")}</TableHead>
+                      <TableHead className="text-center min-w-[50px] cursor-pointer" onClick={() => toggleHSort("pos")}>Pos{hs("pos")}</TableHead>
+                      <TableHead className="text-center min-w-[60px] cursor-pointer" onClick={() => toggleHSort("team")}>Team{hs("team")}</TableHead>
+                      {leagueId && <TableHead className="min-w-[120px] cursor-pointer" onClick={() => toggleHSort("cbl")}>CBL Team{hs("cbl")}</TableHead>}
+                      <TableHead className="text-right min-w-[50px] cursor-pointer" onClick={() => toggleHSort("war")}>WAR{hs("war")}</TableHead>
+                      <TableHead className="text-right min-w-[55px] cursor-pointer" onClick={() => toggleHSort("wrc+")}>wRC+{hs("wrc+")}</TableHead>
+                      <TableHead className="text-right min-w-[65px] cursor-pointer" onClick={() => toggleHSort("wrc+vR")}>wRC+ vR{hs("wrc+vR")}</TableHead>
+                      <TableHead className="text-right min-w-[65px] cursor-pointer" onClick={() => toggleHSort("wrc+vL")}>wRC+ vL{hs("wrc+vL")}</TableHead>
+                      <TableHead className="text-right min-w-[55px] cursor-pointer" onClick={() => toggleHSort("xba")}>xBA{hs("xba")}</TableHead>
+                      <TableHead className="text-right min-w-[65px] cursor-pointer" onClick={() => toggleHSort("xbaVR")}>xBA vR{hs("xbaVR")}</TableHead>
+                      <TableHead className="text-right min-w-[65px] cursor-pointer" onClick={() => toggleHSort("xbaVL")}>xBA vL{hs("xbaVL")}</TableHead>
+                      <TableHead className="text-right min-w-[55px] cursor-pointer" onClick={() => toggleHSort("xobp")}>xOBP{hs("xobp")}</TableHead>
+                      <TableHead className="text-right min-w-[65px] cursor-pointer" onClick={() => toggleHSort("xobpVR")}>xOBP vR{hs("xobpVR")}</TableHead>
+                      <TableHead className="text-right min-w-[65px] cursor-pointer" onClick={() => toggleHSort("xobpVL")}>xOBP vL{hs("xobpVL")}</TableHead>
+                      <TableHead className="text-right min-w-[55px] cursor-pointer" onClick={() => toggleHSort("xslg")}>xSLG{hs("xslg")}</TableHead>
+                      <TableHead className="text-right min-w-[65px] cursor-pointer" onClick={() => toggleHSort("xslgVR")}>xSLG vR{hs("xslgVR")}</TableHead>
+                      <TableHead className="text-right min-w-[65px] cursor-pointer" onClick={() => toggleHSort("xslgVL")}>xSLG vL{hs("xslgVL")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -265,23 +378,23 @@ export default function AdvancedStats() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="sticky left-0 bg-background z-10 min-w-[180px]">Player</TableHead>
-                      <TableHead className="text-center min-w-[50px]">Pos</TableHead>
-                      <TableHead className="text-center min-w-[60px]">Team</TableHead>
-                      {leagueId && <TableHead className="min-w-[120px]">CBL Team</TableHead>}
-                      <TableHead className="text-right min-w-[50px]">WAR</TableHead>
-                      <TableHead className="text-right min-w-[55px]">xERA</TableHead>
-                      <TableHead className="text-right min-w-[70px]">xERA vR</TableHead>
-                      <TableHead className="text-right min-w-[70px]">xERA vL</TableHead>
-                      <TableHead className="text-right min-w-[55px]">xK/9</TableHead>
-                      <TableHead className="text-right min-w-[70px]">xK/9 vR</TableHead>
-                      <TableHead className="text-right min-w-[70px]">xK/9 vL</TableHead>
-                      <TableHead className="text-right min-w-[60px]">xBB/9</TableHead>
-                      <TableHead className="text-right min-w-[70px]">xBB/9 vR</TableHead>
-                      <TableHead className="text-right min-w-[70px]">xBB/9 vL</TableHead>
-                      <TableHead className="text-right min-w-[60px]">xWHIP</TableHead>
-                      <TableHead className="text-right min-w-[70px]">xWHIP vR</TableHead>
-                      <TableHead className="text-right min-w-[70px]">xWHIP vL</TableHead>
+                      <TableHead className="sticky left-0 bg-background z-10 min-w-[180px] cursor-pointer" onClick={() => togglePSort("name")}>Player{ps("name")}</TableHead>
+                      <TableHead className="text-center min-w-[50px] cursor-pointer" onClick={() => togglePSort("pos")}>Pos{ps("pos")}</TableHead>
+                      <TableHead className="text-center min-w-[60px] cursor-pointer" onClick={() => togglePSort("team")}>Team{ps("team")}</TableHead>
+                      {leagueId && <TableHead className="min-w-[120px] cursor-pointer" onClick={() => togglePSort("cbl")}>CBL Team{ps("cbl")}</TableHead>}
+                      <TableHead className="text-right min-w-[50px] cursor-pointer" onClick={() => togglePSort("war")}>WAR{ps("war")}</TableHead>
+                      <TableHead className="text-right min-w-[55px] cursor-pointer" onClick={() => togglePSort("xera")}>xERA{ps("xera")}</TableHead>
+                      <TableHead className="text-right min-w-[70px] cursor-pointer" onClick={() => togglePSort("xeraVR")}>xERA vR{ps("xeraVR")}</TableHead>
+                      <TableHead className="text-right min-w-[70px] cursor-pointer" onClick={() => togglePSort("xeraVL")}>xERA vL{ps("xeraVL")}</TableHead>
+                      <TableHead className="text-right min-w-[55px] cursor-pointer" onClick={() => togglePSort("xk9")}>xK/9{ps("xk9")}</TableHead>
+                      <TableHead className="text-right min-w-[70px] cursor-pointer" onClick={() => togglePSort("xk9VR")}>xK/9 vR{ps("xk9VR")}</TableHead>
+                      <TableHead className="text-right min-w-[70px] cursor-pointer" onClick={() => togglePSort("xk9VL")}>xK/9 vL{ps("xk9VL")}</TableHead>
+                      <TableHead className="text-right min-w-[60px] cursor-pointer" onClick={() => togglePSort("xbb9")}>xBB/9{ps("xbb9")}</TableHead>
+                      <TableHead className="text-right min-w-[70px] cursor-pointer" onClick={() => togglePSort("xbb9VR")}>xBB/9 vR{ps("xbb9VR")}</TableHead>
+                      <TableHead className="text-right min-w-[70px] cursor-pointer" onClick={() => togglePSort("xbb9VL")}>xBB/9 vL{ps("xbb9VL")}</TableHead>
+                      <TableHead className="text-right min-w-[60px] cursor-pointer" onClick={() => togglePSort("xwhip")}>xWHIP{ps("xwhip")}</TableHead>
+                      <TableHead className="text-right min-w-[70px] cursor-pointer" onClick={() => togglePSort("xwhipVR")}>xWHIP vR{ps("xwhipVR")}</TableHead>
+                      <TableHead className="text-right min-w-[70px] cursor-pointer" onClick={() => togglePSort("xwhipVL")}>xWHIP vL{ps("xwhipVL")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
