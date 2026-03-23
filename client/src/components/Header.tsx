@@ -20,11 +20,14 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { User, DraftWithDetails } from "@shared/schema";
 
-function NavDropdown({ label, items, location: loc, testId }: {
+function NavDropdown({ label, items, location: loc, testId, customIcon, customClass, customActiveClass }: {
   label: string;
   items: { href: string; label: string }[];
   location: string;
   testId: string;
+  customIcon?: React.ReactNode;
+  customClass?: string;
+  customActiveClass?: string;
 }) {
   const isActive = items.some(item => item.href === loc || (item.href !== "/" && loc.startsWith(item.href)));
   return (
@@ -33,8 +36,10 @@ function NavDropdown({ label, items, location: loc, testId }: {
         <Button
           variant={isActive ? "secondary" : "ghost"}
           size="sm"
+          className={isActive ? customActiveClass : customClass}
           data-testid={testId}
         >
+          {customIcon}
           {label}
           <ChevronDown className="h-3 w-3 ml-1" />
         </Button>
@@ -145,6 +150,11 @@ export function Header() {
     { href: "/trades", label: "Trades" },
   ];
 
+  const premiumItems = [
+    { href: "/premium/stats", label: "Player Stats" },
+    { href: "/premium/war-rankings", label: "WAR Rankings" },
+  ];
+
   const playersItems = [
     { href: "/players/mlb", label: "MLB" },
     { href: "/players/milb", label: "MiLB" },
@@ -234,17 +244,15 @@ export function Header() {
                 testId="nav-free-agency"
               />
               {(user?.hasPremiumAccess || user?.isSuperAdmin) && (
-                <Link href="/premium/stats">
-                  <Button
-                    variant={location.startsWith("/premium") ? "secondary" : "ghost"}
-                    size="sm"
-                    className={location.startsWith("/premium") ? "bg-green-700 text-white hover:bg-green-800" : "bg-green-700/90 text-white hover:bg-green-800"}
-                    data-testid="nav-premium"
-                  >
-                    <Star className="h-4 w-4 mr-1 fill-yellow-300 text-yellow-300" />
-                    Premium
-                  </Button>
-                </Link>
+                <NavDropdown
+                  label="Premium"
+                  items={premiumItems}
+                  location={location}
+                  testId="nav-premium"
+                  customIcon={<Star className="h-4 w-4 mr-1 fill-yellow-300 text-yellow-300" />}
+                  customClass="bg-green-700/90 text-white hover:bg-green-800"
+                  customActiveClass="bg-green-700 text-white hover:bg-green-800"
+                />
               )}
               {(hasAnyCommissionerRole || user?.isSuperAdmin) && (
                 <NavDropdown
@@ -395,17 +403,24 @@ export function Header() {
                       <div className="border-b my-2" />
                       {(user?.hasPremiumAccess || user?.isSuperAdmin) && (
                         <>
-                          <Link href="/premium/stats" onClick={() => setMobileMenuOpen(false)}>
-                            <Button
-                              variant={location.startsWith("/premium") ? "secondary" : "ghost"}
-                              className={`w-full justify-start ${location.startsWith("/premium") ? "bg-green-700 text-white hover:bg-green-800" : "bg-green-700/90 text-white hover:bg-green-800"}`}
-                              size="sm"
-                              data-testid="mobile-nav-premium"
-                            >
-                              <Star className="h-4 w-4 mr-1 fill-yellow-300 text-yellow-300" />
-                              Premium Stats
-                            </Button>
-                          </Link>
+                          <div className="px-2 py-1">
+                            <span className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+                              <Star className="h-3 w-3 fill-yellow-300 text-yellow-300" />
+                              Premium
+                            </span>
+                          </div>
+                          {premiumItems.map(link => (
+                            <Link key={link.href} href={link.href} onClick={() => setMobileMenuOpen(false)}>
+                              <Button
+                                variant={location === link.href ? "secondary" : "ghost"}
+                                className={`w-full justify-start ${location === link.href ? "bg-green-700 text-white hover:bg-green-800" : "bg-green-700/90 text-white hover:bg-green-800"}`}
+                                size="sm"
+                                data-testid={`mobile-nav-premium-${link.label.toLowerCase().replace(/\s+/g, "-")}`}
+                              >
+                                {link.label}
+                              </Button>
+                            </Link>
+                          ))}
                           <div className="border-b my-2" />
                         </>
                       )}
