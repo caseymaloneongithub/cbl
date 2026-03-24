@@ -243,6 +243,75 @@ export default function AdvancedStats() {
       .sort(sortPitchers);
   }, [stats, search, cblTeamFilter, pSort]);
 
+  const showTotals = cblTeamFilter !== ALL_TEAMS && cblTeamFilter !== "__fa__";
+
+  const hitterTotals = useMemo(() => {
+    if (!showTotals || hitters.length === 0) return null;
+    let pa = 0, war = 0, warCount = 0;
+    const wFields = [
+      "hittingWrcPlus", "hittingWrcPlusVsRhp", "hittingWrcPlusVsLhp",
+      "hittingXba", "hittingXbaVsRhp", "hittingXbaVsLhp",
+      "hittingXobp", "hittingXobpVsRhp", "hittingXobpVsLhp",
+      "hittingXslg", "hittingXslgVsRhp", "hittingXslgVsLhp",
+    ] as const;
+    const sums: Record<string, number> = {};
+    const weights: Record<string, number> = {};
+    for (const f of wFields) { sums[f] = 0; weights[f] = 0; }
+
+    for (const s of hitters) {
+      const p = s.pa ?? 0;
+      pa += p;
+      if (s.hittingWar != null) { war += s.hittingWar; warCount++; }
+      for (const f of wFields) {
+        const v = s[f];
+        if (v != null && p > 0) { sums[f] += v * p; weights[f] += p; }
+      }
+    }
+
+    const avg = (f: string) => weights[f] > 0 ? sums[f] / weights[f] : null;
+    return {
+      pa, war: warCount > 0 ? war : null,
+      wrcPlus: avg("hittingWrcPlus"), wrcPlusVR: avg("hittingWrcPlusVsRhp"), wrcPlusVL: avg("hittingWrcPlusVsLhp"),
+      xba: avg("hittingXba"), xbaVR: avg("hittingXbaVsRhp"), xbaVL: avg("hittingXbaVsLhp"),
+      xobp: avg("hittingXobp"), xobpVR: avg("hittingXobpVsRhp"), xobpVL: avg("hittingXobpVsLhp"),
+      xslg: avg("hittingXslg"), xslgVR: avg("hittingXslgVsRhp"), xslgVL: avg("hittingXslgVsLhp"),
+    };
+  }, [hitters, showTotals]);
+
+  const pitcherTotals = useMemo(() => {
+    if (!showTotals || pitchers.length === 0) return null;
+    let gs = 0, ip = 0, war = 0, warCount = 0;
+    const wFields = [
+      "pitchingXera", "pitchingXeraVsRhb", "pitchingXeraVsLhb",
+      "pitchingXk9", "pitchingXk9VsRhb", "pitchingXk9VsLhb",
+      "pitchingXbb9", "pitchingXbb9VsRhb", "pitchingXbb9VsLhb",
+      "pitchingXwhip", "pitchingXwhipVsRhb", "pitchingXwhipVsLhb",
+    ] as const;
+    const sums: Record<string, number> = {};
+    const wts: Record<string, number> = {};
+    for (const f of wFields) { sums[f] = 0; wts[f] = 0; }
+
+    for (const s of pitchers) {
+      const ipVal = s.ip ?? 0;
+      gs += s.gs ?? 0;
+      ip += ipVal;
+      if (s.pitchingWar != null) { war += s.pitchingWar; warCount++; }
+      for (const f of wFields) {
+        const v = s[f];
+        if (v != null && ipVal > 0) { sums[f] += v * ipVal; wts[f] += ipVal; }
+      }
+    }
+
+    const avg = (f: string) => wts[f] > 0 ? sums[f] / wts[f] : null;
+    return {
+      gs, ip, war: warCount > 0 ? war : null,
+      xera: avg("pitchingXera"), xeraVR: avg("pitchingXeraVsRhb"), xeraVL: avg("pitchingXeraVsLhb"),
+      xk9: avg("pitchingXk9"), xk9VR: avg("pitchingXk9VsRhb"), xk9VL: avg("pitchingXk9VsLhb"),
+      xbb9: avg("pitchingXbb9"), xbb9VR: avg("pitchingXbb9VsRhb"), xbb9VL: avg("pitchingXbb9VsLhb"),
+      xwhip: avg("pitchingXwhip"), xwhipVR: avg("pitchingXwhipVsRhb"), xwhipVL: avg("pitchingXwhipVsLhb"),
+    };
+  }, [pitchers, showTotals]);
+
   const toggleHSort = (key: HitterSortKey) =>
     setHSort(prev => ({ key, dir: prev.key === key && prev.dir === "desc" ? "asc" : "desc" }));
   const togglePSort = (key: PitcherSortKey) =>
@@ -385,6 +454,28 @@ export default function AdvancedStats() {
                         <TableCell className="text-right font-mono text-muted-foreground">{fmt(s.hittingXslgVsLhp)}</TableCell>
                       </TableRow>
                     ))}
+                    {hitterTotals && (
+                      <TableRow className="bg-muted/50 font-semibold border-t-2" data-testid="row-hitter-totals">
+                        <TableCell className="sticky left-0 bg-muted/50 z-10">Total</TableCell>
+                        <TableCell />
+                        <TableCell />
+                        {leagueId && <TableCell />}
+                        <TableCell className="text-right font-mono">{hitterTotals.pa}</TableCell>
+                        <TableCell className="text-right font-mono">{fmtWar(hitterTotals.war)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmtInt(hitterTotals.wrcPlus)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmtInt(hitterTotals.wrcPlusVR)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmtInt(hitterTotals.wrcPlusVL)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(hitterTotals.xba)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(hitterTotals.xbaVR)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(hitterTotals.xbaVL)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(hitterTotals.xobp)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(hitterTotals.xobpVR)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(hitterTotals.xobpVL)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(hitterTotals.xslg)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(hitterTotals.xslgVR)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(hitterTotals.xslgVL)}</TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </div>
@@ -450,6 +541,29 @@ export default function AdvancedStats() {
                         <TableCell className="text-right font-mono text-muted-foreground">{fmt(s.pitchingXwhipVsLhb, 3)}</TableCell>
                       </TableRow>
                     ))}
+                    {pitcherTotals && (
+                      <TableRow className="bg-muted/50 font-semibold border-t-2" data-testid="row-pitcher-totals">
+                        <TableCell className="sticky left-0 bg-muted/50 z-10">Total</TableCell>
+                        <TableCell />
+                        <TableCell />
+                        {leagueId && <TableCell />}
+                        <TableCell className="text-right font-mono">{pitcherTotals.gs}</TableCell>
+                        <TableCell className="text-right font-mono">{pitcherTotals.ip.toFixed(1)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmtWar(pitcherTotals.war)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(pitcherTotals.xera, 2)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(pitcherTotals.xeraVR, 2)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(pitcherTotals.xeraVL, 2)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(pitcherTotals.xk9, 2)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(pitcherTotals.xk9VR, 2)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(pitcherTotals.xk9VL, 2)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(pitcherTotals.xbb9, 2)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(pitcherTotals.xbb9VR, 2)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(pitcherTotals.xbb9VL, 2)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(pitcherTotals.xwhip, 3)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(pitcherTotals.xwhipVR, 3)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(pitcherTotals.xwhipVL, 3)}</TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </div>
