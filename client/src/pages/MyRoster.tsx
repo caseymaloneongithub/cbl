@@ -249,7 +249,6 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
         case "obp": cmp = n(a.stats?.hittingObp) - n(b.stats?.hittingObp); break;
         case "slg": cmp = n(a.stats?.hittingSlg) - n(b.stats?.hittingSlg); break;
         case "ops": cmp = n(a.stats?.hittingOps) - n(b.stats?.hittingOps); break;
-        case "wrc+": cmp = n(a.stats?.hittingWrcPlus) - n(b.stats?.hittingWrcPlus); break;
       }
       return hSort.dir === "asc" ? cmp : -cmp;
     });
@@ -282,7 +281,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
 
   const hitterTotals = useMemo(() => {
     let ab = 0, pa = 0, bb = 0, s1 = 0, s2 = 0, s3 = 0, hr = 0;
-    let wAvg = 0, wObp = 0, wSlg = 0, wOps = 0, wWrc = 0, wrcPa = 0;
+    let wAvg = 0, wObp = 0, wSlg = 0, wOps = 0;
     for (const a of hitters) {
       const st = a.stats;
       if (!st?.hadHittingStats) continue;
@@ -299,10 +298,6 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
         wObp += (st.hittingObp ?? 0) * p;
         wSlg += (st.hittingSlg ?? 0) * p;
         wOps += (st.hittingOps ?? 0) * p;
-        if (st.hittingWrcPlus != null) {
-          wWrc += st.hittingWrcPlus * p;
-          wrcPa += p;
-        }
       }
     }
     return {
@@ -311,7 +306,6 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
       obp: pa > 0 ? wObp / pa : null,
       slg: pa > 0 ? wSlg / pa : null,
       ops: pa > 0 ? wOps / pa : null,
-      wrc: wrcPa > 0 ? wWrc / wrcPa : null,
     };
   }, [hitters]);
 
@@ -431,7 +425,6 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                         <TableHead className="cursor-pointer text-right" onClick={() => toggleHSort("obp")}>OBP{hs("obp")}</TableHead>
                         <TableHead className="cursor-pointer text-right" onClick={() => toggleHSort("slg")}>SLG{hs("slg")}</TableHead>
                         <TableHead className="cursor-pointer text-right" onClick={() => toggleHSort("ops")}>OPS{hs("ops")}</TableHead>
-                        <TableHead className="cursor-pointer text-right" onClick={() => toggleHSort("wrc+")}>wRC+{hs("wrc+")}</TableHead>
                         {level === "milb" && canCut && <TableHead className="w-[50px]" />}
                       </TableRow>
                     </TableHeader>
@@ -456,7 +449,6 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                           <TableCell className={statCellClass(a.stats)}>{a.stats?.hadHittingStats ? fmtRate(a.stats.hittingObp) : ""}</TableCell>
                           <TableCell className={statCellClass(a.stats)}>{a.stats?.hadHittingStats ? fmtRate(a.stats.hittingSlg) : ""}</TableCell>
                           <TableCell className={statCellClass(a.stats)}>{a.stats?.hadHittingStats ? fmtRate(a.stats.hittingOps) : ""}</TableCell>
-                          <TableCell className={statCellClass(a.stats)}>{a.stats?.hadHittingStats && a.stats.hittingWrcPlus != null ? Math.round(a.stats.hittingWrcPlus) : ""}</TableCell>
                           {level === "milb" && canCut && (
                             <TableCell>
                               <Button
@@ -492,7 +484,6 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                           <TableCell className="text-right font-mono">{hitterTotals.obp != null ? fmtRate(hitterTotals.obp) : ""}</TableCell>
                           <TableCell className="text-right font-mono">{hitterTotals.slg != null ? fmtRate(hitterTotals.slg) : ""}</TableCell>
                           <TableCell className="text-right font-mono">{hitterTotals.ops != null ? fmtRate(hitterTotals.ops) : ""}</TableCell>
-                          <TableCell className="text-right font-mono">{hitterTotals.wrc != null ? Math.round(hitterTotals.wrc) : ""}</TableCell>
                           {level === "milb" && canCut && <TableCell />}
                         </TableRow>
                       )}
