@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useLeague } from "@/hooks/useLeague";
@@ -124,9 +124,21 @@ export default function AdvancedStats() {
   const [selectedSeason, setSelectedSeason] = useState<string>("");
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<"hitters" | "pitchers">("hitters");
-  const [cblTeamFilter, setCblTeamFilter] = useState<string>(ALL_TEAMS);
+  const [cblTeamFilter, setCblTeamFilter] = useState<string>("");
+  const [defaultApplied, setDefaultApplied] = useState(false);
   const [hSort, setHSort] = useState<{ key: HitterSortKey; dir: SortDir }>({ key: "war", dir: "desc" });
   const [pSort, setPSort] = useState<{ key: PitcherSortKey; dir: SortDir }>({ key: "war", dir: "desc" });
+
+  useEffect(() => {
+    if (defaultApplied || !user || !leagueMembers || leagueMembers.length === 0) return;
+    const myMember = leagueMembers.find(m => m.userId === user.id);
+    if (myMember?.teamName) {
+      setCblTeamFilter(myMember.teamName);
+    } else {
+      setCblTeamFilter(ALL_TEAMS);
+    }
+    setDefaultApplied(true);
+  }, [user, leagueMembers, defaultApplied]);
 
   const hasPremium = user?.isSuperAdmin || user?.hasPremiumAccess;
 
@@ -169,7 +181,7 @@ export default function AdvancedStats() {
   };
 
   const matchesCblTeam = (s: AdvancedStat) => {
-    if (cblTeamFilter === ALL_TEAMS) return true;
+    if (!cblTeamFilter || cblTeamFilter === ALL_TEAMS) return true;
     if (cblTeamFilter === "__fa__") return !s.cblTeam;
     return s.cblTeam === cblTeamFilter;
   };
@@ -243,7 +255,7 @@ export default function AdvancedStats() {
       .sort(sortPitchers);
   }, [stats, search, cblTeamFilter, pSort]);
 
-  const showTotals = cblTeamFilter !== ALL_TEAMS && cblTeamFilter !== "__fa__";
+  const showTotals = !!cblTeamFilter && cblTeamFilter !== ALL_TEAMS && cblTeamFilter !== "__fa__";
 
   const hitterTotals = useMemo(() => {
     if (!showTotals || hitters.length === 0) return null;
