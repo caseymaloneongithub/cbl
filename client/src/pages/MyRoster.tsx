@@ -280,6 +280,65 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
     return rows;
   }, [pitchersBase, pSort]);
 
+  const hitterTotals = useMemo(() => {
+    let ab = 0, pa = 0, bb = 0, s1 = 0, s2 = 0, s3 = 0, hr = 0;
+    let wAvg = 0, wObp = 0, wSlg = 0, wOps = 0, wWrc = 0, wrcPa = 0;
+    for (const a of hitters) {
+      const st = a.stats;
+      if (!st?.hadHittingStats) continue;
+      const p = st.hittingPlateAppearances ?? 0;
+      ab += st.hittingAtBats ?? 0;
+      pa += p;
+      bb += st.hittingWalks ?? 0;
+      s1 += st.hittingSingles ?? 0;
+      s2 += st.hittingDoubles ?? 0;
+      s3 += st.hittingTriples ?? 0;
+      hr += st.hittingHomeRuns ?? 0;
+      if (p > 0) {
+        wAvg += (st.hittingAvg ?? 0) * p;
+        wObp += (st.hittingObp ?? 0) * p;
+        wSlg += (st.hittingSlg ?? 0) * p;
+        wOps += (st.hittingOps ?? 0) * p;
+        if (st.hittingWrcPlus != null) {
+          wWrc += st.hittingWrcPlus * p;
+          wrcPa += p;
+        }
+      }
+    }
+    return {
+      ab, pa, bb, s1, s2, s3, hr,
+      avg: pa > 0 ? wAvg / pa : null,
+      obp: pa > 0 ? wObp / pa : null,
+      slg: pa > 0 ? wSlg / pa : null,
+      ops: pa > 0 ? wOps / pa : null,
+      wrc: wrcPa > 0 ? wWrc / wrcPa : null,
+    };
+  }, [hitters]);
+
+  const pitcherTotals = useMemo(() => {
+    let g = 0, gs = 0, ip = 0, k = 0, bb = 0, h = 0, hr = 0;
+    let wEra = 0;
+    for (const a of pitchers) {
+      const st = a.stats;
+      if (!st?.hadPitchingStats) continue;
+      const innings = st.pitchingInningsPitched ?? 0;
+      g += st.pitchingGames ?? 0;
+      gs += st.pitchingGamesStarted ?? 0;
+      ip += innings;
+      k += st.pitchingStrikeouts ?? 0;
+      bb += st.pitchingWalks ?? 0;
+      h += st.pitchingHits ?? 0;
+      hr += st.pitchingHomeRuns ?? 0;
+      if (innings > 0) {
+        wEra += (st.pitchingEra ?? 0) * innings;
+      }
+    }
+    return {
+      g, gs, ip, k, bb, h, hr,
+      era: ip > 0 ? wEra / ip : null,
+    };
+  }, [pitchers]);
+
   const hs = (k: HitterSortKey) => (hSort.key === k ? (hSort.dir === "asc" ? " ▲" : " ▼") : "");
   const ps = (k: PitcherSortKey) => (pSort.key === k ? (pSort.dir === "asc" ? " ▲" : " ▼") : "");
 
@@ -413,6 +472,30 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                           )}
                         </TableRow>
                       ))}
+                      {hitters.length > 0 && (
+                        <TableRow className="bg-muted/50 font-semibold border-t-2" data-testid="row-hitter-totals">
+                          <TableCell>Total</TableCell>
+                          <TableCell />
+                          <TableCell />
+                          {showMilbLevel && <TableCell />}
+                          <TableCell />
+                          {level === "mlb" && <TableCell />}
+                          {level === "mlb" && <TableCell />}
+                          <TableCell className="text-right font-mono">{hitterTotals.ab}</TableCell>
+                          <TableCell className="text-right font-mono">{hitterTotals.pa}</TableCell>
+                          <TableCell className="text-right font-mono">{hitterTotals.bb}</TableCell>
+                          <TableCell className="text-right font-mono">{hitterTotals.s1}</TableCell>
+                          <TableCell className="text-right font-mono">{hitterTotals.s2}</TableCell>
+                          <TableCell className="text-right font-mono">{hitterTotals.s3}</TableCell>
+                          <TableCell className="text-right font-mono">{hitterTotals.hr}</TableCell>
+                          <TableCell className="text-right font-mono">{hitterTotals.avg != null ? fmtRate(hitterTotals.avg) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{hitterTotals.obp != null ? fmtRate(hitterTotals.obp) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{hitterTotals.slg != null ? fmtRate(hitterTotals.slg) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{hitterTotals.ops != null ? fmtRate(hitterTotals.ops) : ""}</TableCell>
+                          <TableCell className="text-right font-mono">{hitterTotals.wrc != null ? Math.round(hitterTotals.wrc) : ""}</TableCell>
+                          {level === "milb" && canCut && <TableCell />}
+                        </TableRow>
+                      )}
                     </TableBody>
                   </Table>
                 </div>
@@ -474,6 +557,26 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                           )}
                         </TableRow>
                       ))}
+                      {pitchers.length > 0 && (
+                        <TableRow className="bg-muted/50 font-semibold border-t-2" data-testid="row-pitcher-totals">
+                          <TableCell>Total</TableCell>
+                          <TableCell />
+                          <TableCell />
+                          {showMilbLevel && <TableCell />}
+                          <TableCell />
+                          {level === "mlb" && <TableCell />}
+                          {level === "mlb" && <TableCell />}
+                          <TableCell className="text-right font-mono">{pitcherTotals.g}</TableCell>
+                          <TableCell className="text-right font-mono">{pitcherTotals.gs}</TableCell>
+                          <TableCell className="text-right font-mono">{fmt1(pitcherTotals.ip)}</TableCell>
+                          <TableCell className="text-right font-mono">{pitcherTotals.k}</TableCell>
+                          <TableCell className="text-right font-mono">{pitcherTotals.bb}</TableCell>
+                          <TableCell className="text-right font-mono">{pitcherTotals.h}</TableCell>
+                          <TableCell className="text-right font-mono">{pitcherTotals.hr}</TableCell>
+                          <TableCell className="text-right font-mono">{pitcherTotals.era != null ? fmtEra(pitcherTotals.era) : ""}</TableCell>
+                          {level === "milb" && canCut && <TableCell />}
+                        </TableRow>
+                      )}
                     </TableBody>
                   </Table>
                 </div>
