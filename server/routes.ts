@@ -12046,8 +12046,10 @@ export async function registerRoutes(
       const errors: string[] = [];
       for (let i = 1; i < lines.length; i++) {
         const cols = lines[i].split(",").map(c => c.trim());
-        const mlbId = parseInt(cols[mlbIdIdx]);
-        if (!mlbId) { errors.push(`Row ${i + 1}: invalid MLB ID`); continue; }
+        const rawMlbId = cols[mlbIdIdx];
+        if (!rawMlbId || rawMlbId === "") continue;
+        const mlbId = parseInt(rawMlbId);
+        if (!mlbId || isNaN(mlbId)) { errors.push(`Row ${i + 1}: invalid MLB ID`); continue; }
         const internalId = mlbIdToInternal.get(mlbId);
         if (!internalId) { errors.push(`Row ${i + 1}: MLB ID ${mlbId} not found`); continue; }
         const rank = parseInt(cols[rankIdx]);
