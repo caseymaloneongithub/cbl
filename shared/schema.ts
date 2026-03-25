@@ -1082,3 +1082,22 @@ export const insertAdvancedPlayerStatsSchema = (createInsertSchema(advancedPlaye
 
 export type AdvancedPlayerStat = typeof advancedPlayerStats.$inferSelect;
 export type InsertAdvancedPlayerStat = z.infer<typeof insertAdvancedPlayerStatsSchema>;
+
+export const prospectRankings = pgTable("prospect_rankings", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  mlbPlayerId: integer("mlb_player_id").references(() => mlbPlayers.id).notNull(),
+  season: integer("season").notNull(),
+  rank: integer("rank").notNull(),
+  futureValue: integer("future_value"),
+  eta: text("eta"),
+}, (table) => [
+  uniqueIndex("idx_prospect_rankings_unique").on(table.mlbPlayerId, table.season),
+  index("idx_prospect_rankings_season").on(table.season),
+]);
+
+export const insertProspectRankingSchema = (createInsertSchema(prospectRankings) as any).omit({
+  id: true,
+});
+
+export type ProspectRanking = typeof prospectRankings.$inferSelect;
+export type InsertProspectRanking = z.infer<typeof insertProspectRankingSchema>;

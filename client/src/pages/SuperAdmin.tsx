@@ -966,6 +966,125 @@ function PremiumStatsManagement() {
   );
 }
 
+function ProspectRankingsManagement() {
+  const { toast } = useToast();
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [uploadSeason, setUploadSeason] = useState(String(new Date().getFullYear()));
+
+  const { data: seasons, isLoading: loadingSeasons } = useQuery<number[]>({
+    queryKey: ["/api/premium/prospect-rankings/seasons"],
+  });
+
+  const uploadRankings = useMutation({
+    mutationFn: async () => {
+      if (!csvFile) throw new Error("No file selected");
+      const csvData = await csvFile.text();
+      const res = await apiRequest("POST", "/api/admin/prospect-rankings/upload", {
+        season: parseInt(uploadSeason),
+        csvData,
+      });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      const errMsg = data.errors?.length > 0 ? ` (${data.errors.length} warnings)` : "";
+      toast({ title: "Upload Complete", description: `${data.uploaded} prospect rankings uploaded for ${uploadSeason}${errMsg}.` });
+      setCsvFile(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/premium/prospect-rankings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/premium/prospect-rankings/seasons"] });
+      const fileInput = document.getElementById("prospect-csv-input") as HTMLInputElement;
+      if (fileInput) fileInput.value = "";
+    },
+    onError: (error: Error) => {
+      toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteSeason = useMutation({
+    mutationFn: async (season: number) => {
+      const res = await apiRequest("DELETE", `/api/admin/prospect-rankings/${season}`);
+      return res.json();
+    },
+    onSuccess: (data: any, season: number) => {
+      toast({ title: "Season Deleted", description: `Removed ${data.deleted} prospect rankings for season ${season}.` });
+      queryClient.invalidateQueries({ queryKey: ["/api/premium/prospect-rankings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/premium/prospect-rankings/seasons"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <Card data-testid="card-prospect-rankings">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Star className="h-5 w-5" />
+          Prospect Rankings
+        </CardTitle>
+        <CardDescription>
+          Upload prospect rankings by season. CSV columns: <code>mlb_id, rank, fv, eta</code>
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-4">
+          <h3 className="text-sm font-semibold">Upload Rankings</h3>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Input
+              type="number"
+              value={uploadSeason}
+              onChange={(e) => setUploadSeason(e.target.value)}
+              className="w-[100px]"
+              placeholder="Season"
+              data-testid="input-prospect-season"
+            />
+            <Input
+              id="prospect-csv-input"
+              type="file"
+              accept=".csv"
+              onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
+              className="flex-1"
+              data-testid="input-prospect-csv"
+            />
+            <Button
+              onClick={() => uploadRankings.mutate()}
+              disabled={!csvFile || uploadRankings.isPending}
+              data-testid="button-upload-prospects"
+            >
+              {uploadRankings.isPending ? "Uploading..." : "Upload"}
+            </Button>
+          </div>
+        </div>
+
+        {seasons && seasons.length > 0 && (
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold">Uploaded Seasons</h3>
+            <div className="flex flex-wrap gap-2">
+              {seasons.map(s => (
+                <Badge key={s} variant="secondary" className="gap-1">
+                  {s}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-4 w-4 ml-1 hover:text-destructive"
+                    onClick={() => {
+                      if (confirm(`Delete all prospect rankings for season ${s}?`)) {
+                        deleteSeason.mutate(s);
+                      }
+                    }}
+                    data-testid={`button-delete-prospect-season-${s}`}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function SuperAdmin() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const { toast } = useToast();
@@ -1411,6 +1530,8 @@ export default function SuperAdmin() {
       </Card>
 
       <PremiumStatsManagement />
+
+      <ProspectRankingsManagement />
 
       {allLeagues && allLeagues.length > 0 && (
         <Card data-testid="card-roster-data-transfer">

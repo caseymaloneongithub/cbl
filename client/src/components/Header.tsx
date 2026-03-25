@@ -153,6 +153,7 @@ export function Header() {
   const premiumItems = [
     { href: "/premium/stats", label: "Player Stats" },
     { href: "/premium/war-rankings", label: "WAR Rankings" },
+    { href: "/premium/prospects", label: "Prospect Rankings" },
   ];
 
   const playersItems = [

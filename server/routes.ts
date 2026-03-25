@@ -11956,6 +11956,141 @@ export async function registerRoutes(
     }
   });
 
+  // Prospect Rankings routes
+  app.get("/api/premium/prospect-rankings", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      if (!user?.isSuperAdmin && !user?.hasPremiumAccess) {
+        return res.status(403).json({ message: "Premium access required" });
+      }
+      const season = parseInt(req.query.season as string);
+      if (!season) return res.status(400).json({ message: "Season required" });
+      const rankings = await storage.getProspectRankings(season);
+
+      const leagueId = req.query.leagueId ? parseInt(req.query.leagueId as string) : null;
+      if (leagueId) {
+        const currentYear = new Date().getFullYear();
+        const assignments = await storage.getLeagueRosterAssignments(leagueId, currentYear);
+        const members = await storage.getLeagueMembers(leagueId);
+        const memberMap = new Map(members.map(m => [m.userId, m]));
+        const playerTeamMap = new Map<number, { teamName: string; teamAbbreviation: string | null }>();
+        for (const a of assignments) {
+          const member = memberMap.get(a.userId);
+          if (member) {
+            playerTeamMap.set(a.mlbPlayerId, {
+              teamName: member.teamName || 'Unknown',
+              teamAbbreviation: member.teamAbbreviation || null,
+            });
+          }
+        }
+        const enriched = rankings.map(r => ({
+          ...r,
+          cblTeam: playerTeamMap.get(r.mlbPlayerId)?.teamName || null,
+          cblTeamAbbreviation: playerTeamMap.get(r.mlbPlayerId)?.teamAbbreviation || null,
+        }));
+        return res.json(enriched);
+      }
+
+      res.json(rankings);
+    } catch (error: any) {
+      console.error("Error fetching prospect rankings:", error);
+      res.status(500).json({ message: "Failed to fetch prospect rankings" });
+    }
+  });
+
+  app.get("/api/premium/prospect-rankings/seasons", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      if (!user?.isSuperAdmin && !user?.hasPremiumAccess) {
+        return res.status(403).json({ message: "Premium access required" });
+      }
+      const seasons = await storage.getProspectRankingsSeasons();
+      res.json(seasons);
+    } catch (error: any) {
+      console.error("Error fetching prospect ranking seasons:", error);
+      res.status(500).json({ message: "Failed to fetch prospect ranking seasons" });
+    }
+  });
+
+  app.post("/api/admin/prospect-rankings/upload", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      if (!user?.isSuperAdmin) return res.status(403).json({ message: "Super admin only" });
+
+      const { season, csvData } = req.body;
+      if (!season || !csvData) {
+        return res.status(400).json({ message: "Season and csvData required" });
+      }
+
+      const lines = (csvData as string).split("\n").map(l => l.trim()).filter(Boolean);
+      if (lines.length < 2) return res.status(400).json({ message: "CSV must have header + data rows" });
+
+      const headerLine = lines[0].toLowerCase().replace(/[^a-z0-9,_]/g, "");
+      const headers = headerLine.split(",");
+
+      const mlbIdIdx = headers.findIndex(h => h === "mlb_id" || h === "mlbid" || h === "mlb_player_id");
+      if (mlbIdIdx === -1) return res.status(400).json({ message: "CSV must have mlb_id column" });
+      const rankIdx = headers.findIndex(h => h === "rank" || h === "ranking");
+      if (rankIdx === -1) return res.status(400).json({ message: "CSV must have rank column" });
+      const fvIdx = headers.findIndex(h => h === "fv" || h === "future_value" || h === "futurevalue");
+      const etaIdx = headers.findIndex(h => h === "eta");
+
+      const allPlayers = await db.select({ id: mlbPlayers.id, mlbId: mlbPlayers.mlbId }).from(mlbPlayers);
+      const mlbIdToInternal = new Map<number, number>();
+      for (const p of allPlayers) mlbIdToInternal.set(p.mlbId, p.id);
+
+      const rankings: any[] = [];
+      const errors: string[] = [];
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(",").map(c => c.trim());
+        const mlbId = parseInt(cols[mlbIdIdx]);
+        if (!mlbId) { errors.push(`Row ${i + 1}: invalid MLB ID`); continue; }
+        const internalId = mlbIdToInternal.get(mlbId);
+        if (!internalId) { errors.push(`Row ${i + 1}: MLB ID ${mlbId} not found`); continue; }
+        const rank = parseInt(cols[rankIdx]);
+        if (!rank) { errors.push(`Row ${i + 1}: invalid rank`); continue; }
+
+        const ranking: any = {
+          mlbPlayerId: internalId,
+          season: parseInt(season),
+          rank,
+        };
+        if (fvIdx !== -1 && cols[fvIdx]) {
+          const fv = parseInt(cols[fvIdx]);
+          if (!isNaN(fv)) ranking.futureValue = fv;
+        }
+        if (etaIdx !== -1 && cols[etaIdx]) {
+          ranking.eta = cols[etaIdx];
+        }
+        rankings.push(ranking);
+      }
+
+      const count = await storage.upsertProspectRankings(rankings);
+      res.json({ success: true, uploaded: count, errors: errors.slice(0, 20) });
+    } catch (error: any) {
+      console.error("Error uploading prospect rankings:", error);
+      res.status(500).json({ message: "Failed to upload prospect rankings" });
+    }
+  });
+
+  app.delete("/api/admin/prospect-rankings/:season", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.originalUserId || req.session.userId!;
+      const user = await storage.getUser(userId);
+      if (!user?.isSuperAdmin) return res.status(403).json({ message: "Super admin only" });
+
+      const season = parseInt(req.params.season);
+      const count = await storage.deleteProspectRankingsBySeason(season);
+      res.json({ success: true, deleted: count });
+    } catch (error: any) {
+      console.error("Error deleting prospect rankings:", error);
+      res.status(500).json({ message: "Failed to delete prospect rankings" });
+    }
+  });
+
   app.patch("/api/admin/users/:userId/premium-access", isAuthenticated, async (req: any, res) => {
     try {
       const currentUserId = req.session.originalUserId || req.session.userId!;

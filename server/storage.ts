@@ -86,6 +86,9 @@ import {
   advancedPlayerStats,
   type AdvancedPlayerStat,
   type InsertAdvancedPlayerStat,
+  prospectRankings,
+  type ProspectRanking,
+  type InsertProspectRanking,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, lt, sql, isNull, inArray, or } from "drizzle-orm";
@@ -374,6 +377,12 @@ export interface IStorage {
   upsertAdvancedPlayerStats(stats: InsertAdvancedPlayerStat[]): Promise<number>;
   getAdvancedStatsSeasons(): Promise<number[]>;
   deleteAdvancedStatsBySeason(season: number): Promise<number>;
+
+  // Prospect rankings operations
+  getProspectRankings(season: number): Promise<(ProspectRanking & { player: MlbPlayer })[]>;
+  upsertProspectRankings(rankings: InsertProspectRanking[]): Promise<number>;
+  getProspectRankingsSeasons(): Promise<number[]>;
+  deleteProspectRankingsBySeason(season: number): Promise<number>;
 
   // Premium access operations
   togglePremiumAccess(userId: string, hasAccess: boolean): Promise<void>;
@@ -4587,6 +4596,51 @@ export class DatabaseStorage implements IStorage {
     const result = await db
       .delete(advancedPlayerStats)
       .where(eq(advancedPlayerStats.season, season));
+    return result.rowCount ?? 0;
+  }
+
+  async getProspectRankings(season: number): Promise<(ProspectRanking & { player: MlbPlayer })[]> {
+    const rows = await db
+      .select({
+        ranking: prospectRankings,
+        player: mlbPlayers,
+      })
+      .from(prospectRankings)
+      .innerJoin(mlbPlayers, eq(prospectRankings.mlbPlayerId, mlbPlayers.id))
+      .where(eq(prospectRankings.season, season))
+      .orderBy(prospectRankings.rank);
+    return rows.map(r => ({ ...r.ranking, player: r.player }));
+  }
+
+  async upsertProspectRankings(rankings: InsertProspectRanking[]): Promise<number> {
+    if (rankings.length === 0) return 0;
+    let count = 0;
+    for (const r of rankings) {
+      await db.insert(prospectRankings).values(r).onConflictDoUpdate({
+        target: [prospectRankings.mlbPlayerId, prospectRankings.season],
+        set: {
+          rank: r.rank,
+          futureValue: r.futureValue,
+          eta: r.eta,
+        },
+      });
+      count++;
+    }
+    return count;
+  }
+
+  async getProspectRankingsSeasons(): Promise<number[]> {
+    const rows = await db
+      .selectDistinct({ season: prospectRankings.season })
+      .from(prospectRankings)
+      .orderBy(desc(prospectRankings.season));
+    return rows.map(r => r.season);
+  }
+
+  async deleteProspectRankingsBySeason(season: number): Promise<number> {
+    const result = await db
+      .delete(prospectRankings)
+      .where(eq(prospectRankings.season, season));
     return result.rowCount ?? 0;
   }
 
