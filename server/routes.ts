@@ -12025,14 +12025,33 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Season and csvData required" });
       }
 
-      const lines = (csvData as string).split("\n").map(l => l.trim()).filter(Boolean);
+      const lines = (csvData as string).replace(/^\uFEFF/, "").split("\n").map(l => l.trim()).filter(Boolean);
       if (lines.length < 2) return res.status(400).json({ message: "CSV must have header + data rows" });
 
-      const headerLine = lines[0].toLowerCase().replace(/[^a-z0-9,_]/g, "");
-      const headers = headerLine.split(",");
+      function parseCsvRow(line: string): string[] {
+        const result: string[] = [];
+        let current = "";
+        let inQuotes = false;
+        for (let c = 0; c < line.length; c++) {
+          const ch = line[c];
+          if (inQuotes) {
+            if (ch === '"' && line[c + 1] === '"') { current += '"'; c++; }
+            else if (ch === '"') { inQuotes = false; }
+            else { current += ch; }
+          } else {
+            if (ch === '"') { inQuotes = true; }
+            else if (ch === ',') { result.push(current.trim()); current = ""; }
+            else { current += ch; }
+          }
+        }
+        result.push(current.trim());
+        return result;
+      }
 
-      const mlbIdIdx = headers.findIndex(h => h === "mlb_id" || h === "mlbid" || h === "mlb_player_id");
-      if (mlbIdIdx === -1) return res.status(400).json({ message: "CSV must have mlb_id column" });
+      const headers = parseCsvRow(lines[0]).map(h => h.toLowerCase().replace(/[^a-z0-9_]/g, ""));
+
+      const mlbIdIdx = headers.findIndex(h => h === "mlb_id" || h === "mlbid" || h === "mlb_player_id" || h === "mlbid");
+      if (mlbIdIdx === -1) return res.status(400).json({ message: "CSV must have mlb_id column (found: " + headers.join(", ") + ")" });
       const rankIdx = headers.findIndex(h => h === "rank" || h === "ranking");
       if (rankIdx === -1) return res.status(400).json({ message: "CSV must have rank column" });
       const fvIdx = headers.findIndex(h => h === "fv" || h === "future_value" || h === "futurevalue");
@@ -12045,7 +12064,7 @@ export async function registerRoutes(
       const rankings: any[] = [];
       const errors: string[] = [];
       for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(",").map(c => c.trim());
+        const cols = parseCsvRow(lines[i]);
         const rawMlbId = cols[mlbIdIdx];
         if (!rawMlbId || rawMlbId === "") continue;
         const mlbId = parseInt(rawMlbId);
