@@ -12056,6 +12056,7 @@ export async function registerRoutes(
       if (rankIdx === -1) return res.status(400).json({ message: "CSV must have rank column" });
       const fvIdx = headers.findIndex(h => h === "fv" || h === "future_value" || h === "futurevalue");
       const etaIdx = headers.findIndex(h => h === "eta");
+      const teamIdx = headers.findIndex(h => h === "team");
 
       const allPlayers = await db.select({ id: mlbPlayers.id, mlbId: mlbPlayers.mlbId }).from(mlbPlayers);
       const mlbIdToInternal = new Map<number, number>();
@@ -12085,6 +12086,9 @@ export async function registerRoutes(
         }
         if (etaIdx !== -1 && cols[etaIdx]) {
           ranking.eta = cols[etaIdx];
+        }
+        if (teamIdx !== -1 && cols[teamIdx]) {
+          ranking.team = cols[teamIdx];
         }
         rankings.push(ranking);
       }

@@ -1,0 +1,1 @@
+ALTER TABLE prospect_rankings ADD COLUMN IF NOT EXISTS team TEXT;

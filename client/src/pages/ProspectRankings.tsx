@@ -23,6 +23,7 @@ interface ProspectRankingEntry {
   rank: number;
   futureValue: number | null;
   eta: string | null;
+  team: string | null;
   player?: {
     id: number;
     fullName: string;
@@ -112,7 +113,7 @@ export default function ProspectRankings() {
     if (!search) return true;
     const q = search.toLowerCase();
     return r.player?.fullName?.toLowerCase().includes(q) ||
-      r.player?.currentTeamName?.toLowerCase().includes(q) ||
+      r.team?.toLowerCase().includes(q) ||
       r.cblTeam?.toLowerCase().includes(q);
   };
 
@@ -145,7 +146,7 @@ export default function ProspectRankings() {
           case "rank": return numCompare(a.rank, b.rank, dir);
           case "name": return strCompare(a.player?.fullName, b.player?.fullName, dir);
           case "pos": return strCompare(a.player?.primaryPosition, b.player?.primaryPosition, dir);
-          case "team": return strCompare(a.player?.currentTeamName, b.player?.currentTeamName, dir);
+          case "team": return strCompare(a.team, b.team, dir);
           case "cbl": return strCompare(a.cblTeam, b.cblTeam, dir);
           case "fv": return numCompare(a.futureValue, b.futureValue, dir);
           case "eta": return strCompare(a.eta, b.eta, dir);
@@ -254,7 +255,7 @@ export default function ProspectRankings() {
                     <TableCell className="text-right font-mono font-semibold">{r.rank}</TableCell>
                     <TableCell className="font-medium">{r.player?.fullName ?? `Player #${r.mlbPlayerId}`}</TableCell>
                     <TableCell className="text-center text-muted-foreground text-xs">{r.player?.primaryPosition ?? "—"}</TableCell>
-                    <TableCell className="text-center text-muted-foreground text-xs">{mlbAbbr(r.player?.currentTeamName)}</TableCell>
+                    <TableCell className="text-center text-muted-foreground text-xs">{mlbAbbr(r.team || r.player?.currentTeamName)}</TableCell>
                     {leagueId && (
                       <TableCell className="text-xs">
                         {r.cblTeamAbbreviation ? (

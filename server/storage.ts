@@ -4622,6 +4622,7 @@ export class DatabaseStorage implements IStorage {
           rank: r.rank,
           futureValue: r.futureValue,
           eta: r.eta,
+          team: r.team,
         },
       });
       count++;

@@ -1090,6 +1090,7 @@ export const prospectRankings = pgTable("prospect_rankings", {
   rank: integer("rank").notNull(),
   futureValue: integer("future_value"),
   eta: text("eta"),
+  team: text("team"),
 }, (table) => [
   uniqueIndex("idx_prospect_rankings_unique").on(table.mlbPlayerId, table.season),
   index("idx_prospect_rankings_season").on(table.season),
