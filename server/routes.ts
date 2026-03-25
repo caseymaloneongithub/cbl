@@ -12093,6 +12093,7 @@ export async function registerRoutes(
         rankings.push(ranking);
       }
 
+      await storage.deleteProspectRankingsBySeason(parseInt(season));
       const count = await storage.upsertProspectRankings(rankings);
       res.json({ success: true, uploaded: count, errors: errors.slice(0, 20) });
     } catch (error: any) {
