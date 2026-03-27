@@ -144,6 +144,7 @@ export async function setupAuth(app: Express) {
         teamName: user.teamName,
         isCommissioner: user.isCommissioner,
         isSuperAdmin: user.isSuperAdmin,
+        hasPremiumAccess: user.hasPremiumAccess,
         mustResetPassword: user.mustResetPassword,
         isImpersonating,
         originalUser: originalUser ? {
