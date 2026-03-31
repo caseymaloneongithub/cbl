@@ -503,7 +503,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
                         return (
                           <TableRow key={`h-${p.id}`} className={`odd:bg-muted/20 ${(currentLeague as any)?.showInnocuous && p.stats?.innocuous ? "bg-green-50 dark:bg-green-950/30 odd:bg-green-50 dark:odd:bg-green-950/30" : ""}`}>
                             <TableCell><NameWithHover p={p} /></TableCell>
-                            <TableCell className="font-mono text-[11px]">{p.primaryPosition || "-"}</TableCell>
+                            <TableCell className="font-mono text-[11px]">{p.stats?.positions || p.primaryPosition || "-"}</TableCell>
                             <TableCell>{teamAbbrForPlayer(p)}</TableCell>
                             {showMilbLevel && <TableCell>{formatLevelWithYear(p.sportLevel, p.lastPlayedSeason, p.lastPlayedLevel)}</TableCell>}
                             <TableCell className="text-right font-mono">{p.stats?.hadHittingStats ? (p.stats.hittingAtBats ?? 0) : ""}</TableCell>
@@ -584,7 +584,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
                         return (
                           <TableRow key={`p-${p.id}`} className={`odd:bg-muted/20 ${(currentLeague as any)?.showInnocuous && p.stats?.innocuous ? "bg-green-50 dark:bg-green-950/30 odd:bg-green-50 dark:odd:bg-green-950/30" : ""}`}>
                             <TableCell><NameWithHover p={p} /></TableCell>
-                            <TableCell className="font-mono text-[11px]">{p.primaryPosition || "-"}</TableCell>
+                            <TableCell className="font-mono text-[11px]">{p.stats?.positions || p.primaryPosition || "-"}</TableCell>
                             <TableCell>{teamAbbrForPlayer(p)}</TableCell>
                             {showMilbLevel && <TableCell>{formatLevelWithYear(p.sportLevel, p.lastPlayedSeason, p.lastPlayedLevel)}</TableCell>}
                             <TableCell className="text-right font-mono">{p.stats?.hadPitchingStats ? (p.stats.pitchingGames ?? 0) : ""}</TableCell>

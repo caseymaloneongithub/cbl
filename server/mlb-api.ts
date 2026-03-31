@@ -398,6 +398,7 @@ export interface AffiliatedPlayerRecord {
   hittingGamesStarted: number;
   hittingPlateAppearances: number;
   isTwoWayQualified: boolean;
+  positions: string | null;
   statsSeason: number;
   season: number;
 }
@@ -576,19 +577,52 @@ export async function fetchAllAffiliatedPlayers(
 
   const playerMap = new Map<number, AffiliatedPlayerRecord>();
 
+  const POSITION_ORDER = ["C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", "OF", "P", "SP", "RP", "LHP", "RHP"];
+  function sortPositions(positions: string[]): string {
+    const unique = [...new Set(positions)];
+    unique.sort((a, b) => {
+      const ai = POSITION_ORDER.indexOf(a);
+      const bi = POSITION_ORDER.indexOf(b);
+      if (ai === -1 && bi === -1) return a.localeCompare(b);
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
+    return unique.join("/");
+  }
+
   // 1) Primary source: season stats — determines who played and at what level.
   //    Stats for completed seasons are final and deterministic.
   for (const sportId of sportIds) {
     const levelName = SPORT_LEVELS[sportId] || `Sport${sportId}`;
-    const [hittingResult, pitchingResult] = await Promise.all([
+    const fetchPromises: [Promise<any>, Promise<any>, Promise<any> | null] = [
       fetchStatsForLevel(sportId, "hitting", season),
       fetchStatsForLevel(sportId, "pitching", season),
-    ]);
+      sportId === 1 ? fetchStatsForLevel(sportId, "fielding", season) : Promise.resolve(null),
+    ];
+    const [hittingResult, pitchingResult, fieldingResult] = await Promise.all(fetchPromises);
     const hittingSplits = hittingResult.splits;
     const pitchingSplits = pitchingResult.splits;
-    console.log(
-      `[MLB Sync] ${levelName} stats pages: hitting=${hittingResult.pages} (${hittingSplits.length}/${hittingResult.totalSplits}), pitching=${pitchingResult.pages} (${pitchingSplits.length}/${pitchingResult.totalSplits})`,
-    );
+
+    const fieldingPositionsByPlayer = new Map<number, string[]>();
+    if (fieldingResult) {
+      const fieldingSplits = fieldingResult.splits;
+      for (const split of fieldingSplits) {
+        const playerId = split.player?.id;
+        const pos = split.position?.abbreviation;
+        if (!playerId || !pos || pos === "DH") continue;
+        const existing = fieldingPositionsByPlayer.get(playerId) || [];
+        if (!existing.includes(pos)) existing.push(pos);
+        fieldingPositionsByPlayer.set(playerId, existing);
+      }
+      console.log(
+        `[MLB Sync] ${levelName} stats pages: hitting=${hittingResult.pages} (${hittingSplits.length}/${hittingResult.totalSplits}), pitching=${pitchingResult.pages} (${pitchingSplits.length}/${pitchingResult.totalSplits}), fielding=${fieldingResult.pages} (${fieldingSplits.length}/${fieldingResult.totalSplits})`,
+      );
+    } else {
+      console.log(
+        `[MLB Sync] ${levelName} stats pages: hitting=${hittingResult.pages} (${hittingSplits.length}/${hittingResult.totalSplits}), pitching=${pitchingResult.pages} (${pitchingSplits.length}/${pitchingResult.totalSplits})`,
+      );
+    }
     const hitterIds = new Set(hittingSplits.map((s) => s.player.id));
     const pitcherIds = new Set(pitchingSplits.map((s) => s.player.id));
     const hittingGamesStartedByPlayer = new Map<number, number>();
@@ -739,6 +773,7 @@ export async function fetchAllAffiliatedPlayers(
           existing.hittingGamesStarted = 0;
           existing.hittingPlateAppearances = 0;
           existing.isTwoWayQualified = false;
+          existing.positions = null;
         }
 
         const prevPitchingInnings = existing.pitchingInningsPitched || 0;
@@ -779,6 +814,12 @@ export async function fetchAllAffiliatedPlayers(
           ? (((prevPitchingEarnedRuns + playerPitchingEarnedRuns) * 9) / existing.pitchingInningsPitched)
           : null;
         existing.isTwoWayQualified = qualifiesTwoWay(existing.pitchingInningsPitched, existing.hittingPlateAppearances);
+        if (fieldingPositionsByPlayer.has(playerId)) {
+          const newPositions = fieldingPositionsByPlayer.get(playerId)!;
+          const existingPositions = existing.positions ? existing.positions.split("/") : [];
+          const merged = [...new Set([...existingPositions, ...newPositions])];
+          existing.positions = sortPositions(merged);
+        }
         continue;
       }
 
@@ -827,6 +868,7 @@ export async function fetchAllAffiliatedPlayers(
         hittingGamesStarted: playerHittingGamesStarted,
         hittingPlateAppearances: playerHittingPlateAppearances,
         isTwoWayQualified: qualifiesTwoWay(playerPitchingInnings, playerHittingPlateAppearances),
+        positions: fieldingPositionsByPlayer.has(playerId) ? sortPositions(fieldingPositionsByPlayer.get(playerId)!) : null,
         statsSeason: season,
         season,
       });

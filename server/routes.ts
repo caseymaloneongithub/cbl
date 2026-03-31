@@ -1035,7 +1035,7 @@ export async function registerRoutes(
       pitchingHits: p.pitchingHits, pitchingHomeRuns: p.pitchingHomeRuns,
       pitchingEra: p.pitchingEra, pitchingInningsPitched: p.pitchingInningsPitched,
       hittingGamesStarted: p.hittingGamesStarted, hittingPlateAppearances: p.hittingPlateAppearances,
-      isTwoWayQualified: p.isTwoWayQualified, season: p.season,
+      isTwoWayQualified: p.isTwoWayQualified, positions: p.positions, season: p.season,
     }));
   }
 

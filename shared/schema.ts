@@ -835,6 +835,7 @@ export const mlbPlayerStats = pgTable("mlb_player_stats", {
   hittingGamesStarted: integer("hitting_games_started").default(0),
   hittingPlateAppearances: integer("hitting_plate_appearances").default(0),
   isTwoWayQualified: boolean("is_two_way_qualified").default(false),
+  positions: text("positions"),
 }, (table) => [
   index("idx_mlb_player_stats_player_season").on(table.mlbPlayerId, table.season),
   uniqueIndex("idx_mlb_player_stats_unique").on(table.mlbPlayerId, table.season),

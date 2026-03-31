@@ -432,7 +432,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                       {hitters.map((a) => (
                         <TableRow key={`h-${a.id}`} className={`odd:bg-muted/20 ${(currentLeague as any)?.showInnocuous && a.stats?.innocuous ? "bg-green-50 dark:bg-green-950/30 odd:bg-green-50 dark:odd:bg-green-950/30" : ""}`}>
                           <TableCell><NameWithHover a={a} /></TableCell>
-                          <TableCell className="font-mono text-[11px]">{a.player.primaryPosition || "-"}</TableCell>
+                          <TableCell className="font-mono text-[11px]">{a.stats?.positions || a.player.primaryPosition || "-"}</TableCell>
                           <TableCell>{teamAbbrForPlayer(a.player)}</TableCell>
                           {showMilbLevel && <TableCell>{formatLevelWithYear(a.player.sportLevel, (a.player as any).lastActiveSeason, (a.player as any).lastActiveLevel)}</TableCell>}
                           <TableCell className="text-[11px]">{formatAcquired(a.acquired)}</TableCell>
@@ -519,7 +519,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
                       {pitchers.map((a) => (
                         <TableRow key={`p-${a.id}`} className={`odd:bg-muted/20 ${(currentLeague as any)?.showInnocuous && a.stats?.innocuous ? "bg-green-50 dark:bg-green-950/30 odd:bg-green-50 dark:odd:bg-green-950/30" : ""}`}>
                           <TableCell><NameWithHover a={a} /></TableCell>
-                          <TableCell className="font-mono text-[11px]">{a.player.primaryPosition || "-"}</TableCell>
+                          <TableCell className="font-mono text-[11px]">{a.stats?.positions || a.player.primaryPosition || "-"}</TableCell>
                           <TableCell>{teamAbbrForPlayer(a.player)}</TableCell>
                           {showMilbLevel && <TableCell>{formatLevelWithYear(a.player.sportLevel, (a.player as any).lastActiveSeason, (a.player as any).lastActiveLevel)}</TableCell>}
                           <TableCell className="text-[11px]">{formatAcquired(a.acquired)}</TableCell>

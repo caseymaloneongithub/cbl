@@ -3239,6 +3239,7 @@ export class DatabaseStorage implements IStorage {
             hittingGamesStarted: sql`EXCLUDED.hitting_games_started`,
             hittingPlateAppearances: sql`EXCLUDED.hitting_plate_appearances`,
             isTwoWayQualified: sql`EXCLUDED.is_two_way_qualified`,
+            positions: sql`EXCLUDED.positions`,
           },
         });
       totalUpserted += batch.length;
@@ -3300,6 +3301,7 @@ export class DatabaseStorage implements IStorage {
         hittingGamesStarted: p.hittingGamesStarted ?? 0,
         hittingPlateAppearances: p.hittingPlateAppearances ?? 0,
         isTwoWayQualified: p.isTwoWayQualified ?? false,
+        positions: (p as any).positions ?? null,
       });
     }
 
