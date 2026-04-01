@@ -818,7 +818,8 @@ export async function fetchAllAffiliatedPlayers(
           const newPositions = fieldingPositionsByPlayer.get(playerId)!;
           const existingPositions = existing.positions ? existing.positions.split("/") : [];
           const merged = [...new Set([...existingPositions, ...newPositions])];
-          existing.positions = sortPositions(merged);
+          const filtered = existing.isTwoWayQualified ? merged : merged.filter(p => p !== "P");
+          existing.positions = filtered.length > 0 ? sortPositions(filtered) : null;
         }
         continue;
       }
@@ -868,7 +869,13 @@ export async function fetchAllAffiliatedPlayers(
         hittingGamesStarted: playerHittingGamesStarted,
         hittingPlateAppearances: playerHittingPlateAppearances,
         isTwoWayQualified: qualifiesTwoWay(playerPitchingInnings, playerHittingPlateAppearances),
-        positions: fieldingPositionsByPlayer.has(playerId) ? sortPositions(fieldingPositionsByPlayer.get(playerId)!) : null,
+        positions: fieldingPositionsByPlayer.has(playerId)
+          ? sortPositions(
+              qualifiesTwoWay(playerPitchingInnings, playerHittingPlateAppearances)
+                ? fieldingPositionsByPlayer.get(playerId)!
+                : fieldingPositionsByPlayer.get(playerId)!.filter(p => p !== "P")
+            ) || null
+          : null,
         statsSeason: season,
         season,
       });
