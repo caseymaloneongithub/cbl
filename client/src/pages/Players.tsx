@@ -104,6 +104,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
   const [hitterSort, setHitterSort] = useState<{ key: HitterSortKey; dir: SortDir }>({ key: "name", dir: "asc" });
   const [pitcherSort, setPitcherSort] = useState<{ key: PitcherSortKey; dir: SortDir }>({ key: "name", dir: "asc" });
   const [seasonOverride, setSeasonOverride] = useState<number | null>(null);
+  const [posFilter, setPosFilter] = useState("all");
 
   const { data: availableSeasons } = useQuery<number[]>({
     queryKey: ["/api/mlb-players/seasons"],
@@ -238,11 +239,17 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
   }, [membersData]);
 
   const filteredPlayers = useMemo(() => {
-    const all = playersData?.players || [];
-    if (leagueTeamFilter === "all") return all;
-    if (leagueTeamFilter === "unassigned") return all.filter((p) => !rosterMap[p.id]);
-    return all.filter((p) => rosterMap[p.id] === leagueTeamFilter);
-  }, [playersData?.players, leagueTeamFilter, rosterMap]);
+    let all = playersData?.players || [];
+    if (leagueTeamFilter === "unassigned") all = all.filter((p) => !rosterMap[p.id]);
+    else if (leagueTeamFilter !== "all") all = all.filter((p) => rosterMap[p.id] === leagueTeamFilter);
+    if (posFilter !== "all" && level === "mlb") {
+      all = all.filter((p) => {
+        const positions = (p as any).stats?.positions || p.primaryPosition || "";
+        return positions.split("/").some((pos: string) => pos === posFilter);
+      });
+    }
+    return all;
+  }, [playersData?.players, leagueTeamFilter, rosterMap, posFilter, level]);
 
   const downloadCsv = useCallback(() => {
     if (!filteredPlayers.length) return;
@@ -386,7 +393,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
   useEffect(() => {
     setHitterPage(0);
     setPitcherPage(0);
-  }, [pageSize, debouncedSearch, mlbTeamFilter, leagueTeamFilter]);
+  }, [pageSize, debouncedSearch, mlbTeamFilter, leagueTeamFilter, posFilter]);
 
   const toggleHitterSort = (key: HitterSortKey) => {
     setHitterSort((prev) => ({ key, dir: prev.key === key && prev.dir === "asc" ? "desc" : "asc" }));
@@ -426,6 +433,26 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
                 </SelectContent>
               </Select>
             </div>
+            {level === "mlb" && (
+              <div className="w-36">
+                <Select value={posFilter} onValueChange={setPosFilter}>
+                  <SelectTrigger data-testid="select-pos-filter"><SelectValue placeholder="Position" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Positions</SelectItem>
+                    <SelectItem value="C">C</SelectItem>
+                    <SelectItem value="1B">1B</SelectItem>
+                    <SelectItem value="2B">2B</SelectItem>
+                    <SelectItem value="3B">3B</SelectItem>
+                    <SelectItem value="SS">SS</SelectItem>
+                    <SelectItem value="LF">LF</SelectItem>
+                    <SelectItem value="CF">CF</SelectItem>
+                    <SelectItem value="RF">RF</SelectItem>
+                    <SelectItem value="OF">OF</SelectItem>
+                    <SelectItem value="P">P</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             {selectedLeagueId && (
               <div className="w-56">
                 <Select value={leagueTeamFilter} onValueChange={(v) => setLeagueTeamFilter(v)}>

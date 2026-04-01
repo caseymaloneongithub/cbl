@@ -147,6 +147,7 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
   const [pSort, setPSort] = useState<{ key: PitcherSortKey; dir: SortDir }>({ key: "name", dir: "asc" });
   const [cutPlayer, setCutPlayer] = useState<RosterAssignment | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string>("");
+  const [posFilter, setPosFilter] = useState("all");
 
   const viewingUserId = selectedUserId || user?.id || "";
   const isOwnRoster = viewingUserId === user?.id;
@@ -198,8 +199,14 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
         stripAccents(a.player.fullName.toLowerCase()).includes(s)
       );
     }
+    if (posFilter !== "all" && level === "mlb") {
+      result = result.filter((a) => {
+        const positions = a.stats?.positions || a.player.primaryPosition || "";
+        return positions.split("/").some((p: string) => p === posFilter);
+      });
+    }
     return result;
-  }, [data?.assignments, search]);
+  }, [data?.assignments, search, posFilter, level]);
 
   const hittersBase = useMemo(
     () => filtered.filter((a) => {
@@ -385,9 +392,29 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
           <CardTitle className="text-sm font-medium"><ClipboardList className="h-4 w-4 inline mr-1" />{title}</CardTitle>
-          <div className="relative w-64">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search players..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8" data-testid="input-roster-search" />
+          <div className="flex items-center gap-2">
+            {level === "mlb" && (
+              <Select value={posFilter} onValueChange={setPosFilter}>
+                <SelectTrigger className="w-[130px]" data-testid="select-pos-filter"><SelectValue placeholder="Position" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Positions</SelectItem>
+                  <SelectItem value="C">C</SelectItem>
+                  <SelectItem value="1B">1B</SelectItem>
+                  <SelectItem value="2B">2B</SelectItem>
+                  <SelectItem value="3B">3B</SelectItem>
+                  <SelectItem value="SS">SS</SelectItem>
+                  <SelectItem value="LF">LF</SelectItem>
+                  <SelectItem value="CF">CF</SelectItem>
+                  <SelectItem value="RF">RF</SelectItem>
+                  <SelectItem value="OF">OF</SelectItem>
+                  <SelectItem value="P">P</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            <div className="relative w-64">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input placeholder="Search players..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8" data-testid="input-roster-search" />
+            </div>
           </div>
         </CardHeader>
         <CardContent>
