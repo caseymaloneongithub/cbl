@@ -1,6 +1,6 @@
 import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
@@ -36,37 +36,9 @@ import TransactionsPage from "@/pages/Transactions";
 import AdvancedStats from "@/pages/AdvancedStats";
 import WarRankings from "@/pages/WarRankings";
 import ProspectRankings from "@/pages/ProspectRankings";
-import type { DraftWithDetails } from "@shared/schema";
 
 function AuthenticatedHome() {
-  const { selectedLeagueId } = useLeague();
-  const { data: drafts, isLoading } = useQuery<DraftWithDetails[]>({
-    queryKey: ["/api/drafts", { leagueId: selectedLeagueId }],
-    queryFn: async () => {
-      const res = await fetch(`/api/drafts?leagueId=${selectedLeagueId}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch drafts");
-      return res.json();
-    },
-    enabled: !!selectedLeagueId,
-    staleTime: 5_000,
-  });
-
-  const draftsArray = Array.isArray(drafts) ? drafts : [];
-  const activeDraft = draftsArray.find(d => d.status === "active" || d.status === "paused");
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
-      </div>
-    );
-  }
-
-  if (activeDraft) {
-    return <Redirect to={`/draft/${activeDraft.id}`} />;
-  }
-
-  return <Redirect to="/drafts" />;
+  return <Redirect to="/rosters/mlb" />;
 }
 
 function CommissionerRoute({ component: Component }: { component: React.ComponentType<any> }) {
