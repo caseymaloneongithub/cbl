@@ -57,6 +57,7 @@ interface AdvancedStat {
   pa?: number | null;
   gs?: number | null;
   ip?: number | null;
+  positions?: string | null;
   cblTeam?: string | null;
   cblTeamAbbreviation?: string | null;
   cblRosterType?: string | null;
@@ -125,6 +126,7 @@ export default function AdvancedStats() {
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<"hitters" | "pitchers">("hitters");
   const [cblTeamFilter, setCblTeamFilter] = useState<string>("");
+  const [posFilter, setPosFilter] = useState<string>("");
   const [defaultApplied, setDefaultApplied] = useState(false);
   const [hSort, setHSort] = useState<{ key: HitterSortKey; dir: SortDir }>({ key: "war", dir: "desc" });
   const [pSort, setPSort] = useState<{ key: PitcherSortKey; dir: SortDir }>({ key: "war", dir: "desc" });
@@ -186,6 +188,12 @@ export default function AdvancedStats() {
     return s.cblTeam === cblTeamFilter;
   };
 
+  const matchesPos = (s: AdvancedStat) => {
+    if (!posFilter || posFilter === "__all__") return true;
+    const positions = s.positions || s.player?.primaryPosition || "";
+    return positions.split("/").some(p => p === posFilter);
+  };
+
   function sortHitters(a: AdvancedStat, b: AdvancedStat): number {
     const { key, dir } = hSort;
     switch (key) {
@@ -243,8 +251,9 @@ export default function AdvancedStats() {
       .filter(s => s.hittingWar != null || s.hittingWrcPlus != null || s.hittingXba != null)
       .filter(matchesSearch)
       .filter(matchesCblTeam)
+      .filter(matchesPos)
       .sort(sortHitters);
-  }, [stats, search, cblTeamFilter, hSort]);
+  }, [stats, search, cblTeamFilter, posFilter, hSort]);
 
   const pitchers = useMemo(() => {
     if (!stats) return [];
@@ -252,8 +261,9 @@ export default function AdvancedStats() {
       .filter(s => s.pitchingWar != null || s.pitchingXera != null || s.pitchingXk9 != null)
       .filter(matchesSearch)
       .filter(matchesCblTeam)
+      .filter(matchesPos)
       .sort(sortPitchers);
-  }, [stats, search, cblTeamFilter, pSort]);
+  }, [stats, search, cblTeamFilter, posFilter, pSort]);
 
   const showTotals = !!cblTeamFilter && cblTeamFilter !== ALL_TEAMS && cblTeamFilter !== "__fa__";
 
@@ -387,6 +397,24 @@ export default function AdvancedStats() {
               </SelectContent>
             </Select>
           )}
+          <Select value={posFilter} onValueChange={setPosFilter}>
+            <SelectTrigger className="w-[100px]" data-testid="select-position-filter">
+              <SelectValue placeholder="Position" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">All Pos</SelectItem>
+              <SelectItem value="C">C</SelectItem>
+              <SelectItem value="1B">1B</SelectItem>
+              <SelectItem value="2B">2B</SelectItem>
+              <SelectItem value="3B">3B</SelectItem>
+              <SelectItem value="SS">SS</SelectItem>
+              <SelectItem value="LF">LF</SelectItem>
+              <SelectItem value="CF">CF</SelectItem>
+              <SelectItem value="RF">RF</SelectItem>
+              <SelectItem value="DH">DH</SelectItem>
+              <SelectItem value="P">P</SelectItem>
+            </SelectContent>
+          </Select>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -447,7 +475,7 @@ export default function AdvancedStats() {
                     {hitters.map((s) => (
                       <TableRow key={s.id} data-testid={`row-hitter-${s.id}`}>
                         <TableCell className="sticky left-0 bg-background z-10 font-medium">{s.player?.fullName ?? `Player #${s.mlbPlayerId}`}</TableCell>
-                        <TableCell className="text-center text-muted-foreground text-xs">{s.player?.primaryPosition ?? "—"}</TableCell>
+                        <TableCell className="text-center text-muted-foreground text-xs">{s.positions || s.player?.primaryPosition || "—"}</TableCell>
                         <TableCell className="text-center text-muted-foreground text-xs">{mlbAbbr(s.player?.currentTeamName)}</TableCell>
                         {leagueId && <TableCell className="text-xs">{s.cblTeamAbbreviation ? <Badge variant="outline">{s.cblTeamAbbreviation}</Badge> : s.cblTeam ? <Badge variant="outline">{s.cblTeam}</Badge> : <span className="text-muted-foreground">FA</span>}</TableCell>}
                         <TableCell className="text-right font-mono text-muted-foreground">{s.pa ?? "—"}</TableCell>
@@ -533,7 +561,7 @@ export default function AdvancedStats() {
                     {pitchers.map((s) => (
                       <TableRow key={s.id} data-testid={`row-pitcher-${s.id}`}>
                         <TableCell className="sticky left-0 bg-background z-10 font-medium">{s.player?.fullName ?? `Player #${s.mlbPlayerId}`}</TableCell>
-                        <TableCell className="text-center text-muted-foreground text-xs">{s.player?.primaryPosition ?? "—"}</TableCell>
+                        <TableCell className="text-center text-muted-foreground text-xs">{s.positions || s.player?.primaryPosition || "—"}</TableCell>
                         <TableCell className="text-center text-muted-foreground text-xs">{mlbAbbr(s.player?.currentTeamName)}</TableCell>
                         {leagueId && <TableCell className="text-xs">{s.cblTeamAbbreviation ? <Badge variant="outline">{s.cblTeamAbbreviation}</Badge> : s.cblTeam ? <Badge variant="outline">{s.cblTeam}</Badge> : <span className="text-muted-foreground">FA</span>}</TableCell>}
                         <TableCell className="text-right font-mono text-muted-foreground">{s.gs ?? "—"}</TableCell>
