@@ -447,7 +447,6 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
                     <SelectItem value="LF">LF</SelectItem>
                     <SelectItem value="CF">CF</SelectItem>
                     <SelectItem value="RF">RF</SelectItem>
-                    <SelectItem value="OF">OF</SelectItem>
                     <SelectItem value="P">P</SelectItem>
                   </SelectContent>
                 </Select>
