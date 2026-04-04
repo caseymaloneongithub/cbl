@@ -31,7 +31,7 @@ import { fromZonedTime } from "date-fns-tz";
 import { parse, isValid, format } from "date-fns";
 import crypto from "crypto";
 import { syncPlayerStatsFromMLB, testMLBConnection, fetchAllAffiliatedPlayers } from "./mlb-api";
-import { sendDraftPickNotificationEmail, sendDraftCatchUpEmail, sendTradeProposalEmail, sendTradeCompletedEmail, sendFreeAgentClaimEmail, type DraftPickNotification, type DraftCatchUpPick, type UpcomingPick, type RoundRecapPick, type TradeEmailPlayer } from "./email";
+import { sendDraftPickNotificationEmail, sendDraftCatchUpEmail, sendTradeProposalEmail, sendTradeCompletedEmail, sendFreeAgentClaimEmail, getAppUrl, type DraftPickNotification, type DraftCatchUpPick, type UpcomingPick, type RoundRecapPick, type TradeEmailPlayer } from "./email";
 import fs from "fs/promises";
 import path from "path";
 
@@ -1715,11 +1715,7 @@ export async function registerRoutes(
 
       (async () => {
         try {
-          const appUrl = process.env.REPLIT_DEPLOYMENT_DOMAIN
-            ? `https://${process.env.REPLIT_DEPLOYMENT_DOMAIN}`
-            : process.env.REPLIT_DEV_DOMAIN
-              ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-              : `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
+          const appUrl = getAppUrl();
           const league = await storage.getLeague(leagueId);
           const leagueName = league?.name || 'League';
           const claimingMember = await storage.getLeagueMember(leagueId, claimingUserId);
@@ -1843,11 +1839,7 @@ export async function registerRoutes(
         if (!partner?.email || !proposerMember || !league) {
           console.warn(`[trade] Skipping email: partner=${!!partner?.email}, proposer=${!!proposerMember}, league=${!!league}`);
         } else {
-          const appUrl = process.env.REPLIT_DEPLOYMENT_DOMAIN
-            ? `https://${process.env.REPLIT_DEPLOYMENT_DOMAIN}`
-            : process.env.REPLIT_DEV_DOMAIN
-              ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-              : 'https://cbl-auctions.replit.app';
+          const appUrl = getAppUrl();
 
           const proposerName = proposerMember.teamName || `${proposerMember.user.firstName} ${proposerMember.user.lastName}`;
           const partnerName = partnerMember?.teamName || `${partner.firstName} ${partner.lastName}`;

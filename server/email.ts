@@ -3,6 +3,16 @@ import { Resend } from 'resend';
 
 const APP_NAME = "CBL Strat";
 
+export function getAppUrl(): string {
+  if (process.env.REPLIT_DEPLOYMENT_DOMAIN) {
+    return `https://${process.env.REPLIT_DEPLOYMENT_DOMAIN}`;
+  }
+  if (process.env.REPLIT_DEV_DOMAIN) {
+    return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  }
+  return 'https://cbl-strat.replit.app';
+}
+
 function getResendClient() {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {

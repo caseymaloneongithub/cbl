@@ -3,7 +3,7 @@ import { registerRoutes, deployBundleItemAsAutoBid, processAllAutoBidsUntilStabl
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { storage } from "./storage";
-import { sendAuctionResultsSummaryEmail } from "./email";
+import { sendAuctionResultsSummaryEmail, getAppUrl } from "./email";
 
 import { Pool } from "pg";
 
@@ -739,11 +739,7 @@ async function runHourlySummaryEmail() {
       }
       
       // Build opt-out link for league-wide notifications
-      const appUrl = process.env.REPLIT_DEV_DOMAIN 
-        ? `https://${process.env.REPLIT_DEV_DOMAIN}` 
-        : process.env.REPLIT_DEPLOYMENT_DOMAIN 
-          ? `https://${process.env.REPLIT_DEPLOYMENT_DOMAIN}`
-          : 'https://cbl-auctions.replit.app';
+      const appUrl = getAppUrl();
       const optOutLink = group.emailNotifications === "league" ? `${appUrl}` : undefined;
       
       // Send email to each recipient with rate limiting (Resend allows 2 requests/second)
