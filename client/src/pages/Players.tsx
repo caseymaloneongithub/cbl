@@ -154,21 +154,29 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
   });
 
   const { data: playersData, isLoading } = useQuery<{ players: PlayerWithStats[]; total: number }>({
-    queryKey: ["/api/mlb-players", debouncedSearch, sportLevel, mlbTeamFilter, effectiveSeason, level, leagueTeamFilter, selectedLeagueId, "full-pool"],
+    queryKey: ["/api/mlb-players", debouncedSearch, sportLevel, mlbTeamFilter, effectiveSeason, level, leagueTeamFilter, selectedLeagueId, showCurrentYearStats, cardYear, "full-pool"],
     queryFn: async () => {
       const params = new URLSearchParams({
         season: String(effectiveSeason),
-        sportLevel,
         limit: "20000",
         offset: "0",
       });
+      if (showCurrentYearStats) {
+        // Classify players by their CARD YEAR (N-1) stats level, not by the rolling
+        // mlb_players.sport_level — that way a MiLB player who got called up to MLB
+        // in the current year still appears on /players/milb with their MLB stats.
+        params.set("cardYearLevelFilter", level === "mlb" ? "MLB" : "minors");
+        params.set("cardYearSeason", String(cardYear));
+      } else {
+        params.set("sportLevel", sportLevel);
+        if (level === "mlb") {
+          params.set("statsLevelFilter", "MLB");
+        }
+      }
       if (debouncedSearch) params.set("search", debouncedSearch);
       if (mlbTeamFilter !== "all") {
         if (level === "milb") params.set("parentOrgName", mlbTeamFilter);
         else params.set("currentTeamName", mlbTeamFilter);
-      }
-      if (level === "mlb") {
-        params.set("statsLevelFilter", "MLB");
       }
       if (leagueTeamFilter === "unassigned" && selectedLeagueId) {
         params.set("leagueIdForFreeAgents", String(selectedLeagueId));

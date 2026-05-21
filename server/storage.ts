@@ -3308,9 +3308,12 @@ export class DatabaseStorage implements IStorage {
     return this.upsertMlbPlayerStats(statsToInsert);
   }
 
-  async getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number; currentTeamName?: string; parentOrgName?: string; season?: number; sortBy?: string; sortDir?: string; statsSeason?: number; statsLevelFilter?: string; leagueIdForFreeAgents?: number }): Promise<(MlbPlayer & { stats: MlbPlayerStat | null })[]> {
+  async getMlbPlayers(filters?: { sportLevel?: string; search?: string; limit?: number; offset?: number; currentTeamName?: string; parentOrgName?: string; season?: number; sortBy?: string; sortDir?: string; statsSeason?: number; statsLevelFilter?: string; leagueIdForFreeAgents?: number; cardYearLevelFilter?: string; cardYearSeason?: number }): Promise<(MlbPlayer & { stats: MlbPlayerStat | null })[]> {
     const conditions = [];
-    if (filters?.sportLevel) {
+    if (filters?.cardYearLevelFilter && filters?.cardYearSeason) {
+      const cmp = filters.cardYearLevelFilter === 'MLB' ? sql`=` : sql`!=`;
+      conditions.push(sql`EXISTS (SELECT 1 FROM mlb_player_stats ms WHERE ms.mlb_player_id = ${mlbPlayers.id} AND ms.season = ${filters.cardYearSeason} AND ms.sport_level ${cmp} 'MLB')`);
+    } else if (filters?.sportLevel) {
       if (filters.sportLevel === 'MLB') {
         conditions.push(eq(mlbPlayers.sportLevel, 'MLB'));
       } else if (filters.sportLevel === 'minors') {
@@ -3379,9 +3382,12 @@ export class DatabaseStorage implements IStorage {
     return rows.map(r => ({ ...r.mlb_players, stats: r.mlb_player_stats }));
   }
 
-  async getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; positionTypeNot?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; isTwoWayQualified?: boolean; currentTeamName?: string; parentOrgName?: string; season?: number; statsLevelFilter?: string; leagueIdForFreeAgents?: number }): Promise<number> {
+  async getMlbPlayerCount(filters?: { sportLevel?: string; search?: string; positionType?: string; positionTypeNot?: string; hadHittingStats?: boolean; hadPitchingStats?: boolean; isTwoWayQualified?: boolean; currentTeamName?: string; parentOrgName?: string; season?: number; statsLevelFilter?: string; leagueIdForFreeAgents?: number; cardYearLevelFilter?: string; cardYearSeason?: number }): Promise<number> {
     const conditions = [];
-    if (filters?.sportLevel) {
+    if (filters?.cardYearLevelFilter && filters?.cardYearSeason) {
+      const cmp = filters.cardYearLevelFilter === 'MLB' ? sql`=` : sql`!=`;
+      conditions.push(sql`EXISTS (SELECT 1 FROM mlb_player_stats ms WHERE ms.mlb_player_id = ${mlbPlayers.id} AND ms.season = ${filters.cardYearSeason} AND ms.sport_level ${cmp} 'MLB')`);
+    } else if (filters?.sportLevel) {
       if (filters.sportLevel === 'MLB') {
         conditions.push(eq(mlbPlayers.sportLevel, 'MLB'));
       } else if (filters.sportLevel === 'minors') {

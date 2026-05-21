@@ -1394,7 +1394,7 @@ export async function registerRoutes(
   // Search MLB players reference database (available to all authenticated users)
   app.get("/api/mlb-players", isAuthenticated, async (req: any, res) => {
     try {
-      const { search, sportLevel, limit, offset, currentTeamName, parentOrgName, season, sortBy, sortDir, statsLevelFilter, leagueIdForFreeAgents } = req.query;
+      const { search, sportLevel, limit, offset, currentTeamName, parentOrgName, season, sortBy, sortDir, statsLevelFilter, leagueIdForFreeAgents, cardYearLevelFilter, cardYearSeason } = req.query;
       const filters: any = {
         search: search as string,
         sportLevel: sportLevel as string,
@@ -1408,6 +1408,8 @@ export async function registerRoutes(
       if (parentOrgName) filters.parentOrgName = parentOrgName as string;
       if (statsLevelFilter) filters.statsLevelFilter = statsLevelFilter as string;
       if (leagueIdForFreeAgents) filters.leagueIdForFreeAgents = parseInt(leagueIdForFreeAgents as string);
+      if (cardYearLevelFilter) filters.cardYearLevelFilter = cardYearLevelFilter as string;
+      if (cardYearSeason) filters.cardYearSeason = parseInt(cardYearSeason as string);
       const players = await storage.getMlbPlayers(filters);
       const count = await storage.getMlbPlayerCount(filters);
       res.json({ players, total: count });
