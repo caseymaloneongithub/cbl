@@ -25,6 +25,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Search, ChevronLeft, ChevronRight, UserPlus, Download } from "lucide-react";
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import type { MlbPlayer, MlbPlayerStat, LeagueMember } from "@shared/schema";
@@ -75,19 +76,37 @@ function teamAbbrForPlayer(p: MlbPlayer): string {
   );
 }
 
-function NameWithHover({ p }: { p: MlbPlayer }) {
+function NameWithHover({ p, calledUp = false }: { p: MlbPlayer; calledUp?: boolean }) {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="font-medium cursor-default">{p.fullName}</span>
-      </TooltipTrigger>
-      <TooltipContent>
-        <div className="text-xs space-y-1">
-          <div>Age: {p.age ?? "-"}</div>
-          <div>B/T: {p.batSide || "-"}/{p.throwHand || "-"}</div>
-        </div>
-      </TooltipContent>
-    </Tooltip>
+    <span className="inline-flex items-center gap-1.5">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="font-medium cursor-default">{p.fullName}</span>
+        </TooltipTrigger>
+        <TooltipContent>
+          <div className="text-xs space-y-1">
+            <div>Age: {p.age ?? "-"}</div>
+            <div>B/T: {p.batSide || "-"}/{p.throwHand || "-"}</div>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+      {calledUp && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge
+              variant="default"
+              className="h-4 px-1.5 text-[9px] font-semibold uppercase tracking-wide bg-emerald-600 hover:bg-emerald-600 text-white"
+              data-testid={`badge-called-up-${p.id}`}
+            >
+              Called Up
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>
+            <div className="text-xs">MiLB-carded player with MLB time this season</div>
+          </TooltipContent>
+        </Tooltip>
+      )}
+    </span>
   );
 }
 
@@ -555,7 +574,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
                         const leagueTeam = rosterMap[p.id] ? memberMap[rosterMap[p.id]] : null;
                         return (
                           <TableRow key={`h-${p.id}`} className={`odd:bg-muted/20 ${(currentLeague as any)?.showInnocuous && p.stats?.innocuous ? "bg-green-50 dark:bg-green-950/30 odd:bg-green-50 dark:odd:bg-green-950/30" : ""}`}>
-                            <TableCell><NameWithHover p={p} /></TableCell>
+                            <TableCell><NameWithHover p={p} calledUp={level === "milb" && p.sportLevel === "MLB"} /></TableCell>
                             <TableCell className="font-mono text-[11px]">{p.stats?.positions || p.primaryPosition || "-"}</TableCell>
                             <TableCell>{teamAbbrForPlayer(p)}</TableCell>
                             {showMilbLevel && <TableCell>{formatLevelWithYear(p.sportLevel, p.lastPlayedSeason, p.lastPlayedLevel)}</TableCell>}
@@ -636,7 +655,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
                         const leagueTeam = rosterMap[p.id] ? memberMap[rosterMap[p.id]] : null;
                         return (
                           <TableRow key={`p-${p.id}`} className={`odd:bg-muted/20 ${(currentLeague as any)?.showInnocuous && p.stats?.innocuous ? "bg-green-50 dark:bg-green-950/30 odd:bg-green-50 dark:odd:bg-green-950/30" : ""}`}>
-                            <TableCell><NameWithHover p={p} /></TableCell>
+                            <TableCell><NameWithHover p={p} calledUp={level === "milb" && p.sportLevel === "MLB"} /></TableCell>
                             <TableCell className="font-mono text-[11px]">{p.stats?.positions || p.primaryPosition || "-"}</TableCell>
                             <TableCell>{teamAbbrForPlayer(p)}</TableCell>
                             {showMilbLevel && <TableCell>{formatLevelWithYear(p.sportLevel, p.lastPlayedSeason, p.lastPlayedLevel)}</TableCell>}
