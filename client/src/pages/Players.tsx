@@ -23,6 +23,8 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { Search, ChevronLeft, ChevronRight, UserPlus, Download } from "lucide-react";
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import type { MlbPlayer, MlbPlayerStat, LeagueMember } from "@shared/schema";
@@ -105,6 +107,7 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
   const [pitcherSort, setPitcherSort] = useState<{ key: PitcherSortKey; dir: SortDir }>({ key: "name", dir: "asc" });
   const [seasonOverride, setSeasonOverride] = useState<number | null>(null);
   const [posFilter, setPosFilter] = useState("all");
+  const [showCurrentYearStats, setShowCurrentYearStats] = useState(false);
 
   const { data: availableSeasons } = useQuery<number[]>({
     queryKey: ["/api/mlb-players/seasons"],
@@ -115,7 +118,12 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
     },
   });
 
-  const effectiveSeason = seasonOverride ?? availableSeasons?.[0] ?? null;
+  const currentYear = new Date().getFullYear();
+  const cardYear = currentYear - 1;
+  // Default (toggle OFF) = most recent completed season (<= cardYear); never current year.
+  const latestCompletedSeason = (availableSeasons || []).find((s) => s <= cardYear) ?? cardYear;
+  const defaultSeason = seasonOverride ?? latestCompletedSeason;
+  const effectiveSeason = showCurrentYearStats ? currentYear : defaultSeason;
 
   const sportLevel = level === "mlb" ? "MLB" : "minors";
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -485,6 +493,17 @@ export default function Players({ level }: { level: "mlb" | "milb" }) {
               <Download className="h-4 w-4 mr-1.5" />
               Download CSV
             </Button>
+            <div className="flex items-center gap-2 ml-auto border rounded-md px-3 py-1.5 bg-muted/30">
+              <Switch
+                id="toggle-current-year-stats"
+                checked={showCurrentYearStats}
+                onCheckedChange={setShowCurrentYearStats}
+                data-testid="switch-current-year-stats"
+              />
+              <Label htmlFor="toggle-current-year-stats" className="text-xs font-medium cursor-pointer whitespace-nowrap">
+                {currentYear} Stats
+              </Label>
+            </div>
           </div>
         </CardHeader>
         <CardContent>

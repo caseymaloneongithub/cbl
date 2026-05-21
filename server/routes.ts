@@ -31,6 +31,7 @@ import { fromZonedTime } from "date-fns-tz";
 import { parse, isValid, format } from "date-fns";
 import crypto from "crypto";
 import { syncPlayerStatsFromMLB, testMLBConnection, fetchAllAffiliatedPlayers } from "./mlb-api";
+import { syncMlbSeasonData } from "./mlb-sync";
 import { sendDraftPickNotificationEmail, sendDraftCatchUpEmail, sendTradeProposalEmail, sendTradeCompletedEmail, sendFreeAgentClaimEmail, getAppUrl, type DraftPickNotification, type DraftCatchUpPick, type UpcomingPick, type RoundRecapPick, type TradeEmailPlayer } from "./email";
 import fs from "fs/promises";
 import path from "path";
@@ -1014,44 +1015,15 @@ export async function registerRoutes(
     }
   });
 
-  function mapPlayerData(players: any[]) {
-    return players.map(p => ({
-      mlbId: p.mlbId, fullName: p.fullName, fullFmlName: p.fullFmlName,
-      firstName: p.firstName, middleName: p.middleName, lastName: p.lastName,
-      primaryPosition: p.primaryPosition, positionName: p.positionName, positionType: p.positionType,
-      batSide: p.batSide, throwHand: p.throwHand,
-      currentTeamId: p.currentTeamId, currentTeamName: p.currentTeamName,
-      parentOrgId: p.parentOrgId, parentOrgName: p.parentOrgName,
-      sportId: p.sportId, sportLevel: p.sportLevel,
-      birthDate: p.birthDate, age: p.age, isActive: p.isActive,
-      hadHittingStats: p.hadHittingStats, hadPitchingStats: p.hadPitchingStats,
-      hittingAtBats: p.hittingAtBats, hittingWalks: p.hittingWalks,
-      hittingSingles: p.hittingSingles, hittingDoubles: p.hittingDoubles,
-      hittingTriples: p.hittingTriples, hittingHomeRuns: p.hittingHomeRuns,
-      hittingAvg: p.hittingAvg, hittingObp: p.hittingObp,
-      hittingSlg: p.hittingSlg, hittingOps: p.hittingOps, hittingWrcPlus: p.hittingWrcPlus,
-      pitchingGames: p.pitchingGames, pitchingGamesStarted: p.pitchingGamesStarted,
-      pitchingStrikeouts: p.pitchingStrikeouts, pitchingWalks: p.pitchingWalks,
-      pitchingHits: p.pitchingHits, pitchingHomeRuns: p.pitchingHomeRuns,
-      pitchingEra: p.pitchingEra, pitchingInningsPitched: p.pitchingInningsPitched,
-      hittingGamesStarted: p.hittingGamesStarted, hittingPlateAppearances: p.hittingPlateAppearances,
-      isTwoWayQualified: p.isTwoWayQualified, positions: p.positions, season: p.season,
-    }));
-  }
-
   async function runSyncSeason(season: number): Promise<{ playerCount: number; statRows: number }> {
-    syncProgress.phase = "Fetching from MLB API...";
-    const players = await fetchAllAffiliatedPlayers(season);
-    const playerData = mapPlayerData(players);
-    syncProgress.phase = `Upserting ${playerData.length.toLocaleString()} players...`;
-    const playerCount = await storage.upsertMlbPlayers(playerData);
-    syncProgress.playersInCurrentSeason = playerCount;
-    syncProgress.phase = "Writing stat rows...";
-    const statRows = await storage.upsertMlbPlayerStatsFromSync(playerData);
-    syncProgress.statsInCurrentSeason = statRows;
+    const result = await syncMlbSeasonData(season, (phase) => {
+      syncProgress.phase = phase;
+    });
+    syncProgress.playersInCurrentSeason = result.playerCount;
+    syncProgress.statsInCurrentSeason = result.statRows;
     syncProgress.phase = null;
-    console.log(`[MLB Sync] Season ${season}: ${playerCount} players, ${statRows} stat rows`);
-    return { playerCount, statRows };
+    console.log(`[MLB Sync] Season ${season}: ${result.playerCount} players, ${result.statRows} stat rows`);
+    return result;
   }
 
   app.post("/api/admin/mlb-players/sync", isAuthenticated, async (req: any, res) => {

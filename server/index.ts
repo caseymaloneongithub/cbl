@@ -4,6 +4,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { storage } from "./storage";
 import { sendAuctionResultsSummaryEmail, getAppUrl } from "./email";
+import { syncMlbSeasonData } from "./mlb-sync";
 
 import { Pool } from "pg";
 
@@ -345,6 +346,9 @@ async function runPendingMigrations() {
       
       // Start the hourly email summary job
       startHourlySummaryEmailJob();
+
+      // Start the nightly current-year MLB stats refresh job
+      startCurrentYearStatsRefreshJob();
     },
   );
 })();
@@ -780,5 +784,48 @@ async function runHourlySummaryEmail() {
     log(`Processed ${auctionGroups.size} auctions for email notifications`, "email-job");
   } catch (error) {
     log(`Hourly summary email job error: ${error}`, "email-job");
+  }
+}
+
+// Background job to refresh current-year MLB stats nightly.
+// This only writes to the row keyed by (mlb_player_id, currentYear) in mlb_player_stats
+// — prior completed seasons (card year and earlier) are never touched.
+// mlb_players metadata is updated because currentYear >= existing player.season,
+// which is the desired behavior (refresh team / position / active status).
+function startCurrentYearStatsRefreshJob() {
+  const INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+  const STARTUP_DELAY_MS = 5 * 60 * 1000;  // 5 min after boot
+
+  log("Current-year MLB stats refresh job started (runs every 24h)", "mlb-refresh");
+
+  setTimeout(() => {
+    runCurrentYearStatsRefresh();
+    setInterval(runCurrentYearStatsRefresh, INTERVAL_MS);
+  }, STARTUP_DELAY_MS);
+}
+
+let currentYearRefreshRunning = false;
+async function runCurrentYearStatsRefresh() {
+  if (currentYearRefreshRunning) {
+    log("Skipping: previous refresh still running", "mlb-refresh");
+    return;
+  }
+  currentYearRefreshRunning = true;
+  const season = new Date().getFullYear();
+  const startedAt = Date.now();
+  try {
+    log(`Starting current-year (${season}) stats refresh`, "mlb-refresh");
+    const result = await syncMlbSeasonData(season, (phase) => {
+      log(phase, "mlb-refresh");
+    });
+    const elapsedSec = Math.round((Date.now() - startedAt) / 1000);
+    log(
+      `Refresh complete in ${elapsedSec}s: ${result.playerCount} players, ${result.statRows} stat rows for ${season}`,
+      "mlb-refresh",
+    );
+  } catch (error: any) {
+    log(`Refresh error: ${error?.message || error}`, "mlb-refresh");
+  } finally {
+    currentYearRefreshRunning = false;
   }
 }
