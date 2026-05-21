@@ -340,6 +340,26 @@ function MlbPlayerSync() {
             )}
           </Button>
         )}
+        <Button
+          variant="secondary"
+          onClick={() => syncMutation.mutate(currentYear)}
+          disabled={isSyncing}
+          data-testid="button-refresh-current-year"
+          title={`Manually refresh in-progress ${currentYear} MLB stats (auto-runs nightly at 2 AM ET)`}
+        >
+          {(syncMutation.isPending && syncMutation.variables === currentYear) ||
+           (syncPolling && syncStatusQuery.data?.type === "single" && syncStatusQuery.data?.currentSeason === currentYear) ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Refreshing {currentYear}...
+            </>
+          ) : (
+            <>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Refresh {currentYear} Stats
+            </>
+          )}
+        </Button>
       </div>
 
       {syncPolling && (
