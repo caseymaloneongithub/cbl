@@ -794,14 +794,42 @@ async function runHourlySummaryEmail() {
 // which is the desired behavior (refresh team / position / active status).
 function startCurrentYearStatsRefreshJob() {
   const INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
-  const STARTUP_DELAY_MS = 5 * 60 * 1000;  // 5 min after boot
 
-  log("Current-year MLB stats refresh job started (runs every 24h)", "mlb-refresh");
+  // Compute ms until the next 2:00 AM America/New_York.
+  // We get the current "hour in NY" via Intl, then compute how many hours
+  // (and minutes/seconds) remain until 02:00 NY local time.
+  function msUntilNext2AmEastern(): number {
+    const now = new Date();
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hour: "numeric",
+      minute: "numeric",
+      second: "numeric",
+      hour12: false,
+    }).formatToParts(now);
+    const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+    const h = get("hour") % 24;
+    const m = get("minute");
+    const s = get("second");
+    const nowSecOfDay = h * 3600 + m * 60 + s;
+    const targetSecOfDay = 2 * 3600;
+    let deltaSec = targetSecOfDay - nowSecOfDay;
+    if (deltaSec <= 0) deltaSec += 24 * 3600;
+    return deltaSec * 1000;
+  }
+
+  const delayMs = msUntilNext2AmEastern();
+  const hours = Math.floor(delayMs / 3600000);
+  const minutes = Math.floor((delayMs % 3600000) / 60000);
+  log(
+    `Current-year MLB stats refresh job scheduled for next 2:00 AM ET (in ${hours}h ${minutes}m), then every 24h`,
+    "mlb-refresh",
+  );
 
   setTimeout(() => {
     runCurrentYearStatsRefresh();
     setInterval(runCurrentYearStatsRefresh, INTERVAL_MS);
-  }, STARTUP_DELAY_MS);
+  }, delayMs);
 }
 
 let currentYearRefreshRunning = false;
