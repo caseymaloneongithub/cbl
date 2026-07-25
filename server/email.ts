@@ -911,7 +911,12 @@ export async function sendTradeCompletedEmail(
   partnerTeamName: string,
   playersFromProposer: TradeEmailPlayer[],
   playersFromPartner: TradeEmailPlayer[],
+  notes?: string | null,
 ): Promise<{ success: boolean; error?: string }> {
+  const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const notesBlock = notes && notes.trim() ? `
+    <p style="margin: 15px 0 5px; font-weight: bold; font-size: 14px; color: #333;">Trade comments:</p>
+    <div style="background: white; border: 1px solid #ddd; border-radius: 6px; padding: 12px 15px; font-size: 13px; color: #555; white-space: pre-wrap;">${escapeHtml(notes.trim())}</div>` : '';
   const playerRow = (p: TradeEmailPlayer) =>
     `<tr><td style="padding: 6px 10px; border-bottom: 1px solid #eee; font-size: 13px;">${p.name}</td><td style="padding: 6px 10px; border-bottom: 1px solid #eee; font-size: 13px; color: #555;">${p.position}, ${p.mlbTeam}</td><td style="padding: 6px 10px; border-bottom: 1px solid #eee;"><span style="display: inline-block; background: ${p.rosterType === 'mlb' ? '#1565c0' : '#6a1b9a'}; color: white; font-size: 10px; padding: 1px 5px; border-radius: 3px;">${p.rosterType.toUpperCase()}</span></td></tr>`;
 
@@ -935,6 +940,7 @@ export async function sendTradeCompletedEmail(
   <div style="background: #f9f9f9; padding: 25px; border-radius: 0 0 8px 8px;">
     ${playerTable(`${proposerTeamName} receives:`, playersFromPartner)}
     ${playerTable(`${partnerTeamName} receives:`, playersFromProposer)}
+    ${notesBlock}
     <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
     <p style="color: #999; font-size: 11px; text-align: center;">This notification was sent by ${APP_NAME}.</p>
   </div>
@@ -942,7 +948,7 @@ export async function sendTradeCompletedEmail(
 
   const fromProposerText = playersFromProposer.map(p => `  ${p.name} (${p.position}, ${p.mlbTeam}) [${p.rosterType.toUpperCase()}]`).join('\n');
   const fromPartnerText = playersFromPartner.map(p => `  ${p.name} (${p.position}, ${p.mlbTeam}) [${p.rosterType.toUpperCase()}]`).join('\n');
-  const text = `${leagueName} — Trade Completed\n\n${proposerTeamName} receives:\n${fromPartnerText}\n\n${partnerTeamName} receives:\n${fromProposerText}\n`;
+  const text = `${leagueName} — Trade Completed\n\n${proposerTeamName} receives:\n${fromPartnerText}\n\n${partnerTeamName} receives:\n${fromProposerText}\n${notes && notes.trim() ? `\nTrade comments:\n${notes.trim()}\n` : ''}`;
 
   return sendEmail({
     to,

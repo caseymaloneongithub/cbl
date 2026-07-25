@@ -1924,7 +1924,7 @@ export async function registerRoutes(
             console.log(`[trade] Trade #${tradeId} accepted. Sending completed emails to ${members.length} members...`);
             for (const m of members) {
               if (m.user.email) {
-                await sendTradeCompletedEmail(m.user.email, league.name, proposerName, partnerName, playersFromProposer, playersFromPartner);
+                await sendTradeCompletedEmail(m.user.email, league.name, proposerName, partnerName, playersFromProposer, playersFromPartner, trade.notes);
                 await new Promise(r => setTimeout(r, 600));
               }
             }
