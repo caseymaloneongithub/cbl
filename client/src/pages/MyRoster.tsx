@@ -29,6 +29,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { Search, ClipboardList, Scissors } from "lucide-react";
 import { useState, useMemo } from "react";
 import type { MlbPlayer, MlbPlayerStat } from "@shared/schema";
@@ -148,6 +150,8 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
   const [cutPlayer, setCutPlayer] = useState<RosterAssignment | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string>("");
   const [posFilter, setPosFilter] = useState("all");
+  const [showCurrentYearStats, setShowCurrentYearStats] = useState(false);
+  const currentYear = new Date().getFullYear();
 
   const viewingUserId = selectedUserId || user?.id || "";
   const isOwnRoster = viewingUserId === user?.id;
@@ -181,9 +185,10 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
     },
   });
   const { data, isLoading } = useQuery<{ assignments: RosterAssignment[]; counts: any[] }>({
-    queryKey: ["/api/leagues", selectedLeagueId, "roster-assignments", viewingUserId, level],
+    queryKey: ["/api/leagues", selectedLeagueId, "roster-assignments", viewingUserId, level, showCurrentYearStats],
     queryFn: async () => {
       const params = new URLSearchParams({ userId: viewingUserId, rosterType: level });
+      if (showCurrentYearStats) params.set("statsSeason", String(currentYear));
       const res = await fetch(`/api/leagues/${selectedLeagueId}/roster-assignments?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch roster");
       return res.json();
@@ -413,6 +418,17 @@ export default function MyRoster({ level }: { level: "mlb" | "milb" }) {
             <div className="relative w-64">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input placeholder="Search players..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8" data-testid="input-roster-search" />
+            </div>
+            <div className="flex items-center gap-2 border rounded-md px-3 py-1.5 bg-muted/30">
+              <Switch
+                id="toggle-roster-current-year-stats"
+                checked={showCurrentYearStats}
+                onCheckedChange={setShowCurrentYearStats}
+                data-testid="switch-roster-current-year-stats"
+              />
+              <Label htmlFor="toggle-roster-current-year-stats" className="text-xs font-medium cursor-pointer whitespace-nowrap">
+                {currentYear} Stats
+              </Label>
             </div>
           </div>
         </CardHeader>

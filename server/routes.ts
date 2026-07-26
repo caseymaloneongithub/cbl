@@ -1460,10 +1460,12 @@ export async function registerRoutes(
       const season = req.query.season ? parseInt(req.query.season as string) : undefined;
       const filterUserId = req.query.userId as string | undefined;
       const rosterType = req.query.rosterType as string | undefined;
+      const statsSeason = req.query.statsSeason ? parseInt(req.query.statsSeason as string) : undefined;
 
       const assignments = await storage.getLeagueRosterAssignments(leagueId, season, {
         userId: filterUserId,
         rosterType,
+        statsSeason,
       });
       const counts = await storage.getRosterAssignmentCounts(leagueId, season);
 
