@@ -3,14 +3,24 @@ import { Resend } from 'resend';
 
 const APP_NAME = "CBL Strat";
 
+const PRODUCTION_URL = 'https://cbl-strat.me';
+
 export function getAppUrl(): string {
-  if (process.env.REPLIT_DEPLOYMENT_DOMAIN) {
-    return `https://${process.env.REPLIT_DEPLOYMENT_DOMAIN}`;
+  // In production (Replit deployment), always use the published domain.
+  // Never fall back to the .replit.dev development domain there — links
+  // in emails would point members at a sleeping dev preview.
+  if (process.env.REPLIT_DEPLOYMENT || process.env.NODE_ENV === 'production') {
+    if (process.env.REPLIT_DEPLOYMENT_DOMAIN) {
+      return `https://${process.env.REPLIT_DEPLOYMENT_DOMAIN}`;
+    }
+    return PRODUCTION_URL;
   }
+  // Development: dev preview URL is fine (emails are redirected to
+  // DEV_EMAIL_RECIPIENT here anyway).
   if (process.env.REPLIT_DEV_DOMAIN) {
     return `https://${process.env.REPLIT_DEV_DOMAIN}`;
   }
-  return 'https://cbl-strat.replit.app';
+  return PRODUCTION_URL;
 }
 
 function getResendClient() {
