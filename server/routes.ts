@@ -1865,8 +1865,16 @@ export async function registerRoutes(
       const trade = await storage.getTrade(tradeId);
       if (!trade || trade.leagueId !== leagueId) return res.status(404).json({ message: "Trade not found" });
       if (trade.partnerUserId !== userId) {
-        const isCommissioner = await hasLeagueCommissionerAccess(userId, leagueId);
+        // Commissioner/super-admin override. During impersonation, also honor
+        // the original (impersonating) super admin's authority.
+        const originalUserId = req.session.originalUserId;
+        const isCommissioner = await hasLeagueCommissionerAccess(userId, leagueId)
+          || (originalUserId && originalUserId !== userId && await hasLeagueCommissionerAccess(originalUserId, leagueId));
         if (!isCommissioner) return res.status(403).json({ message: "Only the trade partner or a commissioner can respond" });
+        // A commissioner cannot approve/reject a trade they proposed themselves.
+        if (trade.proposingUserId === userId) {
+          return res.status(403).json({ message: "You cannot respond to your own trade proposal. Cancel it instead." });
+        }
       }
       if (trade.status !== 'pending') return res.status(400).json({ message: `Trade is already ${trade.status}` });
 
@@ -1897,14 +1905,22 @@ export async function registerRoutes(
           return res.status(409).json({ message: "Trade is no longer pending" });
         }
 
-        await storage.executeRosterTrade({
-          leagueId,
-          season,
-          teamAUserId: trade.proposingUserId,
-          teamBUserId: trade.partnerUserId,
-          teamAAssignmentIds: proposerItemIds,
-          teamBAssignmentIds: partnerItemIds,
-        });
+        try {
+          await storage.executeRosterTrade({
+            leagueId,
+            season,
+            teamAUserId: trade.proposingUserId,
+            teamBUserId: trade.partnerUserId,
+            teamAAssignmentIds: proposerItemIds,
+            teamBAssignmentIds: partnerItemIds,
+          });
+        } catch (e: any) {
+          // Roster swap failed (e.g. concurrent roster change) — revert the
+          // trade back to pending so it isn't stuck "accepted" with no players moved.
+          await storage.revertTradeToPending(tradeId);
+          console.error(`[trade] Trade #${tradeId} accept failed during roster swap; reverted to pending:`, e);
+          return res.status(409).json({ message: "Rosters changed while accepting the trade. Please review and try again." });
+        }
 
         const updatedTrade = await storage.getTrade(tradeId);
         res.json(updatedTrade);

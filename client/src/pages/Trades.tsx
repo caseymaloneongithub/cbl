@@ -157,7 +157,7 @@ export default function Trades({ highlightTradeId }: { highlightTradeId?: number
             const partnerSends = trade.items.filter(i => i.fromUserId === trade.partnerUserId);
             const isPartner = user?.id === trade.partnerUserId;
             const isProposer = user?.id === trade.proposingUserId;
-            const canRespond = (isPartner || isCommissioner) && trade.status === "pending";
+            const canRespond = (isPartner || (isCommissioner && !isProposer)) && trade.status === "pending";
             const canCancel = isProposer && trade.status === "pending";
 
             return (

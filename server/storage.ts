@@ -392,6 +392,7 @@ export interface IStorage {
   getTrade(id: number): Promise<TradeWithDetails | undefined>;
   getTradesForLeague(leagueId: number, filters?: { status?: string; userId?: string; season?: number }): Promise<TradeWithDetails[]>;
   respondToTrade(tradeId: number, status: 'accepted' | 'rejected'): Promise<Trade>;
+  revertTradeToPending(tradeId: number): Promise<void>;
   cancelTrade(tradeId: number): Promise<Trade>;
   
   // Draft operations
@@ -4502,6 +4503,13 @@ export class DatabaseStorage implements IStorage {
       .returning();
     if (!updated) throw new Error('Trade is no longer pending');
     return updated;
+  }
+
+  async revertTradeToPending(tradeId: number): Promise<void> {
+    await db
+      .update(trades)
+      .set({ status: 'pending', respondedAt: null })
+      .where(and(eq(trades.id, tradeId), eq(trades.status, 'accepted')));
   }
 
   async cancelTrade(tradeId: number): Promise<Trade> {
