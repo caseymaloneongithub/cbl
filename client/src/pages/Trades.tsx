@@ -25,7 +25,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeftRight, Check, X, Clock, Ban } from "lucide-react";
+import { ArrowLeftRight, Check, X, Clock, Ban, AlertTriangle } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { TradeWithDetails } from "@shared/schema";
@@ -157,6 +157,7 @@ export default function Trades({ highlightTradeId }: { highlightTradeId?: number
             const partnerSends = trade.items.filter(i => i.fromUserId === trade.partnerUserId);
             const isPartner = user?.id === trade.partnerUserId;
             const isProposer = user?.id === trade.proposingUserId;
+            const isInvalid = trade.status === "pending" && !!trade.invalidReasons?.length;
             const canRespond = (isPartner || (isCommissioner && !isProposer)) && trade.status === "pending";
             const canCancel = isProposer && trade.status === "pending";
 
@@ -173,7 +174,13 @@ export default function Trades({ highlightTradeId }: { highlightTradeId?: number
                       <CardTitle className="text-base">
                         {proposerName} <ArrowLeftRight className="inline h-4 w-4 mx-1 text-muted-foreground" /> {partnerName}
                       </CardTitle>
-                      {statusBadge(trade.status)}
+                      {isInvalid ? (
+                        <Badge variant="destructive" className="gap-1" data-testid={`badge-invalid-trade-${trade.id}`}>
+                          <AlertTriangle className="h-3 w-3" />Invalid
+                        </Badge>
+                      ) : (
+                        statusBadge(trade.status)
+                      )}
                     </div>
                     <span className="text-sm text-muted-foreground">
                       {new Date(trade.proposedAt).toLocaleDateString()} {new Date(trade.proposedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -216,6 +223,18 @@ export default function Trades({ highlightTradeId }: { highlightTradeId?: number
                     </div>
                   </div>
 
+                  {isInvalid && (
+                    <div className="text-sm bg-destructive/10 text-destructive p-2 rounded border border-destructive/30" data-testid={`text-invalid-reason-${trade.id}`}>
+                      <span className="font-medium">This trade can no longer be completed:</span>
+                      <ul className="list-disc list-inside mt-1">
+                        {trade.invalidReasons!.map((r, i) => <li key={i}>{r}</li>)}
+                      </ul>
+                      <p className="mt-1">
+                        {isProposer ? "You can cancel this trade to clear it out." : "It can be rejected to clear it out."}
+                      </p>
+                    </div>
+                  )}
+
                   {trade.notes && (
                     <div className="text-sm bg-muted/50 p-2 rounded border">
                       <span className="font-medium">Notes:</span> {trade.notes}
@@ -226,14 +245,16 @@ export default function Trades({ highlightTradeId }: { highlightTradeId?: number
                     <div className="flex gap-2 pt-2 border-t">
                       {canRespond && (
                         <>
-                          <Button
-                            size="sm"
-                            className="bg-green-600 hover:bg-green-700"
-                            onClick={() => setConfirmAction({ tradeId: trade.id, action: "accept" })}
-                            data-testid={`button-accept-trade-${trade.id}`}
-                          >
-                            <Check className="h-4 w-4 mr-1" /> Accept
-                          </Button>
+                          {!isInvalid && (
+                            <Button
+                              size="sm"
+                              className="bg-green-600 hover:bg-green-700"
+                              onClick={() => setConfirmAction({ tradeId: trade.id, action: "accept" })}
+                              data-testid={`button-accept-trade-${trade.id}`}
+                            >
+                              <Check className="h-4 w-4 mr-1" /> Accept
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="destructive"

@@ -1743,6 +1743,32 @@ export async function registerRoutes(
         status: status as string | undefined,
         season: season ? parseInt(season as string) : undefined,
       });
+
+      // Annotate pending trades whose players are no longer on the expected
+      // rosters so the UI can flag them as invalid instead of letting members
+      // hit an error on Accept.
+      const pendingSeasons = Array.from(new Set(
+        tradesList.filter(t => t.status === 'pending').map(t => t.season)
+      ));
+      const assignmentsBySeason = new Map<number, Awaited<ReturnType<typeof storage.getLeagueRosterAssignments>>>();
+      for (const s of pendingSeasons) {
+        assignmentsBySeason.set(s, await storage.getLeagueRosterAssignments(leagueId, s));
+      }
+      for (const trade of tradesList) {
+        if (trade.status !== 'pending') continue;
+        const assignments = assignmentsBySeason.get(trade.season) || [];
+        const reasons: string[] = [];
+        for (const item of trade.items) {
+          const onRoster = assignments.some(a => a.mlbPlayerId === item.mlbPlayerId && a.userId === item.fromUserId);
+          if (!onRoster) {
+            reasons.push(`${item.player?.fullName || 'A player'} is no longer on the expected roster`);
+          }
+        }
+        if (reasons.length > 0) {
+          trade.invalidReasons = reasons;
+        }
+      }
+
       res.json(tradesList);
     } catch (error: any) {
       console.error("Error fetching trades:", error);
@@ -12778,4 +12804,3 @@ async function deployBundleItemAsAutoBid(
 
 // Export functions for use in background jobs
 export { processAllAutoBidsUntilStable, deployBundleItemAsAutoBid, processAutoDraft };
-

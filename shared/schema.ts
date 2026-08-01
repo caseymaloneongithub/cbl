@@ -1034,6 +1034,9 @@ export type TradeWithDetails = Trade & {
   items: (TradeItem & { player: MlbPlayer })[];
   proposingUser: Pick<User, 'id' | 'firstName' | 'lastName' | 'teamName'>;
   partnerUser: Pick<User, 'id' | 'firstName' | 'lastName' | 'teamName'>;
+  // Computed at read time for pending trades: reasons the trade can no longer
+  // be completed (e.g. a player is no longer on the expected roster).
+  invalidReasons?: string[];
 };
 
 export type RosterMove = typeof rosterMoves.$inferSelect;
