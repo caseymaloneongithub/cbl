@@ -4,7 +4,7 @@ import connectPg from "connect-pg-simple";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { storage } from "./storage";
-import { sendPasswordResetEmail } from "./email";
+import { sendPasswordResetEmail, getAppUrl } from "./email";
 
 declare module "express-session" {
   interface SessionData {
@@ -312,10 +312,9 @@ export async function setupAuth(app: Express) {
       // Store the token
       await storage.createPasswordResetToken(user.id, token, expiresAt);
 
-      // Get the app URL from request
-      const protocol = req.headers["x-forwarded-proto"] || "https";
-      const host = req.headers.host || "localhost:5000";
-      const appUrl = `${protocol}://${host}`;
+      // Use the environment-aware app URL (never trust the Host header —
+      // it can be spoofed to poison password-reset links).
+      const appUrl = getAppUrl();
 
       // Send the email
       const result = await sendPasswordResetEmail(
