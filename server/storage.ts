@@ -2070,6 +2070,7 @@ export class DatabaseStorage implements IStorage {
     const now = new Date();
     const errors: string[] = [];
     let finalized = 0;
+    let autoBidsDeactivated = 0;
     const activatedBundleItems: Array<{ bundleId: number; itemId: number; freeAgentId: number; userId: string; auctionId: number }> = [];
     
     // Find all free agents that have closed but don't have a winner set
@@ -2101,7 +2102,7 @@ export class DatabaseStorage implements IStorage {
           .update(autoBids)
           .set({ isActive: false, updatedAt: new Date() })
           .where(eq(autoBids.freeAgentId, agent.id));
-        console.log(`[Auction Job] Deactivated auto-bids for ${agent.name}`);
+        autoBidsDeactivated++;
         
         // Find all bundle items targeting this player that are deployed/active
         const bundleItemsForAgent = await db
@@ -2157,6 +2158,10 @@ export class DatabaseStorage implements IStorage {
         errors.push(message);
         console.error(`[Auction Job] ${message}`);
       }
+    }
+    
+    if (autoBidsDeactivated > 0) {
+      console.log(`[Auction Job] Deactivated auto-bids for ${autoBidsDeactivated} players`);
     }
     
     return { finalized, errors, activatedBundleItems };
