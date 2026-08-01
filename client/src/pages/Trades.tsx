@@ -47,6 +47,17 @@ export default function Trades({ highlightTradeId }: { highlightTradeId?: number
     enabled: !!leagueId,
   });
 
+  const { data: leagueMembers } = useQuery<{ userId: string; role: string }[]>({
+    queryKey: ["/api/leagues", leagueId, "members"],
+    queryFn: async () => {
+      const res = await fetch(`/api/leagues/${leagueId}/members`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch league members");
+      return res.json();
+    },
+    enabled: !!leagueId,
+  });
+  const isCommissioner = !!user && (user.isSuperAdmin || leagueMembers?.find(m => m.userId === user.id)?.role === "commissioner");
+
   const respondMutation = useMutation({
     mutationFn: async ({ tradeId, action }: { tradeId: number; action: string }) => {
       if (action === "cancel") {
@@ -146,7 +157,7 @@ export default function Trades({ highlightTradeId }: { highlightTradeId?: number
             const partnerSends = trade.items.filter(i => i.fromUserId === trade.partnerUserId);
             const isPartner = user?.id === trade.partnerUserId;
             const isProposer = user?.id === trade.proposingUserId;
-            const canRespond = isPartner && trade.status === "pending";
+            const canRespond = (isPartner || isCommissioner) && trade.status === "pending";
             const canCancel = isProposer && trade.status === "pending";
 
             return (

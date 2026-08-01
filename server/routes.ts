@@ -1864,7 +1864,10 @@ export async function registerRoutes(
 
       const trade = await storage.getTrade(tradeId);
       if (!trade || trade.leagueId !== leagueId) return res.status(404).json({ message: "Trade not found" });
-      if (trade.partnerUserId !== userId) return res.status(403).json({ message: "Only the trade partner can respond" });
+      if (trade.partnerUserId !== userId) {
+        const isCommissioner = await hasLeagueCommissionerAccess(userId, leagueId);
+        if (!isCommissioner) return res.status(403).json({ message: "Only the trade partner or a commissioner can respond" });
+      }
       if (trade.status !== 'pending') return res.status(400).json({ message: `Trade is already ${trade.status}` });
 
       if (action === 'accept') {
