@@ -1868,12 +1868,9 @@ export async function registerRoutes(
       if (trade.status !== 'pending') return res.status(400).json({ message: `Trade is already ${trade.status}` });
 
       if (action === 'accept') {
-        try {
-          await storage.respondToTrade(tradeId, 'accepted');
-        } catch (e: any) {
-          return res.status(409).json({ message: "Trade is no longer pending" });
-        }
-
+        // Validate rosters BEFORE marking the trade accepted, so a failed
+        // validation leaves the trade pending instead of stuck "accepted"
+        // with no players moved.
         const season = trade.season;
         const rosterAssignments = await storage.getLeagueRosterAssignments(leagueId, season);
 
@@ -1889,6 +1886,12 @@ export async function registerRoutes(
           } else {
             partnerItemIds.push(assignment.id);
           }
+        }
+
+        try {
+          await storage.respondToTrade(tradeId, 'accepted');
+        } catch (e: any) {
+          return res.status(409).json({ message: "Trade is no longer pending" });
         }
 
         await storage.executeRosterTrade({
